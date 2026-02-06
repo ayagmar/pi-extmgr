@@ -95,9 +95,7 @@ export default function extensionsManager(pi: ExtensionAPI) {
 
       const safePrefix = (prefix ?? "").toLowerCase();
       const filtered = commands.filter(
-        (c) =>
-          c.value.startsWith(safePrefix) ||
-          c.description.toLowerCase().includes(safePrefix)
+        (c) => c.value.startsWith(safePrefix) || c.description.toLowerCase().includes(safePrefix)
       );
 
       return filtered.length > 0
