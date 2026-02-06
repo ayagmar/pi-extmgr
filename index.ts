@@ -116,7 +116,10 @@ export default function extensionsManager(pi: ExtensionAPI) {
           if (subcommand && isPackageSource(subcommand)) {
             await installPackage(input, ctx, pi);
           } else {
-            ctx.ui.notify(`Unknown command: ${subcommand ?? "(empty)"}. Try: local, remote, installed, search, install, remove`, "warning");
+            ctx.ui.notify(
+              `Unknown command: ${subcommand ?? "(empty)"}. Try: local, remote, installed, search, install, remove`,
+              "warning"
+            );
           }
       }
     },
@@ -201,9 +204,7 @@ async function showInteractive(ctx: ExtensionCommandContext, pi: ExtensionAPI) {
 
     // Header
     container.addChild(new DynamicBorder((s: string) => theme.fg("accent", s)));
-    container.addChild(
-      new Text(theme.fg("accent", theme.bold("Local Extensions Manager")), 2, 0)
-    );
+    container.addChild(new Text(theme.fg("accent", theme.bold("Local Extensions Manager")), 2, 0));
     container.addChild(
       new Text(theme.fg("muted", "Enable/disable extensions - Changes apply on save"), 2, 0)
     );
@@ -249,9 +250,7 @@ async function showInteractive(ctx: ExtensionCommandContext, pi: ExtensionAPI) {
       ? "Arrow keys Navigate | Space/Enter Toggle | S Save* | I Installed | R Remote | ? Help | Esc Cancel"
       : "Arrow keys Navigate | Space/Enter Toggle | S Save | I Installed | R Remote | ? Help | Esc Cancel";
 
-    container.addChild(
-      new Text(theme.fg("dim", helpText), 2, 0)
-    );
+    container.addChild(new Text(theme.fg("dim", helpText), 2, 0));
     container.addChild(new DynamicBorder((s: string) => theme.fg("accent", s)));
 
     return {
@@ -325,7 +324,12 @@ async function showInteractive(ctx: ExtensionCommandContext, pi: ExtensionAPI) {
   }
 }
 
-function formatEntryLabel(entry: ExtensionEntry, state: State, theme: Theme, changed = false): string {
+function formatEntryLabel(
+  entry: ExtensionEntry,
+  state: State,
+  theme: Theme,
+  changed = false
+): string {
   const statusIcon = state === "enabled" ? theme.fg("success", "●") : theme.fg("error", "○");
   const scopeIcon = entry.scope === "global" ? theme.fg("muted", "G") : theme.fg("accent", "P");
   const changeMarker = changed ? theme.fg("warning", " *") : "";
@@ -434,7 +438,11 @@ async function showRemoteMenu(ctx: ExtensionCommandContext, pi: ExtensionAPI) {
     container.addChild(new Spacer(1));
 
     const menuItems: SelectItem[] = [
-      { value: "browse", label: "🔍 Browse pi packages", description: "Discover community packages" },
+      {
+        value: "browse",
+        label: "🔍 Browse pi packages",
+        description: "Discover community packages",
+      },
       { value: "search", label: "🔎 Search packages", description: "Search npm with custom query" },
       { value: "install", label: "📥 Install by source", description: "npm:, git:, or local path" },
       { value: "list", label: "📋 List installed", description: "View your installed packages" },
@@ -523,12 +531,8 @@ async function browseRemotePackages(
     void ctx.ui.custom<void>((tui, theme, _kb, done) => {
       const container = new Container();
       container.addChild(new Spacer(2));
-      container.addChild(
-        new Text(theme.fg("accent", theme.bold("Searching npm...")), 0, 1)
-      );
-      container.addChild(
-        new Text(theme.fg("muted", `Query: ${truncate(query, 50)}`), 0, 0)
-      );
+      container.addChild(new Text(theme.fg("accent", theme.bold("Searching npm...")), 0, 1));
+      container.addChild(new Text(theme.fg("muted", `Query: ${truncate(query, 50)}`), 0, 0));
       container.addChild(new Spacer(1));
       container.addChild(new Text(theme.fg("dim", "Press Esc to cancel"), 0, 0));
 
@@ -554,11 +558,10 @@ async function browseRemotePackages(
 
   // Perform search
   const searchLimit = Math.min(PAGE_SIZE + 10, 50);
-  const res = await pi.exec(
-    "npm",
-    ["search", "--json", `--searchlimit=${searchLimit}`, query],
-    { timeout: 20000, cwd: ctx.cwd }
-  );
+  const res = await pi.exec("npm", ["search", "--json", `--searchlimit=${searchLimit}`, query], {
+    timeout: 20000,
+    cwd: ctx.cwd,
+  });
 
   if (loadingDone) {
     loadingDone();
@@ -591,9 +594,7 @@ async function browseRemotePackages(
   packages = packages.slice(offset, offset + PAGE_SIZE);
 
   if (packages.length === 0) {
-    const msg = offset > 0
-      ? "No more packages to show."
-      : `No packages found for: ${query}`;
+    const msg = offset > 0 ? "No more packages to show." : `No packages found for: ${query}`;
     ctx.ui.notify(msg, "info");
 
     if (offset > 0) {
@@ -638,9 +639,10 @@ async function browseRemotePackages(
     description: "",
   });
 
-  const titleText = offset > 0
-    ? `Search Results (${offset + 1}-${offset + packages.length})`
-    : `Search: ${truncate(query, 40)}`;
+  const titleText =
+    offset > 0
+      ? `Search Results (${offset + 1}-${offset + packages.length})`
+      : `Search: ${truncate(query, 40)}`;
 
   // Use custom SelectList for better visuals
   const result = await ctx.ui.custom<BrowseAction>((tui, theme, _kb, done) => {
@@ -681,11 +683,7 @@ async function browseRemotePackages(
 
     // Help text
     container.addChild(
-      new Text(
-        theme.fg("dim", "↑↓ Navigate • Enter Select • / Search • Esc Cancel"),
-        2,
-        0
-      )
+      new Text(theme.fg("dim", "↑↓ Navigate • Enter Select • / Search • Esc Cancel"), 2, 0)
     );
     container.addChild(new DynamicBorder((s: string) => theme.fg("accent", s)));
 
@@ -725,7 +723,11 @@ async function browseRemotePackages(
   }
 }
 
-async function showPackageDetails(packageName: string, ctx: ExtensionCommandContext, pi: ExtensionAPI) {
+async function showPackageDetails(
+  packageName: string,
+  ctx: ExtensionCommandContext,
+  pi: ExtensionAPI
+) {
   const choice = await ctx.ui.select(packageName, [
     `Install ${packageName}`,
     "View npm info",
@@ -737,7 +739,10 @@ async function showPackageDetails(packageName: string, ctx: ExtensionCommandCont
   if (choice.startsWith("Install")) {
     await installPackage(`npm:${packageName}`, ctx, pi);
   } else if (choice.includes("npm info")) {
-    const infoRes = await pi.exec("npm", ["view", packageName, "--json"], { timeout: 10000, cwd: ctx.cwd });
+    const infoRes = await pi.exec("npm", ["view", packageName, "--json"], {
+      timeout: 10000,
+      cwd: ctx.cwd,
+    });
     if (infoRes.code === 0) {
       try {
         interface NpmViewInfo {
@@ -749,7 +754,8 @@ async function showPackageDetails(packageName: string, ctx: ExtensionCommandCont
         const info = JSON.parse(infoRes.stdout) as NpmViewInfo;
         const description = info.description ?? "No description";
         const version = info.version ?? "unknown";
-        const author = typeof info.author === "object" ? info.author?.name : info.author ?? "unknown";
+        const author =
+          typeof info.author === "object" ? info.author?.name : (info.author ?? "unknown");
         const homepage = info.homepage ?? "";
 
         ctx.ui.notify(
@@ -767,10 +773,7 @@ async function showPackageDetails(packageName: string, ctx: ExtensionCommandCont
 }
 
 async function promptInstall(ctx: ExtensionCommandContext, pi: ExtensionAPI) {
-  const source = await ctx.ui.input(
-    "Install package",
-    "npm:@scope/pkg or git:https://..."
-  );
+  const source = await ctx.ui.input("Install package", "npm:@scope/pkg or git:https://...");
   if (!source) return;
   await installPackage(source.trim(), ctx, pi);
 }
@@ -779,11 +782,9 @@ async function installPackage(source: string, ctx: ExtensionCommandContext, pi: 
   const normalized = normalizePackageSource(source);
 
   // Confirm installation
-  const confirmed = await ctx.ui.confirm(
-    "Install Package",
-    `Install ${normalized}?`,
-    { timeout: 30000 }
-  );
+  const confirmed = await ctx.ui.confirm("Install Package", `Install ${normalized}?`, {
+    timeout: 30000,
+  });
 
   if (!confirmed) {
     ctx.ui.notify("Installation cancelled.", "info");
@@ -800,10 +801,7 @@ async function installPackage(source: string, ctx: ExtensionCommandContext, pi: 
 
   ctx.ui.notify(`Installed ${normalized}`, "info");
 
-  const shouldReload = await ctx.ui.confirm(
-    "Reload Required",
-    "Package installed. Reload pi now?"
-  );
+  const shouldReload = await ctx.ui.confirm("Reload Required", "Package installed. Reload pi now?");
 
   if (shouldReload) {
     ctx.ui.setEditorText("/reload");
@@ -817,9 +815,7 @@ async function promptRemove(ctx: ExtensionCommandContext, pi: ExtensionAPI) {
     return;
   }
 
-  const items = packages.map((p) =>
-    `${p.name}${p.version ? ` @${p.version}` : ""} (${p.scope})`
-  );
+  const items = packages.map((p) => `${p.name}${p.version ? ` @${p.version}` : ""} (${p.scope})`);
 
   const toRemove = await ctx.ui.select("Remove package", items);
   if (!toRemove) return;
@@ -834,11 +830,7 @@ async function promptRemove(ctx: ExtensionCommandContext, pi: ExtensionAPI) {
 }
 
 async function removePackage(source: string, ctx: ExtensionCommandContext, pi: ExtensionAPI) {
-  const confirmed = await ctx.ui.confirm(
-    "Remove Package",
-    `Remove ${source}?`,
-    { timeout: 10000 }
-  );
+  const confirmed = await ctx.ui.confirm("Remove Package", `Remove ${source}?`, { timeout: 10000 });
 
   if (!confirmed) {
     ctx.ui.notify("Removal cancelled.", "info");
@@ -855,10 +847,7 @@ async function removePackage(source: string, ctx: ExtensionCommandContext, pi: E
 
   ctx.ui.notify(`Removed ${source}`, "info");
 
-  const shouldReload = await ctx.ui.confirm(
-    "Reload Required",
-    "Package removed. Reload pi now?"
-  );
+  const shouldReload = await ctx.ui.confirm("Reload Required", "Package removed. Reload pi now?");
 
   if (shouldReload) {
     ctx.ui.setEditorText("/reload");
@@ -875,9 +864,7 @@ async function showInstalledPackages(ctx: ExtensionCommandContext, pi: Extension
     return;
   }
 
-  const items = packages.map((p) =>
-    `${p.name}${p.version ? ` @${p.version}` : ""} (${p.scope})`
-  );
+  const items = packages.map((p) => `${p.name}${p.version ? ` @${p.version}` : ""} (${p.scope})`);
 
   items.push("[Update all packages]");
   items.push("[Configure packages]");
@@ -947,10 +934,7 @@ async function updatePackage(source: string, ctx: ExtensionCommandContext, pi: E
   } else {
     ctx.ui.notify(`Updated ${source}`, "info");
 
-    const shouldReload = await ctx.ui.confirm(
-      "Reload Required",
-      "Package updated. Reload pi now?"
-    );
+    const shouldReload = await ctx.ui.confirm("Reload Required", "Package updated. Reload pi now?");
 
     if (shouldReload) {
       ctx.ui.setEditorText("/reload");
@@ -985,13 +969,19 @@ async function updatePackages(ctx: ExtensionCommandContext, pi: ExtensionAPI) {
 }
 
 // Kept for future use
-async function _getInstalledPackagesSummary(ctx: ExtensionCommandContext, pi: ExtensionAPI): Promise<string> {
+async function _getInstalledPackagesSummary(
+  ctx: ExtensionCommandContext,
+  pi: ExtensionAPI
+): Promise<string> {
   const packages = await getInstalledPackages(ctx, pi);
   if (packages.length === 0) return "none";
   return `${packages.length} package${packages.length === 1 ? "" : "s"}`;
 }
 
-async function getInstalledPackages(ctx: ExtensionCommandContext, pi: ExtensionAPI): Promise<InstalledPackage[]> {
+async function getInstalledPackages(
+  ctx: ExtensionCommandContext,
+  pi: ExtensionAPI
+): Promise<InstalledPackage[]> {
   const res = await pi.exec("pi", ["list"], { timeout: 10000, cwd: ctx.cwd });
   if (res.code !== 0) return [];
 
@@ -1113,7 +1103,11 @@ function themeLabel(_color: string, text: string): string {
 
 async function discoverExtensions(cwd: string): Promise<ExtensionEntry[]> {
   const roots: { root: string; scope: Scope; label: string }[] = [
-    { root: join(homedir(), ".pi", "agent", "extensions"), scope: "global", label: "~/.pi/agent/extensions" },
+    {
+      root: join(homedir(), ".pi", "agent", "extensions"),
+      scope: "global",
+      label: "~/.pi/agent/extensions",
+    },
     { root: join(cwd, ".pi", "extensions"), scope: "project", label: ".pi/extensions" },
   ];
 
@@ -1126,7 +1120,11 @@ async function discoverExtensions(cwd: string): Promise<ExtensionEntry[]> {
   return dedupeExtensions(all);
 }
 
-async function discoverInRoot(root: string, scope: Scope, label: string): Promise<ExtensionEntry[]> {
+async function discoverInRoot(
+  root: string,
+  scope: Scope,
+  label: string
+): Promise<ExtensionEntry[]> {
   let dirEntries: Dirent[];
   try {
     dirEntries = await readdir(root, { withFileTypes: true });
@@ -1224,7 +1222,10 @@ async function parseDirectoryIndex(
   return undefined;
 }
 
-async function setState(entry: ExtensionEntry, target: State): Promise<{ ok: true } | { ok: false; error: string }> {
+async function setState(
+  entry: ExtensionEntry,
+  target: State
+): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
     if (target === "enabled") {
       await rename(entry.disabledPath, entry.activePath);
