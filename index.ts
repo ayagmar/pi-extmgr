@@ -19,6 +19,7 @@ import * as path from "node:path";
 import * as os from "node:os";
 import type { Dirent } from "node:fs";
 import type { ExtensionAPI, ExtensionCommandContext } from "@mariozechner/pi-coding-agent";
+import type { Theme } from "@mariozechner/pi-coding-agent";
 import { getSettingsListTheme, DynamicBorder } from "@mariozechner/pi-coding-agent";
 import {
   Container,
@@ -112,10 +113,10 @@ export default function extensionsManager(pi: ExtensionAPI) {
           break;
         default:
           // If it looks like a package source, try to install it
-          if (isPackageSource(subcommand)) {
+          if (subcommand && isPackageSource(subcommand)) {
             await installPackage(input, ctx, pi);
           } else {
-            ctx.ui.notify(`Unknown command: ${subcommand}. Try: local, remote, installed, search, install, remove`, "warning");
+            ctx.ui.notify(`Unknown command: ${subcommand ?? "(empty)"}. Try: local, remote, installed, search, install, remove`, "warning");
           }
       }
     },
@@ -294,7 +295,7 @@ async function showInteractive(ctx: ExtensionCommandContext, pi: ExtensionAPI) {
       await showRemote("", ctx, pi);
       return;
     case "help":
-      await showHelp(ctx, pi);
+      showHelp(ctx, pi);
       return;
   }
 
@@ -324,7 +325,7 @@ async function showInteractive(ctx: ExtensionCommandContext, pi: ExtensionAPI) {
   }
 }
 
-function formatEntryLabel(entry: ExtensionEntry, state: State, theme: any, changed = false): string {
+function formatEntryLabel(entry: ExtensionEntry, state: State, theme: Theme, changed = false): string {
   const statusIcon = state === "enabled" ? theme.fg("success", "●") : theme.fg("error", "○");
   const scopeIcon = entry.scope === "global" ? theme.fg("muted", "G") : theme.fg("accent", "P");
   const changeMarker = changed ? theme.fg("warning", " *") : "";
@@ -353,7 +354,7 @@ async function applyStagedChanges(entries: ExtensionEntry[], staged: Map<string,
   return { changed, errors };
 }
 
-async function showHelp(ctx: ExtensionCommandContext, pi: ExtensionAPI) {
+function showHelp(ctx: ExtensionCommandContext, pi: ExtensionAPI): void {
   const lines = [
     "Extensions Manager Help",
     "",
@@ -385,7 +386,7 @@ async function showHelp(ctx: ExtensionCommandContext, pi: ExtensionAPI) {
 
   // Return to main menu after a brief delay
   setTimeout(() => {
-    showInteractive(ctx, pi);
+    void showInteractive(ctx, pi);
   }, 100);
 }
 
@@ -519,7 +520,7 @@ async function browseRemotePackages(
   const loadingDone = await new Promise<(() => void) | null>((resolve) => {
     let closeFn: (() => void) | null = null;
 
-    ctx.ui.custom<void>((tui, theme, _kb, done) => {
+    void ctx.ui.custom<void>((tui, theme, _kb, done) => {
       const container = new Container();
       container.addChild(new Spacer(2));
       container.addChild(
@@ -559,7 +560,9 @@ async function browseRemotePackages(
     { timeout: 20000, cwd: ctx.cwd }
   );
 
-  loadingDone?.();
+  if (loadingDone) {
+    loadingDone();
+  }
 
   if (res.code !== 0) {
     ctx.ui.notify(`npm search failed: ${res.stderr || res.stdout || `exit ${res.code}`}`, "error");
@@ -568,7 +571,7 @@ async function browseRemotePackages(
 
   let parsed: NpmPackage[] = [];
   try {
-    parsed = JSON.parse(res.stdout || "[]");
+    parsed = JSON.parse(res.stdout || "[]") as NpmPackage[];
   } catch {
     ctx.ui.notify("Failed to parse npm search output", "error");
     return;
@@ -737,11 +740,17 @@ async function showPackageDetails(packageName: string, ctx: ExtensionCommandCont
     const infoRes = await pi.exec("npm", ["view", packageName, "--json"], { timeout: 10000, cwd: ctx.cwd });
     if (infoRes.code === 0) {
       try {
-        const info = JSON.parse(infoRes.stdout);
-        const description = info.description || "No description";
-        const version = info.version || "unknown";
-        const author = typeof info.author === "object" ? info.author?.name : info.author || "unknown";
-        const homepage = info.homepage || "";
+        interface NpmViewInfo {
+          description?: string;
+          version?: string;
+          author?: { name?: string } | string;
+          homepage?: string;
+        }
+        const info = JSON.parse(infoRes.stdout) as NpmViewInfo;
+        const description = info.description ?? "No description";
+        const version = info.version ?? "unknown";
+        const author = typeof info.author === "object" ? info.author?.name : info.author ?? "unknown";
+        const homepage = info.homepage ?? "";
 
         ctx.ui.notify(
           `${packageName}@${version}\n${description}\nAuthor: ${author}${homepage ? `\n${homepage}` : ""}`,
@@ -815,7 +824,9 @@ async function promptRemove(ctx: ExtensionCommandContext, pi: ExtensionAPI) {
   const toRemove = await ctx.ui.select("Remove package", items);
   if (!toRemove) return;
 
-  const packageName = toRemove.split(" @")[0].split(" (")[0];
+  const packageName = toRemove.split(" @")[0]?.split(" (")[0];
+  if (!packageName) return;
+
   const pkg = packages.find((p) => p.name === packageName);
   if (pkg) {
     await removePackage(pkg.source, ctx, pi);
@@ -882,7 +893,8 @@ async function showInstalledPackages(ctx: ExtensionCommandContext, pi: Extension
   } else if (picked === "[Back]") {
     await showInteractive(ctx, pi);
   } else {
-    const packageName = picked.split(" @")[0].split(" (")[0];
+    const packageName = picked.split(" @")[0]?.split(" (")[0];
+    if (!packageName) return;
     const pkg = packages.find((p) => p.name === packageName);
     if (pkg) {
       await showPackageActions(pkg.source, pkg, ctx, pi);
@@ -1009,7 +1021,7 @@ async function getInstalledPackages(ctx: ExtensionCommandContext, pi: ExtensionA
 
     // Parse package lines
     const match = trimmed.match(/^[-•]?\s*(npm:|git:|https?:|\/|\.\/)(.+)$/);
-    if (match) {
+    if (match?.[1] && match[2]) {
       const fullSource = match[1] + match[2];
 
       // Deduplicate by source
@@ -1025,13 +1037,13 @@ async function getInstalledPackages(ctx: ExtensionCommandContext, pi: ExtensionA
         const npmPart = fullSource.slice(4);
         // Scoped packages: @scope/name@version
         const scopedMatch = npmPart.match(/^(@[^@]+\/[^@]+)@(.+)$/);
-        if (scopedMatch) {
+        if (scopedMatch?.[1] && scopedMatch[2]) {
           name = scopedMatch[1];
           version = scopedMatch[2];
         } else {
           // Regular packages: name@version
           const simpleMatch = npmPart.match(/^([^@]+)@(.+)$/);
-          if (simpleMatch) {
+          if (simpleMatch?.[1] && simpleMatch[2]) {
             name = simpleMatch[1];
             version = simpleMatch[2];
           } else {
@@ -1042,12 +1054,11 @@ async function getInstalledPackages(ctx: ExtensionCommandContext, pi: ExtensionA
         name = fullSource.slice(4).split("@")[0] || fullSource;
       }
 
-      packages.push({
-        source,
-        name,
-        version,
-        scope: currentScope,
-      });
+      const pkg: InstalledPackage = { source, name, scope: currentScope };
+      if (version !== undefined) {
+        pkg.version = version;
+      }
+      packages.push(pkg);
     }
   }
 
@@ -1101,7 +1112,7 @@ function themeLabel(_color: string, text: string): string {
 // ============== Extension Discovery ==============
 
 async function discoverExtensions(cwd: string): Promise<ExtensionEntry[]> {
-  const roots: Array<{ root: string; scope: Scope; label: string }> = [
+  const roots: { root: string; scope: Scope; label: string }[] = [
     { root: path.join(os.homedir(), ".pi", "agent", "extensions"), scope: "global", label: "~/.pi/agent/extensions" },
     { root: path.join(cwd, ".pi", "extensions"), scope: "project", label: ".pi/extensions" },
   ];
@@ -1246,7 +1257,7 @@ async function readSummary(filePath: string): Promise<string> {
 
     // Look for block comments
     const block = trimmed.match(/^\/\*+[\s\S]*?\*\//);
-    if (block) {
+    if (block?.[0]) {
       const lines = block[0]
         .split("\n")
         .map((line) =>
@@ -1256,13 +1267,14 @@ async function readSummary(filePath: string): Promise<string> {
             .replace(/^\s*\*\s?/, "")
             .trim()
         )
-        .filter(Boolean);
-      if (lines.length > 0) return truncate(lines[0], 80);
+        .filter((s): s is string => Boolean(s));
+      const firstLine = lines[0];
+      if (firstLine) return truncate(firstLine, 80);
     }
 
     // Look for line comments
     const lineComment = trimmed.match(/^(?:\s*\/\/.*\n?)+/);
-    if (lineComment) {
+    if (lineComment?.[0]) {
       const first = lineComment[0]
         .split("\n")
         .map((line) => line.replace(/^\s*\/\/\s?/, "").trim())
