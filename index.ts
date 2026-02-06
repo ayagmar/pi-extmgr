@@ -18,7 +18,11 @@ import { access, readdir, readFile, rename } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join, relative } from "node:path";
 import type { Dirent } from "node:fs";
-import type { ExtensionAPI, ExtensionCommandContext } from "@mariozechner/pi-coding-agent";
+import type {
+  ExtensionAPI,
+  ExtensionCommandContext,
+  ExtensionContext,
+} from "@mariozechner/pi-coding-agent";
 import type { Theme } from "@mariozechner/pi-coding-agent";
 import { getSettingsListTheme, DynamicBorder } from "@mariozechner/pi-coding-agent";
 import {
@@ -29,6 +33,7 @@ import {
   Spacer,
   type SettingItem,
   type SelectItem,
+  type AutocompleteItem,
   matchesKey,
   Key,
 } from "@mariozechner/pi-tui";
@@ -65,8 +70,40 @@ const DISABLED_SUFFIX = ".disabled";
 const PAGE_SIZE = 20;
 
 export default function extensionsManager(pi: ExtensionAPI) {
+  // Register keyboard shortcut
+  pi.registerShortcut("ctrl+shift+e", {
+    description: "Open Extensions Manager",
+    handler: (ctx) => {
+      ctx.ui.setEditorText("/extensions ");
+    },
+  });
+
   pi.registerCommand("extensions", {
     description: "Manage local extensions and browse/install community packages",
+    getArgumentCompletions: (prefix: string): AutocompleteItem[] | null => {
+      const commands = [
+        { value: "list", description: "List local extensions" },
+        { value: "local", description: "Open interactive manager (default)" },
+        { value: "remote", description: "Browse community packages" },
+        { value: "packages", description: "Browse community packages (alias)" },
+        { value: "installed", description: "List installed packages" },
+        { value: "search", description: "Search npm for packages" },
+        { value: "install", description: "Install a package" },
+        { value: "remove", description: "Remove an installed package" },
+        { value: "uninstall", description: "Remove an installed package (alias)" },
+      ];
+
+      const safePrefix = (prefix ?? "").toLowerCase();
+      const filtered = commands.filter(
+        (c) =>
+          c.value.startsWith(safePrefix) ||
+          c.description.toLowerCase().includes(safePrefix)
+      );
+
+      return filtered.length > 0
+        ? filtered.map((c) => ({ value: c.value, label: `${c.value} - ${c.description}` }))
+        : null;
+    },
     handler: async (args, ctx) => {
       // Check if we have UI support
       if (!ctx.hasUI) {
@@ -123,6 +160,23 @@ export default function extensionsManager(pi: ExtensionAPI) {
           }
       }
     },
+  });
+
+  // Status bar integration - show installed package count
+  pi.on("session_start", async (_event, ctx) => {
+    if (!ctx.hasUI) return;
+
+    try {
+      const packages = await getInstalledPackages(ctx, pi);
+      if (packages.length > 0) {
+        ctx.ui.setStatus(
+          "extmgr",
+          ctx.ui.theme.fg("dim", `${packages.length} pkg${packages.length === 1 ? "" : "s"}`)
+        );
+      }
+    } catch {
+      // Silently ignore status bar errors
+    }
   });
 }
 
@@ -311,7 +365,7 @@ async function showInteractiveOnce(
       await showRemote("", ctx, pi);
       return false; // Return to main menu
     case "help":
-      showHelp(ctx, pi);
+      showHelp(ctx);
       return false; // Return to main menu
     case "menu":
       return false; // Return to main menu (already there)
@@ -379,7 +433,7 @@ async function applyStagedChanges(entries: ExtensionEntry[], staged: Map<string,
   return { changed, errors };
 }
 
-function showHelp(ctx: ExtensionCommandContext, pi: ExtensionAPI): void {
+function showHelp(ctx: ExtensionCommandContext): void {
   const lines = [
     "Extensions Manager Help",
     "",
@@ -408,12 +462,13 @@ function showHelp(ctx: ExtensionCommandContext, pi: ExtensionAPI): void {
     "  /extensions remove <s>   Remove installed package",
   ];
 
-  ctx.ui.notify(lines.join("\n"), "info");
-
-  // Return to main menu after a brief delay
-  setTimeout(() => {
-    void showInteractive(ctx, pi);
-  }, 100);
+  const output = lines.join("\n");
+  if (ctx.hasUI) {
+    ctx.ui.notify(output, "info");
+  } else {
+    console.log(output);
+  }
+  // Note: Removed auto-return to main menu (was causing memory leak potential)
 }
 
 // ============== Remote Package Management ==============
@@ -530,7 +585,7 @@ async function showRemoteMenu(ctx: ExtensionCommandContext, pi: ExtensionAPI) {
     case "main":
       return;
     case "help":
-      showHelp(ctx, pi);
+      showHelp(ctx);
       break;
     case "cancel":
       return;
@@ -551,6 +606,16 @@ async function searchPackages(query: string, ctx: ExtensionCommandContext, pi: E
   await browseRemotePackages(ctx, query, pi);
 }
 
+// Cache for search results during pagination
+interface SearchCache {
+  query: string;
+  results: NpmPackage[];
+  timestamp: number;
+}
+
+let searchCache: SearchCache | null = null;
+const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
 async function browseRemotePackages(
   ctx: ExtensionCommandContext,
   query: string,
@@ -567,10 +632,18 @@ async function browseRemotePackages(
     | { type: "help" }
     | { type: "cancel" };
 
-  // Show loading state
-  const loadingDone = await new Promise<(() => void) | null>((resolve) => {
-    let closeFn: (() => void) | null = null;
+  // Check cache first
+  let allPackages: NpmPackage[] = [];
+  const cacheValid =
+    searchCache && searchCache.query === query && Date.now() - searchCache.timestamp < CACHE_TTL;
 
+  if (cacheValid && searchCache && offset > 0) {
+    allPackages = searchCache.results;
+  } else {
+    // Show loading state with abort support
+    const controller = new AbortController();
+
+    // Note: The loading UI automatically closes when this block ends
     void ctx.ui.custom<void>((tui, theme, _kb, done) => {
       const container = new Container();
       container.addChild(new Spacer(2));
@@ -578,8 +651,6 @@ async function browseRemotePackages(
       container.addChild(new Text(theme.fg("muted", `Query: ${truncate(query, 50)}`), 0, 0));
       container.addChild(new Spacer(1));
       container.addChild(new Text(theme.fg("dim", "Press Esc to cancel"), 0, 0));
-
-      closeFn = () => done();
 
       return {
         render(width: number) {
@@ -590,51 +661,65 @@ async function browseRemotePackages(
         },
         handleInput(data: string) {
           if (matchesKey(data, Key.escape)) {
+            controller.abort();
             done();
           }
         },
       };
     });
 
-    resolve(closeFn);
-  });
+    // Perform search with abort signal
+    const searchLimit = Math.min(PAGE_SIZE + 10, 50);
+    const res = await pi.exec("npm", ["search", "--json", `--searchlimit=${searchLimit}`, query], {
+      signal: controller.signal,
+      timeout: 20000,
+      cwd: ctx.cwd,
+    });
 
-  // Perform search
-  const searchLimit = Math.min(PAGE_SIZE + 10, 50);
-  const res = await pi.exec("npm", ["search", "--json", `--searchlimit=${searchLimit}`, query], {
-    timeout: 20000,
-    cwd: ctx.cwd,
-  });
-
-  if (loadingDone) {
-    loadingDone();
-  }
-
-  if (res.code !== 0) {
-    ctx.ui.notify(`npm search failed: ${res.stderr || res.stdout || `exit ${res.code}`}`, "error");
-    return;
-  }
-
-  let parsed: NpmPackage[] = [];
-  try {
-    parsed = JSON.parse(res.stdout || "[]") as NpmPackage[];
-  } catch {
-    ctx.ui.notify("Failed to parse npm search output", "error");
-    return;
-  }
-
-  // Filter to only pi packages when browsing
-  let packages = parsed.filter((p) => {
-    if (!p?.name) return false;
-    if (query.includes("keywords:pi-package")) {
-      return p.keywords?.includes("pi-package");
+    if (controller.signal.aborted) {
+      return; // User cancelled
     }
-    return true;
-  });
 
-  // Apply pagination
-  const totalResults = packages.length;
-  packages = packages.slice(offset, offset + PAGE_SIZE);
+    if (res.code !== 0) {
+      if (ctx.hasUI) {
+        ctx.ui.notify(
+          `npm search failed: ${res.stderr || res.stdout || `exit ${res.code}`}`,
+          "error"
+        );
+      }
+      return;
+    }
+
+    let parsed: NpmPackage[] = [];
+    try {
+      parsed = JSON.parse(res.stdout || "[]") as NpmPackage[];
+    } catch {
+      if (ctx.hasUI) {
+        ctx.ui.notify("Failed to parse npm search output", "error");
+      }
+      return;
+    }
+
+    // Filter to only pi packages when browsing
+    allPackages = parsed.filter((p) => {
+      if (!p?.name) return false;
+      if (query.includes("keywords:pi-package")) {
+        return p.keywords?.includes("pi-package");
+      }
+      return true;
+    });
+
+    // Cache results for pagination
+    searchCache = {
+      query,
+      results: allPackages,
+      timestamp: Date.now(),
+    };
+  }
+
+  // Apply pagination from cached/filtered results
+  const totalResults = allPackages.length;
+  const packages = allPackages.slice(offset, offset + PAGE_SIZE);
 
   if (packages.length === 0) {
     const msg = offset > 0 ? "No more packages to show." : `No packages found for: ${query}`;
@@ -771,7 +856,7 @@ async function browseRemotePackages(
     case "main":
       return;
     case "help":
-      showHelp(ctx, pi);
+      showHelp(ctx);
       return;
     case "package":
       await showPackageDetails(result.name, ctx, pi);
@@ -784,6 +869,11 @@ async function showPackageDetails(
   ctx: ExtensionCommandContext,
   pi: ExtensionAPI
 ) {
+  if (!ctx.hasUI) {
+    console.log(`Package: ${packageName}`);
+    return;
+  }
+
   const choice = await ctx.ui.select(packageName, [
     `Install ${packageName}`,
     "View npm info",
@@ -829,6 +919,11 @@ async function showPackageDetails(
 }
 
 async function promptInstall(ctx: ExtensionCommandContext, pi: ExtensionAPI) {
+  if (!ctx.hasUI) {
+    console.log("Interactive input not available in non-interactive mode.");
+    console.log("Usage: /extensions install <npm:package|git:url|path>");
+    return;
+  }
   const source = await ctx.ui.input("Install package", "npm:@scope/pkg or git:https://...");
   if (!source) return;
   await installPackage(source.trim(), ctx, pi);
@@ -837,37 +932,66 @@ async function promptInstall(ctx: ExtensionCommandContext, pi: ExtensionAPI) {
 async function installPackage(source: string, ctx: ExtensionCommandContext, pi: ExtensionAPI) {
   const normalized = normalizePackageSource(source);
 
-  // Confirm installation
-  const confirmed = await ctx.ui.confirm("Install Package", `Install ${normalized}?`, {
-    timeout: 30000,
-  });
+  // Confirm installation (interactive only)
+  if (ctx.hasUI) {
+    const confirmed = await ctx.ui.confirm("Install Package", `Install ${normalized}?`, {
+      timeout: 30000,
+    });
 
-  if (!confirmed) {
-    ctx.ui.notify("Installation cancelled.", "info");
-    return;
+    if (!confirmed) {
+      ctx.ui.notify("Installation cancelled.", "info");
+      return;
+    }
+
+    ctx.ui.notify(`Installing ${normalized}...`, "info");
+  } else {
+    console.log(`Installing ${normalized}...`);
   }
 
-  ctx.ui.notify(`Installing ${normalized}...`, "info");
   const res = await pi.exec("pi", ["install", normalized], { timeout: 180000, cwd: ctx.cwd });
 
   if (res.code !== 0) {
-    ctx.ui.notify(`Install failed:\n${res.stderr || res.stdout || `exit ${res.code}`}`, "error");
+    const errorMsg = `Install failed:\n${res.stderr || res.stdout || `exit ${res.code}`}`;
+    if (ctx.hasUI) {
+      ctx.ui.notify(errorMsg, "error");
+    } else {
+      console.error(errorMsg);
+    }
     return;
   }
 
-  ctx.ui.notify(`Installed ${normalized}`, "info");
+  if (ctx.hasUI) {
+    ctx.ui.notify(`Installed ${normalized}`, "info");
 
-  const shouldReload = await ctx.ui.confirm("Reload Required", "Package installed. Reload pi now?");
+    const shouldReload = await ctx.ui.confirm(
+      "Reload Required",
+      "Package installed. Reload pi now?"
+    );
 
-  if (shouldReload) {
-    ctx.ui.setEditorText("/reload");
+    if (shouldReload) {
+      ctx.ui.setEditorText("/reload");
+    }
+  } else {
+    console.log(`Installed ${normalized}`);
+    console.log("Run /reload to apply changes.");
   }
 }
 
 async function promptRemove(ctx: ExtensionCommandContext, pi: ExtensionAPI) {
+  if (!ctx.hasUI) {
+    console.log("Interactive selection not available in non-interactive mode.");
+    console.log("Usage: /extensions remove <npm:package|git:url|path>");
+    return;
+  }
+
   const packages = await getInstalledPackages(ctx, pi);
   if (packages.length === 0) {
-    ctx.ui.notify("No packages installed.", "info");
+    const msg = "No packages installed.";
+    if (ctx.hasUI) {
+      ctx.ui.notify(msg, "info");
+    } else {
+      console.log(msg);
+    }
     return;
   }
 
@@ -886,27 +1010,45 @@ async function promptRemove(ctx: ExtensionCommandContext, pi: ExtensionAPI) {
 }
 
 async function removePackage(source: string, ctx: ExtensionCommandContext, pi: ExtensionAPI) {
-  const confirmed = await ctx.ui.confirm("Remove Package", `Remove ${source}?`, { timeout: 10000 });
+  // Confirm removal (interactive only)
+  if (ctx.hasUI) {
+    const confirmed = await ctx.ui.confirm("Remove Package", `Remove ${source}?`, {
+      timeout: 10000,
+    });
 
-  if (!confirmed) {
-    ctx.ui.notify("Removal cancelled.", "info");
-    return;
+    if (!confirmed) {
+      ctx.ui.notify("Removal cancelled.", "info");
+      return;
+    }
+
+    ctx.ui.notify(`Removing ${source}...`, "info");
+  } else {
+    console.log(`Removing ${source}...`);
   }
 
-  ctx.ui.notify(`Removing ${source}...`, "info");
   const res = await pi.exec("pi", ["remove", source], { timeout: 60000, cwd: ctx.cwd });
 
   if (res.code !== 0) {
-    ctx.ui.notify(`Remove failed: ${res.stderr || res.stdout || `exit ${res.code}`}`, "error");
+    const errorMsg = `Remove failed: ${res.stderr || res.stdout || `exit ${res.code}`}`;
+    if (ctx.hasUI) {
+      ctx.ui.notify(errorMsg, "error");
+    } else {
+      console.error(errorMsg);
+    }
     return;
   }
 
-  ctx.ui.notify(`Removed ${source}`, "info");
+  if (ctx.hasUI) {
+    ctx.ui.notify(`Removed ${source}`, "info");
 
-  const shouldReload = await ctx.ui.confirm("Reload Required", "Package removed. Reload pi now?");
+    const shouldReload = await ctx.ui.confirm("Reload Required", "Package removed. Reload pi now?");
 
-  if (shouldReload) {
-    ctx.ui.setEditorText("/reload");
+    if (shouldReload) {
+      ctx.ui.setEditorText("/reload");
+    }
+  } else {
+    console.log(`Removed ${source}`);
+    console.log("Run /reload to apply changes.");
   }
 }
 
@@ -916,7 +1058,19 @@ async function showInstalledPackages(ctx: ExtensionCommandContext, pi: Extension
   const packages = await getInstalledPackages(ctx, pi);
 
   if (packages.length === 0) {
-    ctx.ui.notify("No packages installed.", "info");
+    const msg = "No packages installed.";
+    if (ctx.hasUI) {
+      ctx.ui.notify(msg, "info");
+    } else {
+      console.log(msg);
+    }
+    return;
+  }
+
+  if (!ctx.hasUI) {
+    // Non-interactive mode: just list packages
+    const lines = packages.map((p) => `${p.name}${p.version ? ` @${p.version}` : ""} (${p.scope})`);
+    console.log(lines.join("\n"));
     return;
   }
 
@@ -948,6 +1102,14 @@ async function showPackageActions(
   ctx: ExtensionCommandContext,
   pi: ExtensionAPI
 ) {
+  if (!ctx.hasUI) {
+    console.log(`Package: ${pkg.name}`);
+    console.log(`Version: ${pkg.version || "unknown"}`);
+    console.log(`Source: ${pkg.source}`);
+    console.log(`Scope: ${pkg.scope}`);
+    return;
+  }
+
   const choice = await ctx.ui.select(pkg.name, [
     `Remove ${pkg.name}`,
     `Update ${pkg.name}`,
@@ -973,50 +1135,93 @@ async function showPackageActions(
 }
 
 async function updatePackage(source: string, ctx: ExtensionCommandContext, pi: ExtensionAPI) {
-  ctx.ui.notify(`Updating ${source}...`, "info");
+  if (ctx.hasUI) {
+    ctx.ui.notify(`Updating ${source}...`, "info");
+  } else {
+    console.log(`Updating ${source}...`);
+  }
+
   const res = await pi.exec("pi", ["update", source], { timeout: 120000, cwd: ctx.cwd });
 
   if (res.code !== 0) {
-    ctx.ui.notify(`Update failed: ${res.stderr || res.stdout || `exit ${res.code}`}`, "error");
+    const errorMsg = `Update failed: ${res.stderr || res.stdout || `exit ${res.code}`}`;
+    if (ctx.hasUI) {
+      ctx.ui.notify(errorMsg, "error");
+    } else {
+      console.error(errorMsg);
+    }
     return;
   }
 
   const stdout = res.stdout || "";
   if (stdout.includes("already up to date") || stdout.includes("pinned")) {
-    ctx.ui.notify(`${source} is already up to date (or pinned).`, "info");
+    const msg = `${source} is already up to date (or pinned).`;
+    if (ctx.hasUI) {
+      ctx.ui.notify(msg, "info");
+    } else {
+      console.log(msg);
+    }
   } else {
-    ctx.ui.notify(`Updated ${source}`, "info");
+    if (ctx.hasUI) {
+      ctx.ui.notify(`Updated ${source}`, "info");
 
-    const shouldReload = await ctx.ui.confirm("Reload Required", "Package updated. Reload pi now?");
+      const shouldReload = await ctx.ui.confirm(
+        "Reload Required",
+        "Package updated. Reload pi now?"
+      );
 
-    if (shouldReload) {
-      ctx.ui.setEditorText("/reload");
+      if (shouldReload) {
+        ctx.ui.setEditorText("/reload");
+      }
+    } else {
+      console.log(`Updated ${source}`);
+      console.log("Run /reload to apply changes.");
     }
   }
 }
 
 async function updatePackages(ctx: ExtensionCommandContext, pi: ExtensionAPI) {
-  ctx.ui.notify("Updating all packages...", "info");
+  if (ctx.hasUI) {
+    ctx.ui.notify("Updating all packages...", "info");
+  } else {
+    console.log("Updating all packages...");
+  }
+
   const res = await pi.exec("pi", ["update"], { timeout: 300000, cwd: ctx.cwd });
 
   if (res.code !== 0) {
-    ctx.ui.notify(`Update failed: ${res.stderr || res.stdout || `exit ${res.code}`}`, "error");
+    const errorMsg = `Update failed: ${res.stderr || res.stdout || `exit ${res.code}`}`;
+    if (ctx.hasUI) {
+      ctx.ui.notify(errorMsg, "error");
+    } else {
+      console.error(errorMsg);
+    }
     return;
   }
 
   const stdout = res.stdout || "";
   if (stdout.includes("already up to date") || stdout.trim() === "") {
-    ctx.ui.notify("All packages are already up to date.", "info");
+    const msg = "All packages are already up to date.";
+    if (ctx.hasUI) {
+      ctx.ui.notify(msg, "info");
+    } else {
+      console.log(msg);
+    }
   } else {
-    ctx.ui.notify("Packages updated", "info");
+    if (ctx.hasUI) {
+      ctx.ui.notify("Packages updated", "info");
 
-    const shouldReload = await ctx.ui.confirm(
-      "Reload Required",
-      "Packages updated. Reload pi now?"
-    );
+      const shouldReload = await ctx.ui.confirm(
+        "Reload Required",
+        "Packages updated. Reload pi now?"
+      );
 
-    if (shouldReload) {
-      ctx.ui.setEditorText("/reload");
+      if (shouldReload) {
+        ctx.ui.setEditorText("/reload");
+      }
+    } else {
+      console.log("Packages updated");
+      console.log("Run /reload to apply changes.");
     }
   }
 }
@@ -1032,7 +1237,7 @@ async function _getInstalledPackagesSummary(
 }
 
 async function getInstalledPackages(
-  ctx: ExtensionCommandContext,
+  ctx: ExtensionCommandContext | ExtensionContext,
   pi: ExtensionAPI
 ): Promise<InstalledPackage[]> {
   const res = await pi.exec("pi", ["list"], { timeout: 10000, cwd: ctx.cwd });
@@ -1181,7 +1386,14 @@ async function discoverInRoot(
   let dirEntries: Dirent[];
   try {
     dirEntries = await readdir(root, { withFileTypes: true });
-  } catch {
+  } catch (error) {
+    // Silently ignore ENOENT (directory doesn't exist) - this is expected
+    // for project scope when .pi/extensions doesn't exist yet
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      return [];
+    }
+    // Log other errors for debugging
+    console.error(`[extensions-manager] Error reading ${root}:`, error);
     return [];
   }
 
