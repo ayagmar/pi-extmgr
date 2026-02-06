@@ -285,7 +285,7 @@ async function showInteractiveOnce(
       items,
       Math.min(entries.length + 2, 12),
       getSettingsListTheme(),
-      (id, newValue) => {
+      (id: string, newValue: string) => {
         const entry = byId.get(id);
         const item = items.find((x) => x.id === id);
         if (!entry || !item) return;
@@ -530,7 +530,7 @@ async function showRemoteMenu(ctx: ExtensionCommandContext, pi: ExtensionAPI) {
       noMatch: (t: string) => theme.fg("warning", t),
     });
 
-    selectList.onSelect = (item) => done(item.value as MenuAction);
+    selectList.onSelect = (item: SelectItem) => done(item.value as MenuAction);
     selectList.onCancel = () => done("cancel");
 
     container.addChild(selectList);
@@ -757,7 +757,7 @@ async function browseRemotePackages(
       noMatch: (t: string) => theme.fg("warning", t),
     });
 
-    selectList.onSelect = (item) => {
+    selectList.onSelect = (item: SelectItem) => {
       if (item.value === "__prev") {
         done({ type: "prev" });
       } else if (item.value === "__next") {
@@ -900,6 +900,29 @@ async function promptInstall(ctx: ExtensionCommandContext, pi: ExtensionAPI) {
 }
 
 async function installPackage(source: string, ctx: ExtensionCommandContext, pi: ExtensionAPI) {
+  // Check if it's a GitHub URL to a .ts file - handle as direct download
+  const githubTsMatch = source.match(
+    /^https:\/\/github\.com\/([^\/]+)\/([^\/]+)\/blob\/([^\/]+)\/(.+\.ts)$/
+  );
+  if (githubTsMatch) {
+    const [, owner, repo, branch, filePath] = githubTsMatch;
+    if (!filePath) {
+      ctx.ui.notify("Invalid GitHub URL format", "error");
+      return;
+    }
+    const rawUrl = `https://raw.githubusercontent.com/${owner}/${repo}/${branch}/${filePath}`;
+    const fileName = filePath.split("/").pop() || `${owner}-${repo}.ts`;
+    await installFromUrl(rawUrl, fileName, ctx, pi);
+    return;
+  }
+
+  // Check if it's already a raw URL to a .ts file
+  if (source.match(/^https:\/\/raw\.githubusercontent\.com\/.*\.ts$/)) {
+    const fileName = source.split("/").pop() || "extension.ts";
+    await installFromUrl(source, fileName, ctx, pi);
+    return;
+  }
+
   const normalized = normalizePackageSource(source);
 
   // Confirm installation (interactive only)
@@ -944,6 +967,82 @@ async function installPackage(source: string, ctx: ExtensionCommandContext, pi: 
   } else {
     console.log(`Installed ${normalized}`);
     console.log("Run /reload to apply changes.");
+  }
+}
+
+async function installFromUrl(
+  url: string,
+  fileName: string,
+  ctx: ExtensionCommandContext,
+  _pi: ExtensionAPI
+) {
+  // Get global extensions directory
+  const globalExtDir = join(homedir(), ".pi", "agent", "extensions");
+
+  // Confirm installation
+  if (ctx.hasUI) {
+    const confirmed = await ctx.ui.confirm(
+      "Install from URL",
+      `Download ${fileName} from GitHub?`,
+      { timeout: 30000 }
+    );
+    if (!confirmed) {
+      ctx.ui.notify("Installation cancelled.", "info");
+      return;
+    }
+  }
+
+  try {
+    // Ensure directory exists
+    await mkdir(globalExtDir, { recursive: true });
+
+    if (ctx.hasUI) {
+      ctx.ui.notify(`Downloading ${fileName}...`, "info");
+    } else {
+      console.log(`Downloading ${fileName}...`);
+    }
+
+    // Download the file
+    const response = await fetch(url);
+    if (!response.ok) {
+      const errorMsg = `Download failed: ${response.status} ${response.statusText}`;
+      if (ctx.hasUI) {
+        ctx.ui.notify(errorMsg, "error");
+      } else {
+        console.error(errorMsg);
+      }
+      return;
+    }
+
+    const content = await response.text();
+    const destPath = join(globalExtDir, fileName);
+
+    // Write file
+    await writeFile(destPath, content, "utf8");
+
+    const successMsg = `Installed ${fileName} to:\n${destPath}`;
+    if (ctx.hasUI) {
+      ctx.ui.notify(successMsg, "info");
+
+      const shouldReload = await ctx.ui.confirm(
+        "Reload Required",
+        "Extension installed. Reload pi now?"
+      );
+
+      if (shouldReload) {
+        ctx.ui.setEditorText("/reload");
+      }
+    } else {
+      console.log(successMsg);
+      console.log("Run /reload to apply changes.");
+    }
+  } catch (error) {
+    const errorMsg = `Installation failed: ${error instanceof Error ? error.message : String(error)}`;
+    if (ctx.hasUI) {
+      ctx.ui.notify(errorMsg, "error");
+    } else {
+      console.error(errorMsg);
+    }
   }
 }
 

@@ -131,6 +131,10 @@ Browse and install from npm:
 # Git repositories
 /extensions install git:https://github.com/user/repo.git
 
+# GitHub single-file extensions (.ts files)
+# Automatically converts blob URLs to raw and downloads directly
+/extensions install https://github.com/user/repo/blob/main/extension.ts
+
 # Local paths
 /extensions install /path/to/extension.ts
 /extensions install ./my-extension/

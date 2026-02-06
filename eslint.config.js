@@ -24,7 +24,7 @@ export default [
       ...tseslint.configs.recommended.rules,
       ...(tseslint.configs["recommended-type-checked"]?.rules ?? {}),
       ...(tseslint.configs.stylistic?.rules ?? {}),
-      "@typescript-eslint/no-explicit-any": "off",
+      "@typescript-eslint/no-explicit-any": "error",
       "@typescript-eslint/consistent-type-imports": [
         "error",
         { prefer: "type-imports", fixStyle: "inline-type-imports" },
