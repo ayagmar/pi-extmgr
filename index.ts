@@ -70,14 +70,6 @@ const DISABLED_SUFFIX = ".disabled";
 const PAGE_SIZE = 20;
 
 export default function extensionsManager(pi: ExtensionAPI) {
-  // Register keyboard shortcut
-  pi.registerShortcut("ctrl+shift+e", {
-    description: "Open Extensions Manager",
-    handler: (ctx) => {
-      ctx.ui.setEditorText("/extensions ");
-    },
-  });
-
   pi.registerCommand("extensions", {
     description: "Manage local extensions and browse/install community packages",
     getArgumentCompletions: (prefix: string): AutocompleteItem[] | null => {
@@ -398,6 +390,7 @@ async function showInteractiveOnce(
 
   if (shouldReload) {
     ctx.ui.setEditorText("/reload");
+    return true; // Exit the UI so user can see the reload command
   }
 
   return false; // Return to main menu
@@ -644,45 +637,15 @@ async function browseRemotePackages(
   if (cacheValid && searchCache && offset > 0) {
     allPackages = searchCache.results;
   } else {
-    // Show loading state with abort support
-    const controller = new AbortController();
+    // Show searching notification
+    ctx.ui.notify(`Searching npm for: ${truncate(query, 40)}...`, "info");
 
-    // Note: The loading UI automatically closes when this block ends
-    void ctx.ui.custom<void>((tui, theme, _kb, done) => {
-      const container = new Container();
-      container.addChild(new Spacer(2));
-      container.addChild(new Text(theme.fg("accent", theme.bold("Searching npm...")), 0, 1));
-      container.addChild(new Text(theme.fg("muted", `Query: ${truncate(query, 50)}`), 0, 0));
-      container.addChild(new Spacer(1));
-      container.addChild(new Text(theme.fg("dim", "Press Esc to cancel"), 0, 0));
-
-      return {
-        render(width: number) {
-          return container.render(width);
-        },
-        invalidate() {
-          container.invalidate();
-        },
-        handleInput(data: string) {
-          if (matchesKey(data, Key.escape)) {
-            controller.abort();
-            done();
-          }
-        },
-      };
-    });
-
-    // Perform search with abort signal
+    // Perform search
     const searchLimit = Math.min(PAGE_SIZE + 10, 50);
     const res = await pi.exec("npm", ["search", "--json", `--searchlimit=${searchLimit}`, query], {
-      signal: controller.signal,
       timeout: 20000,
       cwd: ctx.cwd,
     });
-
-    if (controller.signal.aborted) {
-      return; // User cancelled
-    }
 
     if (res.code !== 0) {
       if (ctx.hasUI) {
@@ -1176,6 +1139,9 @@ async function installPackageLocally(
     // Clean up extraction dir
     await rm(extractDir, { recursive: true, force: true });
 
+    // Clear search cache to ensure fresh data after installation
+    searchCache = null;
+
     // Success
     const successMsg = `Installed ${packageName}@${version} locally to:\n${destDir}/index.ts`;
     if (ctx.hasUI) {
@@ -1649,6 +1615,9 @@ async function discoverInRoot(
 
   for (const item of dirEntries) {
     const name = item.name;
+
+    // Skip hidden files and directories (e.g., .temp, .git, etc.)
+    if (name.startsWith(".")) continue;
 
     if (item.isFile()) {
       const entry = await parseTopLevelFile(root, label, scope, name);
