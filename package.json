@@ -1,0 +1,29 @@
+{
+  "name": "pi-extmgr",
+  "version": "1.0.0",
+  "description": "Enhanced UX for managing local Pi extensions and community packages",
+  "keywords": [
+    "pi-package",
+    "pi-extension",
+    "extensions",
+    "pi-extension-manager"
+  ],
+  "type": "module",
+  "main": "./extensions/index.ts",
+  "files": [
+    "extensions/",
+    "README.md"
+  ],
+  "pi": {
+    "extensions": [
+      "./extensions/index.ts"
+    ]
+  },
+  "peerDependencies": {
+    "@mariozechner/pi-coding-agent": "*",
+    "@mariozechner/pi-tui": "*",
+    "@sinclair/typebox": "*"
+  },
+  "author": "ayagmar",
+  "license": "MIT"
+}
