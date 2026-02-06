@@ -14,6 +14,13 @@
     "index.ts",
     "README.md"
   ],
+  "scripts": {
+    "lint": "eslint . --max-warnings=0",
+    "lint:fix": "eslint . --fix",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "check": "npm run typecheck && npm run lint",
+    "prepublishOnly": "npm run check"
+  },
   "pi": {
     "extensions": [
       "./index.ts"
@@ -23,6 +30,16 @@
     "@mariozechner/pi-coding-agent": "*",
     "@mariozechner/pi-tui": "*",
     "@sinclair/typebox": "*"
+  },
+  "devDependencies": {
+    "@mariozechner/pi-coding-agent": "^0.52.6",
+    "@mariozechner/pi-tui": "^0.52.6",
+    "@sinclair/typebox": "^0.34.41",
+    "@types/node": "^22.13.10",
+    "@typescript-eslint/eslint-plugin": "^8.42.0",
+    "@typescript-eslint/parser": "^8.42.0",
+    "eslint": "^9.38.0",
+    "typescript": "^5.9.3"
   },
   "author": "ayagmar",
   "license": "MIT",
