@@ -299,6 +299,16 @@ export default function myTheme(pi: ExtensionAPI) {
 
 The extension remains installed but won't load until re-enabled.
 
+### Removing a Package
+
+1. Type `/extensions` to open unified manager
+2. Navigate to the installed package with `↑↓`
+3. Press `A` for actions
+4. Select "Remove package"
+5. Confirm removal
+
+**Important**: Unlike install/update, removing a package requires a **full restart** of pi (not just `/reload`). The extension files are deleted, but the extension remains loaded in memory until you exit and restart pi.
+
 ### Updating All Packages
 
 1. Type `/extensions` to open unified manager
@@ -329,6 +339,15 @@ Check that the file has a `.ts` or `.js` extension and is in one of the discover
 - Check npm is installed and accessible
 - For git installs, ensure git is available
 - Verify the package has the `pi-package` keyword for browsing
+
+### Commands still work after removing package
+
+This is expected behavior. When you remove a package:
+
+1. The files are deleted from disk
+2. The extension remains loaded in pi's memory
+3. Commands continue to work until you **restart pi**\n
+   A full restart (Ctrl+C or `/quit`) is required to fully unload removed extensions. `/reload` is only sufficient for install/update operations.
 
 ### Back to manager closes everything
 
