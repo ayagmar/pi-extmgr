@@ -18,6 +18,7 @@ jobs:
       (github.event.workflow_run.head_branch == 'main' || github.event.workflow_run.head_branch == 'master') &&
       github.event.workflow_run.actor.login != 'github-actions[bot]'
     runs-on: ubuntu-latest
+    environment: release
     steps:
       - name: Checkout tested commit
         uses: actions/checkout@v4
