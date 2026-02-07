@@ -29,6 +29,7 @@
     "extensions": [
       "./index.ts"
     ],
+    "video": "https://github.com/ayagmar/pi-extmgr/releases/download/v0.0.2/Screencast_20260207_013142.mp4",
     "image": "https://i.imgur.com/TjAp7Hv.png"
   },
   "peerDependencies": {
