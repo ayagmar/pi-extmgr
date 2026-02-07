@@ -6,61 +6,40 @@ import type { InstalledPackage } from "../types/index.js";
 import { getInstalledPackages, clearSearchCache } from "./discovery.js";
 import { formatInstalledPackageLabel, formatBytes } from "../utils/format.js";
 import { logPackageUpdate, logPackageRemove } from "../utils/history.js";
+import { notify, error as notifyError, success } from "../utils/notify.js";
+import {
+  confirmAction,
+  confirmReload,
+  confirmRestart,
+  showProgress,
+  formatListOutput,
+} from "../utils/ui-helpers.js";
+import { requireUI } from "../utils/mode.js";
 
 export async function updatePackage(
   source: string,
   ctx: ExtensionCommandContext,
   pi: ExtensionAPI
 ): Promise<void> {
-  if (ctx.hasUI) {
-    ctx.ui.notify(`Updating ${source}...`, "info");
-  } else {
-    console.log(`Updating ${source}...`);
-  }
+  showProgress(ctx, "Updating", source);
 
   const res = await pi.exec("pi", ["update", source], { timeout: 120000, cwd: ctx.cwd });
 
   if (res.code !== 0) {
     const errorMsg = `Update failed: ${res.stderr || res.stdout || `exit ${res.code}`}`;
-    // Log failed update
     logPackageUpdate(pi, source, source, undefined, undefined, false, errorMsg);
-    if (ctx.hasUI) {
-      ctx.ui.notify(errorMsg, "error");
-    } else {
-      console.error(errorMsg);
-    }
+    notifyError(ctx, errorMsg);
     return;
   }
 
   const stdout = res.stdout || "";
   if (stdout.includes("already up to date") || stdout.includes("pinned")) {
-    const msg = `${source} is already up to date (or pinned).`;
-    if (ctx.hasUI) {
-      ctx.ui.notify(msg, "info");
-    } else {
-      console.log(msg);
-    }
-    // Log skipped update (not an error, just no change)
+    notify(ctx, `${source} is already up to date (or pinned).`, "info");
     logPackageUpdate(pi, source, source, undefined, undefined, true);
   } else {
-    // Log successful update
     logPackageUpdate(pi, source, source, undefined, undefined, true);
-
-    if (ctx.hasUI) {
-      ctx.ui.notify(`Updated ${source}`, "info");
-
-      const shouldReload = await ctx.ui.confirm(
-        "Reload Required",
-        "Package updated. Reload pi now?"
-      );
-
-      if (shouldReload) {
-        ctx.ui.setEditorText("/reload");
-      }
-    } else {
-      console.log(`Updated ${source}`);
-      console.log("Run /reload to apply changes.");
-    }
+    success(ctx, `Updated ${source}`);
+    await confirmReload(ctx, "Package updated.");
   }
 }
 
@@ -68,48 +47,21 @@ export async function updatePackages(
   ctx: ExtensionCommandContext,
   pi: ExtensionAPI
 ): Promise<void> {
-  if (ctx.hasUI) {
-    ctx.ui.notify("Updating all packages...", "info");
-  } else {
-    console.log("Updating all packages...");
-  }
+  showProgress(ctx, "Updating", "all packages");
 
   const res = await pi.exec("pi", ["update"], { timeout: 300000, cwd: ctx.cwd });
 
   if (res.code !== 0) {
-    const errorMsg = `Update failed: ${res.stderr || res.stdout || `exit ${res.code}`}`;
-    if (ctx.hasUI) {
-      ctx.ui.notify(errorMsg, "error");
-    } else {
-      console.error(errorMsg);
-    }
+    notifyError(ctx, `Update failed: ${res.stderr || res.stdout || `exit ${res.code}`}`);
     return;
   }
 
   const stdout = res.stdout || "";
   if (stdout.includes("already up to date") || stdout.trim() === "") {
-    const msg = "All packages are already up to date.";
-    if (ctx.hasUI) {
-      ctx.ui.notify(msg, "info");
-    } else {
-      console.log(msg);
-    }
+    notify(ctx, "All packages are already up to date.", "info");
   } else {
-    if (ctx.hasUI) {
-      ctx.ui.notify("Packages updated", "info");
-
-      const shouldReload = await ctx.ui.confirm(
-        "Reload Required",
-        "Packages updated. Reload pi now?"
-      );
-
-      if (shouldReload) {
-        ctx.ui.setEditorText("/reload");
-      }
-    } else {
-      console.log("Packages updated");
-      console.log("Run /reload to apply changes.");
-    }
+    success(ctx, "Packages updated");
+    await confirmReload(ctx, "Packages updated.");
   }
 }
 
@@ -118,76 +70,38 @@ export async function removePackage(
   ctx: ExtensionCommandContext,
   pi: ExtensionAPI
 ): Promise<void> {
-  // Confirm removal (interactive only)
-  if (ctx.hasUI) {
-    const confirmed = await ctx.ui.confirm("Remove Package", `Remove ${source}?`, {
-      timeout: 10000,
-    });
-
-    if (!confirmed) {
-      ctx.ui.notify("Removal cancelled.", "info");
-      return;
-    }
-
-    ctx.ui.notify(`Removing ${source}...`, "info");
-  } else {
-    console.log(`Removing ${source}...`);
+  const confirmed = await confirmAction(ctx, "Remove Package", `Remove ${source}?`, 10000);
+  if (!confirmed) {
+    notify(ctx, "Removal cancelled.", "info");
+    return;
   }
+
+  showProgress(ctx, "Removing", source);
 
   const res = await pi.exec("pi", ["remove", source], { timeout: 60000, cwd: ctx.cwd });
 
   if (res.code !== 0) {
     const errorMsg = `Remove failed: ${res.stderr || res.stdout || `exit ${res.code}`}`;
-    // Log failed removal
     logPackageRemove(pi, source, source, false, errorMsg);
-    if (ctx.hasUI) {
-      ctx.ui.notify(errorMsg, "error");
-    } else {
-      console.error(errorMsg);
-    }
+    notifyError(ctx, errorMsg);
     return;
   }
 
   clearSearchCache();
-
-  // Log successful removal
   logPackageRemove(pi, source, source, true);
 
-  if (ctx.hasUI) {
-    ctx.ui.notify(
-      `Removed ${source}\n\n⚠️  Extension will be unloaded after restarting pi.`,
-      "info"
-    );
-
-    const shouldExit = await ctx.ui.confirm(
-      "Restart Required",
-      "Package removed. Commands may still work until you restart pi. Exit now?"
-    );
-
-    if (shouldExit) {
-      ctx.shutdown();
-    }
-  } else {
-    console.log(`Removed ${source}`);
-    console.log("Note: Extension commands may still work until you restart pi.");
-  }
+  await confirmRestart(
+    ctx,
+    `Removed ${source}.\n\n⚠️  Extension will be unloaded after restarting pi.`
+  );
 }
 
 export async function promptRemove(ctx: ExtensionCommandContext, pi: ExtensionAPI): Promise<void> {
-  if (!ctx.hasUI) {
-    console.log("Interactive selection not available in non-interactive mode.");
-    console.log("Usage: /extensions remove <npm:package|git:url|path>");
-    return;
-  }
+  if (!requireUI(ctx, "Interactive package removal")) return;
 
   const packages = await getInstalledPackages(ctx, pi);
   if (packages.length === 0) {
-    const msg = "No packages installed.";
-    if (ctx.hasUI) {
-      ctx.ui.notify(msg, "info");
-    } else {
-      console.log(msg);
-    }
+    notify(ctx, "No packages installed.", "info");
     return;
   }
 
@@ -211,7 +125,7 @@ export async function showPackageActions(
   ctx: ExtensionCommandContext,
   pi: ExtensionAPI
 ): Promise<boolean> {
-  if (!ctx.hasUI) {
+  if (!requireUI(ctx, "Package actions")) {
     console.log(`Package: ${pkg.name}`);
     console.log(`Version: ${pkg.version || "unknown"}`);
     console.log(`Source: ${pkg.source}`);
@@ -227,7 +141,7 @@ export async function showPackageActions(
   ]);
 
   if (!choice || choice.includes("Back")) {
-    return false; // Stay in manager
+    return false;
   }
 
   if (choice.startsWith("Remove")) {
@@ -236,18 +150,17 @@ export async function showPackageActions(
     await updatePackage(pkg.source, ctx, pi);
   } else if (choice.includes("details")) {
     const sizeStr = pkg.size !== undefined ? `\nSize: ${formatBytes(pkg.size)}` : "";
-    ctx.ui.notify(
+    notify(
+      ctx,
       `Name: ${pkg.name}\nVersion: ${pkg.version || "unknown"}\nSource: ${pkg.source}\nScope: ${pkg.scope}${sizeStr}`,
       "info"
     );
-    // Show actions again
     return showPackageActions(pkg, ctx, pi);
   }
 
-  return false; // Stay in manager
+  return false;
 }
 
-// Legacy list view for non-interactive mode and backward compatibility
 export async function showInstalledPackagesList(
   ctx: ExtensionCommandContext,
   pi: ExtensionAPI
@@ -255,23 +168,13 @@ export async function showInstalledPackagesList(
   const packages = await getInstalledPackages(ctx, pi);
 
   if (packages.length === 0) {
-    const msg = "No packages installed.";
-    if (ctx.hasUI) {
-      ctx.ui.notify(msg, "info");
-    } else {
-      console.log(msg);
-    }
+    notify(ctx, "No packages installed.", "info");
     return;
   }
 
-  // Non-interactive mode: just list packages
   const lines = packages.map((p: InstalledPackage, index: number) =>
     formatInstalledPackageLabel(p, index)
   );
 
-  if (ctx.hasUI) {
-    ctx.ui.notify(lines.join("\n"), "info");
-  } else {
-    console.log(lines.join("\n"));
-  }
+  formatListOutput(ctx, "Installed packages", lines);
 }

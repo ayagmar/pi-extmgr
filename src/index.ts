@@ -3,7 +3,11 @@
  *
  * Entry point - exports the main extension function
  */
-import type { ExtensionAPI, ExtensionCommandContext } from "@mariozechner/pi-coding-agent";
+import type {
+  ExtensionAPI,
+  ExtensionCommandContext,
+  ExtensionContext,
+} from "@mariozechner/pi-coding-agent";
 import type { AutocompleteItem } from "@mariozechner/pi-tui";
 import { isPackageSource } from "./utils/format.js";
 import { showInteractive, showListOnly, showInstalledPackagesLegacy } from "./ui/unified.js";
@@ -14,6 +18,16 @@ import { removePackage, promptRemove, showInstalledPackagesList } from "./packag
 import { getInstalledPackages } from "./packages/discovery.js";
 import { getRecentChanges, formatChangeEntry, getChangeStats } from "./utils/history.js";
 import { clearCache } from "./utils/cache.js";
+import { notify } from "./utils/notify.js";
+import { formatListOutput } from "./utils/ui-helpers.js";
+import { parseDuration } from "./utils/settings.js";
+import {
+  startAutoUpdateTimer,
+  stopAutoUpdateTimer,
+  enableAutoUpdate,
+  disableAutoUpdate,
+  getAutoUpdateStatus,
+} from "./utils/auto-update.js";
 
 export default function extensionsManager(pi: ExtensionAPI) {
   pi.registerCommand("extensions", {
@@ -32,6 +46,7 @@ export default function extensionsManager(pi: ExtensionAPI) {
         { value: "history", description: "View extension change history" },
         { value: "stats", description: "View extension manager statistics" },
         { value: "clear-cache", description: "Clear metadata cache" },
+        { value: "auto-update", description: "Configure auto-update schedule" },
       ];
 
       const safePrefix = (prefix ?? "").toLowerCase();
@@ -87,6 +102,9 @@ export default function extensionsManager(pi: ExtensionAPI) {
             await promptRemove(ctx, pi);
           }
           break;
+        case "auto-update":
+          handleAutoUpdateCommand(rest.join(" "), ctx);
+          break;
         case "history":
           showHistory(ctx, pi);
           break;
@@ -101,7 +119,8 @@ export default function extensionsManager(pi: ExtensionAPI) {
           if (subcommand && isPackageSource(subcommand)) {
             await installPackage(input, ctx, pi);
           } else {
-            ctx.ui.notify(
+            notify(
+              ctx,
               `Unknown command: ${subcommand ?? "(empty)"}. Try: local, remote, installed, search, install, remove`,
               "warning"
             );
@@ -110,28 +129,104 @@ export default function extensionsManager(pi: ExtensionAPI) {
     },
   });
 
-  // Status bar integration - show installed package count
+  // Status bar update function
+  async function updateStatusBar(ctx: ExtensionCommandContext | ExtensionContext): Promise<void> {
+    if (!ctx.hasUI) return;
+
+    try {
+      const packages = await getInstalledPackages(ctx, pi);
+      const statusParts: string[] = [];
+
+      if (packages.length > 0) {
+        statusParts.push(`${packages.length} pkg${packages.length === 1 ? "" : "s"}`);
+      }
+
+      const autoUpdateStatus = getAutoUpdateStatus(ctx);
+      if (autoUpdateStatus) {
+        statusParts.push(autoUpdateStatus);
+      }
+
+      if (statusParts.length > 0) {
+        ctx.ui.setStatus("extmgr", ctx.ui.theme.fg("dim", statusParts.join(" • ")));
+      } else {
+        ctx.ui.setStatus("extmgr", undefined);
+      }
+    } catch {
+      // Silently ignore status bar errors
+    }
+  }
+
+  // Status bar integration and auto-update startup
   pi.on("session_start", (_event, ctx) => {
     if (!ctx.hasUI) return;
 
+    // Start auto-update timer if configured
+    startAutoUpdateTimer(pi, ctx, (packages) => {
+      notify(
+        ctx,
+        `Updates available for ${packages.length} package(s): ${packages.join(", ")}`,
+        "info"
+      );
+    });
+
     // Defer status update to avoid interfering with extension loading lifecycle
-    // This prevents race conditions during reload where commands might not appear
     setImmediate(() => {
-      void (async () => {
-        try {
-          const packages = await getInstalledPackages(ctx, pi);
-          if (packages.length > 0) {
-            ctx.ui.setStatus(
-              "extmgr",
-              ctx.ui.theme.fg("dim", `${packages.length} pkg${packages.length === 1 ? "" : "s"}`)
-            );
-          }
-        } catch {
-          // Silently ignore status bar errors
-        }
-      })();
+      void updateStatusBar(ctx);
     });
   });
+
+  // Clean up timer on shutdown
+  pi.on("session_shutdown", () => {
+    stopAutoUpdateTimer();
+  });
+
+  // Handle auto-update command
+  function handleAutoUpdateCommand(
+    args: string,
+    ctx: ExtensionCommandContext | ExtensionContext
+  ): void {
+    const duration = parseDuration(args);
+
+    if (!duration) {
+      // Show current status
+      const status = getAutoUpdateStatus(ctx);
+      notify(ctx, `Auto-update: ${status}`, "info");
+
+      // Show usage
+      const usage = [
+        "Usage: /extensions auto-update <duration>",
+        "",
+        "Duration examples:",
+        "  never   - Disable auto-updates",
+        "  1h      - Check every hour",
+        "  2h      - Check every 2 hours",
+        "  1d      - Check daily",
+        "  3d      - Check every 3 days",
+        "  1w      - Check weekly",
+        "  2w      - Check every 2 weeks",
+        "  1m      - Check monthly",
+        "  daily   - Check daily (alias)",
+        "  weekly  - Check weekly (alias)",
+      ];
+      notify(ctx, usage.join("\n"), "info");
+      return;
+    }
+
+    if (duration.ms === 0) {
+      disableAutoUpdate(pi, ctx);
+    } else {
+      enableAutoUpdate(pi, ctx, duration.ms, duration.display, (packages) => {
+        notify(
+          ctx,
+          `Updates available for ${packages.length} package(s): ${packages.join(", ")}`,
+          "info"
+        );
+      });
+    }
+
+    // Update status bar after enabling/disabling
+    void updateStatusBar(ctx);
+  }
 }
 
 async function handleNonInteractive(
@@ -152,7 +247,6 @@ async function handleNonInteractive(
       break;
     case "remote":
     case "packages":
-      // Non-interactive: just show help
       console.log("Extensions Manager (non-interactive mode)");
       console.log("Remote package browsing requires interactive mode.");
       console.log("");
@@ -180,6 +274,12 @@ async function handleNonInteractive(
         console.log("Usage: /extensions remove <npm:package|git:url|path>");
       }
       break;
+    case "auto-update":
+      console.log("Auto-update requires interactive mode.");
+      console.log("Usage: /extensions auto-update <duration>");
+      console.log("");
+      console.log("Duration examples: 1h, 2h, 1d, 3d, 1w, 2w, 1m, never");
+      break;
     default:
       // If it looks like a package source, try to install it
       if (subcommand && isPackageSource(subcommand)) {
@@ -202,23 +302,12 @@ function showHistory(ctx: ExtensionCommandContext, _pi: ExtensionAPI): void {
   const changes = getRecentChanges(ctx, 20);
 
   if (changes.length === 0) {
-    const msg = "No extension changes recorded in this session.";
-    if (ctx.hasUI) {
-      ctx.ui.notify(msg, "info");
-    } else {
-      console.log(msg);
-    }
+    notify(ctx, "No extension changes recorded in this session.", "info");
     return;
   }
 
   const lines = changes.map(formatChangeEntry);
-  const output = ["Extension Change History (recent 20):", "", ...lines].join("\n");
-
-  if (ctx.hasUI) {
-    ctx.ui.notify(output, "info");
-  } else {
-    console.log(output);
-  }
+  formatListOutput(ctx, "Extension Change History (recent 20)", lines);
 }
 
 async function showStats(ctx: ExtensionCommandContext, pi: ExtensionAPI): Promise<void> {
@@ -240,22 +329,10 @@ async function showStats(ctx: ExtensionCommandContext, pi: ExtensionAPI): Promis
     `  - Package removals: ${stats.byAction.package_remove}`,
   ];
 
-  const output = lines.join("\n");
-
-  if (ctx.hasUI) {
-    ctx.ui.notify(output, "info");
-  } else {
-    console.log(output);
-  }
+  formatListOutput(ctx, "Statistics", lines);
 }
 
 async function clearMetadataCache(ctx: ExtensionCommandContext, _pi: ExtensionAPI): Promise<void> {
   await clearCache();
-
-  const msg = "Metadata cache cleared.";
-  if (ctx.hasUI) {
-    ctx.ui.notify(msg, "info");
-  } else {
-    console.log(msg);
-  }
+  notify(ctx, "Metadata cache cleared.", "info");
 }

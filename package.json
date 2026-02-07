@@ -6,7 +6,11 @@
     "pi-package",
     "pi-extension",
     "extensions",
-    "pi-extension-manager"
+    "pi-extension-manager",
+    "pi-extmgr",
+    "pi-extension-management",
+    "ai",
+    "agent"
   ],
   "type": "module",
   "main": "./src/index.ts",
