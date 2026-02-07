@@ -1,4 +1,7 @@
-#!/bin/sh
-. "$(dirname "$0")/_/husky.sh"
+#!/usr/bin/env sh
+
+# fnm: set up the correct Node/pnpm environment
+export PATH="$HOME/.fnm:$PATH"
+eval "$(fnm env --shell bash)"
 
 pnpm run check
