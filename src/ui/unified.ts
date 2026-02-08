@@ -17,11 +17,16 @@ import {
 import type { UnifiedItem, State, UnifiedAction, InstalledPackage } from "../types/index.js";
 import { discoverExtensions, setExtensionState } from "../extensions/discovery.js";
 import { getInstalledPackages } from "../packages/discovery.js";
-import { showPackageActions } from "../packages/management.js";
+import {
+  showPackageActions,
+  updatePackage,
+  removePackage,
+  updatePackages,
+} from "../packages/management.js";
 import { showRemote } from "./remote.js";
 import { showHelp } from "./help.js";
 import { discoverExtensions as discoverExt } from "../extensions/discovery.js";
-import { formatEntry as formatExtEntry, dynamicTruncate } from "../utils/format.js";
+import { formatEntry as formatExtEntry, dynamicTruncate, formatBytes } from "../utils/format.js";
 import {
   getStatusIcon,
   getPackageIcon,
@@ -30,6 +35,7 @@ import {
   formatSize,
 } from "./theme.js";
 import { logExtensionToggle } from "../utils/history.js";
+import { getKnownUpdates, promptAutoUpdateWizard } from "../utils/auto-update.js";
 
 export async function showInteractive(
   ctx: ExtensionCommandContext,
@@ -53,7 +59,8 @@ async function showInteractiveOnce(
   ]);
 
   // Build unified items list
-  const items = buildUnifiedItems(localEntries, installedPackages);
+  const knownUpdates = getKnownUpdates(ctx);
+  const items = buildUnifiedItems(localEntries, installedPackages, knownUpdates);
 
   // If nothing found, show quick actions
   if (items.length === 0) {
@@ -85,11 +92,14 @@ async function showInteractiveOnce(
       new Text(
         theme.fg(
           "muted",
-          `${items.length} item${items.length === 1 ? "" : "s"} • Space/Enter to toggle local extensions, A for actions on packages`
+          `${items.length} item${items.length === 1 ? "" : "s"} • Space/Enter toggle locals • Enter/A actions • u update pkg • x remove pkg`
         ),
         2,
         0
       )
+    );
+    container.addChild(
+      new Text(theme.fg("dim", "Quick: i Install | f Search | U Update all | t Auto-update"), 2, 0)
     );
     container.addChild(new Spacer(1));
 
@@ -134,19 +144,66 @@ async function showInteractiveOnce(
         container.invalidate();
       },
       handleInput(data: string) {
+        const getSelectedId = (): string | undefined => {
+          const selIdx = (settingsList as unknown as { selectedIndex: number }).selectedIndex ?? 0;
+          return settingsItems[selIdx]?.id ?? settingsItems[0]?.id;
+        };
+
+        const selectedId = getSelectedId();
+        const selectedItem = selectedId ? byId.get(selectedId) : undefined;
+
         if (matchesKey(data, Key.ctrl("s")) || data === "s" || data === "S") {
           done({ type: "apply" });
           return;
         }
+
+        // Enter on a package opens its action menu (fewer clicks)
+        if ((data === "\r" || data === "\n") && selectedId && selectedItem?.type === "package") {
+          done({ type: "action", itemId: selectedId, action: "menu" });
+          return;
+        }
+
         if (data === "a" || data === "A") {
-          // Get currently selected item and show actions
-          const selIdx = (settingsList as unknown as { selectedIndex: number }).selectedIndex ?? 0;
-          const selectedId = settingsItems[selIdx]?.id ?? settingsItems[0]?.id;
           if (selectedId) {
-            done({ type: "action", itemId: selectedId });
+            done({ type: "action", itemId: selectedId, action: "menu" });
           }
           return;
         }
+
+        // Quick actions (global)
+        if (data === "i") {
+          done({ type: "quick", action: "install" });
+          return;
+        }
+        if (data === "f") {
+          done({ type: "quick", action: "search" });
+          return;
+        }
+        if (data === "U") {
+          done({ type: "quick", action: "update-all" });
+          return;
+        }
+        if (data === "t" || data === "T") {
+          done({ type: "quick", action: "auto-update" });
+          return;
+        }
+
+        // Fast package actions
+        if (selectedId && selectedItem?.type === "package") {
+          if (data === "u") {
+            done({ type: "action", itemId: selectedId, action: "update" });
+            return;
+          }
+          if (data === "x" || data === "X") {
+            done({ type: "action", itemId: selectedId, action: "remove" });
+            return;
+          }
+          if (data === "v" || data === "V") {
+            done({ type: "action", itemId: selectedId, action: "details" });
+            return;
+          }
+        }
+
         if (data === "r" || data === "R") {
           done({ type: "remote" });
           return;
@@ -170,7 +227,8 @@ async function showInteractiveOnce(
 
 function buildUnifiedItems(
   localEntries: Awaited<ReturnType<typeof discoverExtensions>>,
-  installedPackages: InstalledPackage[]
+  installedPackages: InstalledPackage[],
+  knownUpdates: Set<string>
 ): UnifiedItem[] {
   const items: UnifiedItem[] = [];
 
@@ -207,6 +265,7 @@ function buildUnifiedItems(
       version: pkg.version,
       description: pkg.description,
       size: pkg.size,
+      updateAvailable: knownUpdates.has(pkg.name),
     });
   }
 
@@ -260,7 +319,13 @@ function buildFooter(
   footerParts.push("↑↓ Navigate");
   if (hasLocals) footerParts.push("Space/Enter Toggle");
   if (hasLocals) footerParts.push(hasChanges ? "S Save*" : "S Save");
-  if (hasPackages) footerParts.push("A Actions");
+  if (hasPackages) footerParts.push("Enter/A Actions");
+  if (hasPackages) footerParts.push("u Update");
+  if (hasPackages) footerParts.push("X Remove");
+  footerParts.push("i Install");
+  footerParts.push("f Search");
+  footerParts.push("U Update all");
+  footerParts.push("t Auto-update");
   footerParts.push("R Browse");
   footerParts.push("? Help");
   footerParts.push("Esc Cancel");
@@ -286,6 +351,7 @@ function formatUnifiedItemLabel(
     const scopeIcon = getScopeIcon(theme, item.scope as "global" | "project");
     const name = theme.bold(item.displayName);
     const version = item.version ? theme.fg("dim", `@${item.version}`) : "";
+    const updateBadge = item.updateAvailable ? ` ${theme.fg("warning", "[update]")}` : "";
 
     // Build info parts
     const infoParts: string[] = [];
@@ -308,7 +374,7 @@ function formatUnifiedItemLabel(
     }
 
     const summary = theme.fg("dim", infoParts.join(" • "));
-    return `${pkgIcon} [${scopeIcon}] ${name}${version} - ${summary}`;
+    return `${pkgIcon} [${scopeIcon}] ${name}${version}${updateBadge} - ${summary}`;
   }
 }
 
@@ -342,6 +408,28 @@ async function handleUnifiedAction(
     return false;
   }
 
+  if (result.type === "quick") {
+    switch (result.action) {
+      case "install":
+        await showRemote("install", ctx, pi);
+        return false;
+      case "search":
+        await showRemote("search", ctx, pi);
+        return false;
+      case "update-all":
+        await updatePackages(ctx, pi);
+        return false;
+      case "auto-update":
+        await promptAutoUpdateWizard(pi, ctx, (packages) => {
+          ctx.ui.notify(
+            `Updates available for ${packages.length} package(s): ${packages.join(", ")}`,
+            "info"
+          );
+        });
+        return false;
+    }
+  }
+
   if (result.type === "action") {
     const item = byId.get(result.itemId);
     if (item?.type === "package") {
@@ -350,9 +438,31 @@ async function handleUnifiedAction(
         name: item.displayName,
         ...(item.version ? { version: item.version } : {}),
         scope: item.scope as "global" | "project",
+        ...(item.description ? { description: item.description } : {}),
+        ...(item.size !== undefined ? { size: item.size } : {}),
       };
-      const exitManager = await showPackageActions(pkg, ctx, pi);
-      return exitManager;
+
+      switch (result.action) {
+        case "update":
+          await updatePackage(pkg.source, ctx, pi);
+          return false;
+        case "remove":
+          await removePackage(pkg.source, ctx, pi);
+          return false;
+        case "details": {
+          const sizeStr = pkg.size !== undefined ? `\nSize: ${formatBytes(pkg.size)}` : "";
+          ctx.ui.notify(
+            `Name: ${pkg.name}\nVersion: ${pkg.version || "unknown"}\nSource: ${pkg.source}\nScope: ${pkg.scope}${sizeStr}${pkg.description ? `\nDescription: ${pkg.description}` : ""}`,
+            "info"
+          );
+          return false;
+        }
+        case "menu":
+        default: {
+          const exitManager = await showPackageActions(pkg, ctx, pi);
+          return exitManager;
+        }
+      }
     }
     return false;
   }

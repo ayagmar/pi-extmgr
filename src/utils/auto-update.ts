@@ -14,6 +14,7 @@ import {
   saveAutoUpdateConfig,
   getScheduleInterval,
   calculateNextCheck,
+  parseDuration,
   type AutoUpdateConfig,
 } from "./settings.js";
 
@@ -98,6 +99,7 @@ export async function checkForUpdates(
     ...config,
     lastCheck: Date.now(),
     nextCheck: calculateNextCheck(config.intervalMs),
+    updatesAvailable,
   });
 
   if (updatesAvailable.length > 0 && onUpdateAvailable) {
@@ -153,6 +155,76 @@ export function getAutoUpdateStatus(ctx: ExtensionCommandContext | ExtensionCont
 }
 
 /**
+ * Return package names currently known to have updates available
+ * (from the latest background check).
+ */
+export function getKnownUpdates(ctx: ExtensionCommandContext | ExtensionContext): Set<string> {
+  const config = getAutoUpdateConfig(ctx);
+  return new Set(config.updatesAvailable ?? []);
+}
+
+/**
+ * Interactive wizard to configure auto-update frequency.
+ */
+export async function promptAutoUpdateWizard(
+  pi: ExtensionAPI,
+  ctx: ExtensionCommandContext | ExtensionContext,
+  onUpdateAvailable?: (packages: string[]) => void
+): Promise<void> {
+  if (!ctx.hasUI) {
+    notify(ctx, "Auto-update wizard requires interactive mode.", "warning");
+    return;
+  }
+
+  const current = getAutoUpdateConfig(ctx);
+  const choice = await ctx.ui.select(`Auto-update (${current.displayText})`, [
+    "Off",
+    "Every hour",
+    "Daily",
+    "Weekly",
+    "Custom...",
+    "Cancel",
+  ]);
+
+  if (!choice || choice === "Cancel") return;
+
+  if (choice === "Off") {
+    disableAutoUpdate(pi, ctx);
+    return;
+  }
+
+  if (choice === "Every hour") {
+    enableAutoUpdate(pi, ctx, 60 * 60 * 1000, "1 hour", onUpdateAvailable);
+    return;
+  }
+
+  if (choice === "Daily") {
+    enableAutoUpdate(pi, ctx, 24 * 60 * 60 * 1000, "daily", onUpdateAvailable);
+    return;
+  }
+
+  if (choice === "Weekly") {
+    enableAutoUpdate(pi, ctx, 7 * 24 * 60 * 60 * 1000, "weekly", onUpdateAvailable);
+    return;
+  }
+
+  const input = await ctx.ui.input("Auto-update interval", current.displayText || "1d");
+  if (!input?.trim()) return;
+
+  const parsed = parseDuration(input.trim());
+  if (!parsed) {
+    notify(ctx, "Invalid duration. Examples: 1h, 1d, 1w, 1m, never", "warning");
+    return;
+  }
+
+  if (parsed.ms === 0) {
+    disableAutoUpdate(pi, ctx);
+  } else {
+    enableAutoUpdate(pi, ctx, parsed.ms, parsed.display, onUpdateAvailable);
+  }
+}
+
+/**
  * Enable auto-update with specified interval
  */
 export function enableAutoUpdate(
@@ -168,6 +240,7 @@ export function enableAutoUpdate(
     displayText,
     lastCheck: Date.now(),
     nextCheck: calculateNextCheck(intervalMs),
+    updatesAvailable: [],
   };
 
   saveAutoUpdateConfig(pi, config);
@@ -189,6 +262,7 @@ export function disableAutoUpdate(
     intervalMs: 0,
     enabled: false,
     displayText: "off",
+    updatesAvailable: [],
   });
 
   notify(ctx, "Auto-update disabled", "info");

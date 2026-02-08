@@ -38,7 +38,13 @@ Open the manager:
 | `↑↓`          | Navigate                                         |
 | `Space/Enter` | Toggle local extension on/off                    |
 | `S`           | Save changes                                     |
-| `A`           | Actions on selected package (update/remove/view) |
+| `Enter` / `A` | Actions on selected package (update/remove/view) |
+| `u`           | Update selected package directly                 |
+| `X`           | Remove selected package directly                 |
+| `i`           | Quick install by source                          |
+| `f`           | Quick search                                     |
+| `U`           | Update all packages                              |
+| `t`           | Auto-update wizard                               |
 | `R`           | Browse remote packages                           |
 | `?` / `H`     | Help                                             |
 | `Esc`         | Exit                                             |
@@ -50,6 +56,8 @@ Open the manager:
 /extensions search <query>       # Search npm
 /extensions install <source>     # Install package
 /extensions remove [source]      # Remove package
+/extensions update [source]      # Update one package (or all when omitted)
+/extensions auto-update [every]  # No arg opens wizard; accepts 1d, 1w, never, etc.
 /extensions history              # View change history
 /extensions stats                # View statistics
 /extensions clear-cache          # Clear metadata cache
@@ -72,6 +80,7 @@ Open the manager:
 - **Two install modes**:
   - **Managed** (npm): Auto-updates with `pi update`, stored in pi's package cache
   - **Local** (standalone): Copies to `~/.pi/agent/extensions/{package}/`, supports multi-file extensions
+- **Auto-update schedule is persistent**: `/extensions auto-update 1d` stays active across future Pi sessions.
 - **Remove requires restart**: After removing a package, you need to fully restart Pi (not just `/reload`) for it to be completely unloaded.
 
 ## Keyboard shortcut

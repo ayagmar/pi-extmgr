@@ -174,7 +174,7 @@ export async function browseRemotePackages(
       await showRemoteMenu(ctx, pi);
       return;
     case "package":
-      await showPackageDetails(result.name, ctx, pi);
+      await showPackageDetails(result.name, ctx, pi, query, offset);
       return;
   }
 }
@@ -182,7 +182,9 @@ export async function browseRemotePackages(
 async function showPackageDetails(
   packageName: string,
   ctx: ExtensionCommandContext,
-  pi: ExtensionAPI
+  pi: ExtensionAPI,
+  previousQuery: string,
+  previousOffset: number
 ): Promise<void> {
   if (!ctx.hasUI) {
     console.log(`Package: ${packageName}`);
@@ -230,9 +232,9 @@ async function showPackageDetails(
         ctx.ui.notify(`Package: ${packageName}\n${infoRes.stdout.slice(0, 500)}`, "info");
       }
     }
-    await showPackageDetails(packageName, ctx, pi);
+    await showPackageDetails(packageName, ctx, pi, previousQuery, previousOffset);
   } else if (choice.includes("Back")) {
-    await browseRemotePackages(ctx, "keywords:pi-package", pi);
+    await browseRemotePackages(ctx, previousQuery, pi, previousOffset);
   }
 }
 

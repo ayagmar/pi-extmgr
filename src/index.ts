@@ -14,19 +14,26 @@ import { showInteractive, showListOnly, showInstalledPackagesLegacy } from "./ui
 import { showRemote } from "./ui/remote.js";
 import { showHelp } from "./ui/help.js";
 import { installPackage } from "./packages/install.js";
-import { removePackage, promptRemove, showInstalledPackagesList } from "./packages/management.js";
+import {
+  removePackage,
+  promptRemove,
+  showInstalledPackagesList,
+  updatePackage,
+  updatePackages,
+} from "./packages/management.js";
 import { getInstalledPackages } from "./packages/discovery.js";
 import { getRecentChanges, formatChangeEntry, getChangeStats } from "./utils/history.js";
 import { clearCache } from "./utils/cache.js";
 import { notify } from "./utils/notify.js";
 import { formatListOutput } from "./utils/ui-helpers.js";
-import { parseDuration } from "./utils/settings.js";
+import { parseDuration, getAutoUpdateConfig } from "./utils/settings.js";
 import {
   startAutoUpdateTimer,
   stopAutoUpdateTimer,
   enableAutoUpdate,
   disableAutoUpdate,
   getAutoUpdateStatus,
+  promptAutoUpdateWizard,
 } from "./utils/auto-update.js";
 
 export default function extensionsManager(pi: ExtensionAPI) {
@@ -43,6 +50,7 @@ export default function extensionsManager(pi: ExtensionAPI) {
         { value: "install", description: "Install a package" },
         { value: "remove", description: "Remove an installed package" },
         { value: "uninstall", description: "Remove an installed package (alias)" },
+        { value: "update", description: "Update one package or all packages" },
         { value: "history", description: "View extension change history" },
         { value: "stats", description: "View extension manager statistics" },
         { value: "clear-cache", description: "Clear metadata cache" },
@@ -84,6 +92,8 @@ export default function extensionsManager(pi: ExtensionAPI) {
           rest.length > 0 ? removePackage(rest.join(" "), ctx, pi) : promptRemove(ctx, pi),
         uninstall: () =>
           rest.length > 0 ? removePackage(rest.join(" "), ctx, pi) : promptRemove(ctx, pi),
+        update: () =>
+          rest.length > 0 ? updatePackage(rest.join(" "), ctx, pi) : updatePackages(ctx, pi),
         "auto-update": () => handleAutoUpdateCommand(rest.join(" "), ctx),
         history: () => showHistory(ctx, pi),
         stats: () => showStats(ctx, pi),
@@ -101,7 +111,7 @@ export default function extensionsManager(pi: ExtensionAPI) {
       } else {
         notify(
           ctx,
-          `Unknown command: ${subcommand ?? "(empty)"}. Try: local, remote, installed, search, install, remove`,
+          `Unknown command: ${subcommand ?? "(empty)"}. Try: local, remote, installed, search, install, remove, update`,
           "warning"
         );
       }
@@ -123,6 +133,11 @@ export default function extensionsManager(pi: ExtensionAPI) {
       const autoUpdateStatus = getAutoUpdateStatus(ctx);
       if (autoUpdateStatus) {
         statusParts.push(autoUpdateStatus);
+      }
+
+      const knownUpdates = getAutoUpdateConfig(ctx).updatesAvailable ?? [];
+      if (knownUpdates.length > 0) {
+        statusParts.push(`${knownUpdates.length} update${knownUpdates.length === 1 ? "" : "s"}`);
       }
 
       if (statusParts.length > 0) {
@@ -160,11 +175,26 @@ export default function extensionsManager(pi: ExtensionAPI) {
   });
 
   // Handle auto-update command
-  function handleAutoUpdateCommand(
+  async function handleAutoUpdateCommand(
     args: string,
     ctx: ExtensionCommandContext | ExtensionContext
-  ): void {
-    const duration = parseDuration(args);
+  ): Promise<void> {
+    const trimmed = args.trim();
+
+    // Interactive wizard when no arguments are provided
+    if (!trimmed && ctx.hasUI) {
+      await promptAutoUpdateWizard(pi, ctx, (packages) => {
+        notify(
+          ctx,
+          `Updates available for ${packages.length} package(s): ${packages.join(", ")}`,
+          "info"
+        );
+      });
+      void updateStatusBar(ctx);
+      return;
+    }
+
+    const duration = parseDuration(trimmed);
 
     if (!duration) {
       // Show current status
@@ -226,6 +256,7 @@ async function handleNonInteractive(
     console.log("  /extensions installed - List installed packages");
     console.log("  /extensions install <source> - Install a package");
     console.log("  /extensions remove <source>  - Remove a package");
+    console.log("  /extensions update [source]  - Update one package or all packages");
   };
 
   const nonInteractiveHandlers: Record<string, () => Promise<void> | void> = {
@@ -246,6 +277,8 @@ async function handleNonInteractive(
       rest.length > 0
         ? removePackage(rest.join(" "), ctx, pi)
         : console.log("Usage: /extensions remove <npm:package|git:url|path>"),
+    update: () =>
+      rest.length > 0 ? updatePackage(rest.join(" "), ctx, pi) : updatePackages(ctx, pi),
     "auto-update": () => {
       console.log("Auto-update requires interactive mode.");
       console.log("Usage: /extensions auto-update <duration>");

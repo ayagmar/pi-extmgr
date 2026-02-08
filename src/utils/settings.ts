@@ -1,12 +1,15 @@
 /**
  * Auto-update settings storage
- * Uses extension state via pi.appendEntry() for persistence
+ * Persists to disk so config survives across pi sessions.
  */
 import type {
   ExtensionAPI,
   ExtensionCommandContext,
   ExtensionContext,
 } from "@mariozechner/pi-coding-agent";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
 
 export interface AutoUpdateConfig {
   intervalMs: number;
@@ -14,6 +17,7 @@ export interface AutoUpdateConfig {
   nextCheck?: number;
   enabled: boolean;
   displayText: string; // Human-readable description
+  updatesAvailable?: string[];
 }
 
 const DEFAULT_CONFIG: AutoUpdateConfig = {
@@ -23,16 +27,43 @@ const DEFAULT_CONFIG: AutoUpdateConfig = {
 };
 
 const SETTINGS_KEY = "extmgr-auto-update";
+const SETTINGS_DIR = process.env.PI_EXTMGR_CACHE_DIR
+  ? process.env.PI_EXTMGR_CACHE_DIR
+  : join(homedir(), ".pi", "agent", ".extmgr-cache");
+const SETTINGS_FILE = join(SETTINGS_DIR, "auto-update.json");
+
+function readConfigFromDisk(): AutoUpdateConfig | undefined {
+  try {
+    const raw = readFileSync(SETTINGS_FILE, "utf8");
+    const parsed = JSON.parse(raw) as Partial<AutoUpdateConfig>;
+    return { ...DEFAULT_CONFIG, ...parsed };
+  } catch {
+    return undefined;
+  }
+}
+
+function writeConfigToDisk(config: AutoUpdateConfig): void {
+  try {
+    mkdirSync(SETTINGS_DIR, { recursive: true });
+    writeFileSync(SETTINGS_FILE, JSON.stringify(config, null, 2), "utf8");
+  } catch {
+    // Best effort; session state still works even if disk write fails
+  }
+}
 
 /**
- * Get auto-update config from session
+ * Get auto-update config.
+ * Priority:
+ *  1) latest value in current session entries
+ *  2) persisted value on disk
+ *  3) defaults
  */
 export function getAutoUpdateConfig(
   ctx: ExtensionCommandContext | ExtensionContext
 ): AutoUpdateConfig {
   const entries = ctx.sessionManager.getEntries();
 
-  // Find most recent config entry
+  // Find most recent config entry in current session
   for (let i = entries.length - 1; i >= 0; i--) {
     const entry = entries[i];
     if (entry?.type === "custom" && entry.customType === SETTINGS_KEY && entry.data) {
@@ -40,19 +71,26 @@ export function getAutoUpdateConfig(
     }
   }
 
+  const persisted = readConfigFromDisk();
+  if (persisted) {
+    return persisted;
+  }
+
   return { ...DEFAULT_CONFIG };
 }
 
 /**
- * Save auto-update config to session
+ * Save auto-update config to session + disk.
  */
 export function saveAutoUpdateConfig(pi: ExtensionAPI, config: Partial<AutoUpdateConfig>): void {
   const fullConfig: AutoUpdateConfig = {
     ...DEFAULT_CONFIG,
+    ...(readConfigFromDisk() ?? {}),
     ...config,
   };
 
   pi.appendEntry(SETTINGS_KEY, fullConfig);
+  writeConfigToDisk(fullConfig);
 }
 
 /**

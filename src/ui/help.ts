@@ -16,7 +16,13 @@ export function showHelp(ctx: ExtensionCommandContext): void {
     "  ↑↓           Navigate list",
     "  Space/Enter  Toggle local extension enabled/disabled",
     "  S            Save changes to local extensions",
-    "  A            Actions on selected package (update/remove)",
+    "  Enter/A      Open actions for selected package",
+    "  u            Update selected package",
+    "  X            Remove selected package",
+    "  i            Quick install by source",
+    "  f            Quick search",
+    "  U            Update all packages",
+    "  t            Auto-update wizard",
     "  R            Browse remote packages",
     "  ?/H          Show this help",
     "  Esc          Cancel",
@@ -35,6 +41,8 @@ export function showHelp(ctx: ExtensionCommandContext): void {
     "  /extensions search <q>   Search for packages",
     "  /extensions install <s>  Install package (npm:, git:, or path)",
     "  /extensions remove <s>   Remove installed package",
+    "  /extensions update [s]   Update package (or all packages)",
+    "  /extensions auto-update  Show or change update schedule",
   ];
 
   const output = lines.join("\n");

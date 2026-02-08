@@ -49,6 +49,7 @@ export interface UnifiedItem {
   version?: string | undefined;
   description?: string | undefined;
   size?: number | undefined; // Package size in bytes
+  updateAvailable?: boolean | undefined;
 }
 
 export interface SearchCache {
@@ -64,7 +65,8 @@ export type UnifiedAction =
   | { type: "remote" }
   | { type: "help" }
   | { type: "menu" }
-  | { type: "action"; itemId: string };
+  | { type: "quick"; action: "install" | "search" | "update-all" | "auto-update" }
+  | { type: "action"; itemId: string; action?: "menu" | "update" | "remove" | "details" };
 
 export type BrowseAction =
   | { type: "package"; name: string }
