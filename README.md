@@ -22,6 +22,7 @@ Then reload Pi with `/reload`.
 - **Package actions**: Update or remove installed packages with `A`
 - **Browse community**: Search and install from npm (`R` to browse)
 - **History tracking**: See what you've changed with `/extensions history`
+- **Smart reload prompt**: After applying extension state changes, extmgr can trigger reload directly when Pi exposes a reload API (falls back to `/reload` command text otherwise)
 
 ## Usage
 
@@ -81,6 +82,7 @@ Open the manager:
   - **Managed** (npm): Auto-updates with `pi update`, stored in pi's package cache
   - **Local** (standalone): Copies to `~/.pi/agent/extensions/{package}/`, supports multi-file extensions
 - **Auto-update schedule is persistent**: `/extensions auto-update 1d` stays active across future Pi sessions.
+- **Reload is API-aware**: When extmgr asks to reload, it will call Pi's reload API when available, otherwise it pre-fills `/reload` for you.
 - **Remove requires restart**: After removing a package, you need to fully restart Pi (not just `/reload`) for it to be completely unloaded.
 
 ## Keyboard shortcut

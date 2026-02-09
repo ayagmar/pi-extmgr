@@ -20,7 +20,12 @@ export async function confirmReload(
   const confirmed = await ctx.ui.confirm("Reload Required", `${reason}\nReload pi now?`);
 
   if (confirmed) {
-    ctx.ui.setEditorText("/reload");
+    const reload = (ctx as ExtensionCommandContext & { reload?: () => Promise<void> }).reload;
+    if (typeof reload === "function") {
+      await reload.call(ctx);
+    } else {
+      ctx.ui.setEditorText("/reload");
+    }
     return true;
   }
 

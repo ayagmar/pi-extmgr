@@ -500,7 +500,12 @@ async function handleUnifiedAction(
     );
 
     if (shouldReload) {
-      ctx.ui.setEditorText("/reload");
+      const reload = (ctx as ExtensionCommandContext & { reload?: () => Promise<void> }).reload;
+      if (typeof reload === "function") {
+        await reload.call(ctx);
+      } else {
+        ctx.ui.setEditorText("/reload");
+      }
       return true;
     }
   }
