@@ -13,19 +13,14 @@ export async function confirmReload(
   reason: string
 ): Promise<boolean> {
   if (!ctx.hasUI) {
-    notify(ctx, `Run /reload to apply changes. (${reason})`);
+    notify(ctx, `Reload pi to apply changes. (${reason})`);
     return false;
   }
 
   const confirmed = await ctx.ui.confirm("Reload Required", `${reason}\nReload pi now?`);
 
   if (confirmed) {
-    const reload = (ctx as ExtensionCommandContext & { reload?: () => Promise<void> }).reload;
-    if (typeof reload === "function") {
-      await reload.call(ctx);
-    } else {
-      ctx.ui.setEditorText("/reload");
-    }
+    await (ctx as ExtensionCommandContext & { reload: () => Promise<void> }).reload();
     return true;
   }
 
