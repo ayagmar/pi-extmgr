@@ -1,6 +1,6 @@
 # pi-extmgr
 
-<img width="2560" height="369" alt="image" src="https://i.imgur.com/7ifGp5x.png" />
+<img width="2560" height="369" alt="image" src="https://i.imgur.com/bVM7ZcO.png" />
 
 [![CI](https://github.com/ayagmar/pi-extmgr/actions/workflows/ci.yml/badge.svg)](https://github.com/ayagmar/pi-extmgr/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)

@@ -34,8 +34,8 @@
     "extensions": [
       "./src/index.ts"
     ],
-    "video": "https://github.com/ayagmar/pi-extmgr/releases/download/v0.0.2/Screencast_20260207_013142.mp4",
-    "image": "https://i.imgur.com/7ifGp5x.png"
+    "video": "https://github.com/ayagmar/pi-extmgr/releases/download/demo/demo.mp4",
+    "image": "https://i.imgur.com/bVM7ZcO.png"
   },
   "peerDependencies": {
     "@mariozechner/pi-coding-agent": "*",
