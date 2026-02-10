@@ -269,7 +269,7 @@ async function showInteractiveOnce(
   return await handleUnifiedAction(result, items, staged, byId, ctx, pi);
 }
 
-function buildUnifiedItems(
+export function buildUnifiedItems(
   localEntries: Awaited<ReturnType<typeof discoverExtensions>>,
   installedPackages: InstalledPackage[],
   packageExtensions: PackageExtensionEntry[],
@@ -277,6 +277,23 @@ function buildUnifiedItems(
 ): UnifiedItem[] {
   const items: UnifiedItem[] = [];
   const localPaths = new Set<string>();
+
+  const packageExtensionGroups = new Map<string, PackageExtensionEntry[]>();
+  for (const entry of packageExtensions) {
+    const key = `${entry.packageScope}:${entry.packageSource.toLowerCase()}`;
+    const group = packageExtensionGroups.get(key) ?? [];
+    group.push(entry);
+    packageExtensionGroups.set(key, group);
+  }
+
+  const visiblePackageExtensions = packageExtensions.filter((entry) => {
+    const key = `${entry.packageScope}:${entry.packageSource.toLowerCase()}`;
+    const group = packageExtensionGroups.get(key) ?? [];
+
+    // Avoid duplicate-looking rows for packages that expose a single enabled extension entrypoint.
+    // Keep extension rows when there are multiple entrypoints, or when an entry is disabled so it can be re-enabled.
+    return group.length > 1 || entry.state === "disabled";
+  });
 
   // Add local extensions
   for (const entry of localEntries) {
@@ -294,7 +311,7 @@ function buildUnifiedItems(
     });
   }
 
-  for (const entry of packageExtensions) {
+  for (const entry of visiblePackageExtensions) {
     items.push({
       type: "package-extension",
       id: entry.id,
