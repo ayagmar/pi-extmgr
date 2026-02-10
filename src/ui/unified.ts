@@ -30,9 +30,9 @@ import { getInstalledPackages } from "../packages/discovery.js";
 import { discoverPackageExtensions, setPackageExtensionState } from "../packages/extensions.js";
 import {
   showPackageActions,
-  updatePackage,
-  removePackage,
-  updatePackages,
+  updatePackageWithOutcome,
+  removePackageWithOutcome,
+  updatePackagesWithOutcome,
 } from "../packages/management.js";
 import { showRemote } from "./remote.js";
 import { showHelp } from "./help.js";
@@ -48,6 +48,7 @@ import { logExtensionToggle } from "../utils/history.js";
 import { getKnownUpdates, promptAutoUpdateWizard } from "../utils/auto-update.js";
 import { updateExtmgrStatus } from "../utils/status.js";
 import { parseChoiceByLabel } from "../utils/command.js";
+import { getPackageSourceKind } from "../utils/package-source.js";
 import { UI } from "../constants.js";
 
 // Type guard for SettingsList with selectedIndex
@@ -277,8 +278,6 @@ function buildUnifiedItems(
   const items: UnifiedItem[] = [];
   const localPaths = new Set<string>();
 
-  const packageSourcesWithExtensions = new Set<string>();
-
   // Add local extensions
   for (const entry of localEntries) {
     localPaths.add(entry.activePath?.toLowerCase() ?? "");
@@ -296,7 +295,6 @@ function buildUnifiedItems(
   }
 
   for (const entry of packageExtensions) {
-    packageSourcesWithExtensions.add(entry.packageSource.toLowerCase());
     items.push({
       type: "package-extension",
       id: entry.id,
@@ -313,8 +311,6 @@ function buildUnifiedItems(
   for (const pkg of installedPackages) {
     const pkgSourceLower = pkg.source.toLowerCase();
     const pkgResolvedLower = pkg.resolvedPath?.toLowerCase() ?? "";
-
-    if (packageSourcesWithExtensions.has(pkgSourceLower)) continue;
 
     let isDuplicate = false;
     for (const localPath of localPaths) {
@@ -355,7 +351,7 @@ function buildUnifiedItems(
   items.sort((a, b) => {
     const rank = (type: UnifiedItem["type"]): number => {
       if (type === "local") return 0;
-      if (type === "package-extension") return 1;
+      if (type === "package") return 1;
       return 2;
     };
 
@@ -427,7 +423,7 @@ function formatUnifiedItemLabel(
   theme: Theme,
   changed = false
 ): string {
-  if (item.type === "local" || item.type === "package-extension") {
+  if (item.type === "local") {
     const statusIcon = getStatusIcon(theme, state === "enabled" ? "enabled" : "disabled");
     const scopeIcon = getScopeIcon(theme, item.scope as "global" | "project");
     const changeMarker = getChangeMarker(theme, changed);
@@ -436,7 +432,26 @@ function formatUnifiedItemLabel(
     return `${statusIcon} [${scopeIcon}] ${name} - ${summary}${changeMarker}`;
   }
 
-  const pkgIcon = getPackageIcon(theme, item.source?.startsWith("npm:") ? "npm" : "git");
+  if (item.type === "package-extension") {
+    const statusIcon = getStatusIcon(theme, state === "enabled" ? "enabled" : "disabled");
+    const scopeIcon = getScopeIcon(theme, item.scope as "global" | "project");
+    const sourceKind = getPackageSourceKind(item.packageSource ?? "");
+    const pkgIcon = getPackageIcon(
+      theme,
+      sourceKind === "npm" || sourceKind === "git" || sourceKind === "local" ? sourceKind : "local"
+    );
+    const sourceLabel = sourceKind === "unknown" ? "package" : `${sourceKind} package`;
+    const changeMarker = getChangeMarker(theme, changed);
+    const name = theme.bold(item.displayName);
+    const summary = theme.fg("dim", `${item.summary} • ${sourceLabel}`);
+    return `${statusIcon} ${pkgIcon} [${scopeIcon}] ${name} - ${summary}${changeMarker}`;
+  }
+
+  const sourceKind = getPackageSourceKind(item.source ?? "");
+  const pkgIcon = getPackageIcon(
+    theme,
+    sourceKind === "npm" || sourceKind === "git" || sourceKind === "local" ? sourceKind : "local"
+  );
   const scopeIcon = getScopeIcon(theme, item.scope as "global" | "project");
   const name = theme.bold(item.displayName);
   const version = item.version ? theme.fg("dim", `@${item.version}`) : "";
@@ -449,9 +464,9 @@ function formatUnifiedItemLabel(
   // Reserved space: icon (2) + scope (3) + name (~25) + version (~10) + separator (3) = ~43 chars
   if (item.description) {
     infoParts.push(dynamicTruncate(item.description, 43));
-  } else if (item.source?.startsWith("npm:")) {
+  } else if (sourceKind === "npm") {
     infoParts.push("npm");
-  } else if (item.source?.startsWith("git:")) {
+  } else if (sourceKind === "git") {
     infoParts.push("git");
   } else {
     infoParts.push("local");
@@ -616,9 +631,10 @@ async function navigateWithPendingGuard(
     case "browse":
       await showRemote("", ctx, pi);
       return "done";
-    case "update-all":
-      await updatePackages(ctx, pi);
-      return "done";
+    case "update-all": {
+      const outcome = await updatePackagesWithOutcome(ctx, pi);
+      return outcome.reloaded || outcome.restartRequested ? "exit" : "done";
+    }
     case "auto-update":
       await promptAutoUpdateWizard(pi, ctx, (packages) => {
         ctx.ui.notify(
@@ -784,12 +800,14 @@ async function handleUnifiedAction(
     };
 
     switch (result.action) {
-      case "update":
-        await updatePackage(pkg.source, ctx, pi);
-        return false;
-      case "remove":
-        await removePackage(pkg.source, ctx, pi);
-        return false;
+      case "update": {
+        const outcome = await updatePackageWithOutcome(pkg.source, ctx, pi);
+        return outcome.reloaded || outcome.restartRequested;
+      }
+      case "remove": {
+        const outcome = await removePackageWithOutcome(pkg.source, ctx, pi);
+        return outcome.reloaded || outcome.restartRequested;
+      }
       case "details": {
         const sizeStr = pkg.size !== undefined ? `\nSize: ${formatBytes(pkg.size)}` : "";
         ctx.ui.notify(

@@ -1,6 +1,8 @@
 /**
  * Package discovery and listing
  */
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 import type {
   ExtensionAPI,
   ExtensionCommandContext,
@@ -10,7 +12,7 @@ import type { InstalledPackage, NpmPackage, SearchCache } from "../types/index.j
 import { CACHE_TTL, TIMEOUTS } from "../constants.js";
 import { readSummary } from "../utils/fs.js";
 import { parseNpmSource } from "../utils/format.js";
-import { splitGitRepoAndRef } from "../utils/package-source.js";
+import { getPackageSourceKind, splitGitRepoAndRef } from "../utils/package-source.js";
 
 let searchCache: SearchCache | null = null;
 
@@ -280,8 +282,9 @@ function parsePackageNameAndVersion(fullSource: string): {
     return parsedNpm;
   }
 
-  if (fullSource.startsWith("git:")) {
-    const gitSpec = fullSource.slice(4);
+  const sourceKind = getPackageSourceKind(fullSource);
+  if (sourceKind === "git") {
+    const gitSpec = fullSource.startsWith("git:") ? fullSource.slice(4) : fullSource;
     const { repo } = splitGitRepoAndRef(gitSpec);
     return { name: extractGitPackageName(repo) };
   }
@@ -296,6 +299,45 @@ function parsePackageNameAndVersion(fullSource: string): {
   const pathParts = fullSource.split(/[\\/]/);
   const fileName = pathParts[pathParts.length - 1];
   return { name: fileName || fullSource };
+}
+
+async function hydratePackageFromResolvedPath(pkg: InstalledPackage): Promise<void> {
+  if (!pkg.resolvedPath) return;
+
+  const manifestPath = /(?:^|[\\/])package\.json$/i.test(pkg.resolvedPath)
+    ? pkg.resolvedPath
+    : join(pkg.resolvedPath, "package.json");
+
+  try {
+    const raw = await readFile(manifestPath, "utf8");
+    const manifest = JSON.parse(raw) as {
+      name?: unknown;
+      version?: unknown;
+      description?: unknown;
+    };
+
+    if (!pkg.version && typeof manifest.version === "string" && manifest.version.trim()) {
+      pkg.version = manifest.version.trim();
+    }
+
+    if (
+      !pkg.description &&
+      typeof manifest.description === "string" &&
+      manifest.description.trim()
+    ) {
+      pkg.description = manifest.description.trim();
+    }
+
+    if (
+      (!pkg.name || pkg.name === pkg.source) &&
+      typeof manifest.name === "string" &&
+      manifest.name.trim()
+    ) {
+      pkg.name = manifest.name.trim();
+    }
+  } catch {
+    // ignore
+  }
 }
 
 /**
@@ -356,7 +398,8 @@ async function addPackageMetadata(
 
     await Promise.all(
       batch.map(async (pkg) => {
-        // Skip if already has description from cache
+        await hydratePackageFromResolvedPath(pkg);
+
         const needsDescription = !pkg.description;
         const needsSize = pkg.size === undefined && pkg.source.startsWith("npm:");
 
@@ -364,7 +407,6 @@ async function addPackageMetadata(
 
         try {
           if (pkg.source.endsWith(".ts") || pkg.source.endsWith(".js")) {
-            // For local files, read description from file
             if (needsDescription) {
               pkg.description = await readSummary(pkg.source);
             }
@@ -373,13 +415,11 @@ async function addPackageMetadata(
             const pkgName = parsed?.name;
 
             if (pkgName) {
-              // Get description
               if (needsDescription) {
                 const cached = await getCachedPackage(pkgName);
                 if (cached?.description) {
                   pkg.description = cached.description;
                 } else {
-                  // Fetch from npm and cache it
                   const res = await pi.exec("npm", ["view", pkgName, "description", "--json"], {
                     timeout: TIMEOUTS.npmView,
                     cwd: ctx.cwd,
@@ -389,7 +429,6 @@ async function addPackageMetadata(
                       const desc = JSON.parse(res.stdout) as string;
                       if (typeof desc === "string" && desc) {
                         pkg.description = desc;
-                        // Cache the description
                         await setCachedPackage(pkgName, {
                           name: pkgName,
                           description: desc,
@@ -402,7 +441,6 @@ async function addPackageMetadata(
                 }
               }
 
-              // Get size
               if (needsSize) {
                 pkg.size = await fetchPackageSize(pkgName, ctx, pi);
               }

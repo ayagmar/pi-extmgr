@@ -23,11 +23,27 @@ import { requireUI } from "../utils/mode.js";
 import { updateExtmgrStatus } from "../utils/status.js";
 import { TIMEOUTS, UI } from "../constants.js";
 
-export async function updatePackage(
+export interface PackageMutationOutcome {
+  reloaded: boolean;
+  restartRequested: boolean;
+}
+
+const NO_PACKAGE_MUTATION_OUTCOME: PackageMutationOutcome = {
+  reloaded: false,
+  restartRequested: false,
+};
+
+function packageMutationOutcome(
+  overrides: Partial<PackageMutationOutcome>
+): PackageMutationOutcome {
+  return { ...NO_PACKAGE_MUTATION_OUTCOME, ...overrides };
+}
+
+async function updatePackageInternal(
   source: string,
   ctx: ExtensionCommandContext,
   pi: ExtensionAPI
-): Promise<void> {
+): Promise<PackageMutationOutcome> {
   showProgress(ctx, "Updating", source);
 
   const res = await pi.exec("pi", ["update", source], {
@@ -40,28 +56,29 @@ export async function updatePackage(
     logPackageUpdate(pi, source, source, undefined, undefined, false, errorMsg);
     notifyError(ctx, errorMsg);
     void updateExtmgrStatus(ctx, pi);
-    return;
+    return NO_PACKAGE_MUTATION_OUTCOME;
   }
 
   const stdout = res.stdout || "";
   if (stdout.includes("already up to date") || stdout.includes("pinned")) {
     notify(ctx, `${source} is already up to date (or pinned).`, "info");
     logPackageUpdate(pi, source, source, undefined, undefined, true);
-  } else {
-    logPackageUpdate(pi, source, source, undefined, undefined, true);
-    success(ctx, `Updated ${source}`);
     void updateExtmgrStatus(ctx, pi);
-    await confirmReload(ctx, "Package updated.");
-    return;
+    return NO_PACKAGE_MUTATION_OUTCOME;
   }
 
+  logPackageUpdate(pi, source, source, undefined, undefined, true);
+  success(ctx, `Updated ${source}`);
   void updateExtmgrStatus(ctx, pi);
+
+  const reloaded = await confirmReload(ctx, "Package updated.");
+  return packageMutationOutcome({ reloaded });
 }
 
-export async function updatePackages(
+async function updatePackagesInternal(
   ctx: ExtensionCommandContext,
   pi: ExtensionAPI
-): Promise<void> {
+): Promise<PackageMutationOutcome> {
   showProgress(ctx, "Updating", "all packages");
 
   const res = await pi.exec("pi", ["update"], { timeout: 300000, cwd: ctx.cwd });
@@ -69,20 +86,51 @@ export async function updatePackages(
   if (res.code !== 0) {
     notifyError(ctx, `Update failed: ${res.stderr || res.stdout || `exit ${res.code}`}`);
     void updateExtmgrStatus(ctx, pi);
-    return;
+    return NO_PACKAGE_MUTATION_OUTCOME;
   }
 
   const stdout = res.stdout || "";
   if (stdout.includes("already up to date") || stdout.trim() === "") {
     notify(ctx, "All packages are already up to date.", "info");
-  } else {
-    success(ctx, "Packages updated");
     void updateExtmgrStatus(ctx, pi);
-    await confirmReload(ctx, "Packages updated.");
-    return;
+    return NO_PACKAGE_MUTATION_OUTCOME;
   }
 
+  success(ctx, "Packages updated");
   void updateExtmgrStatus(ctx, pi);
+
+  const reloaded = await confirmReload(ctx, "Packages updated.");
+  return packageMutationOutcome({ reloaded });
+}
+
+export async function updatePackage(
+  source: string,
+  ctx: ExtensionCommandContext,
+  pi: ExtensionAPI
+): Promise<void> {
+  await updatePackageInternal(source, ctx, pi);
+}
+
+export async function updatePackageWithOutcome(
+  source: string,
+  ctx: ExtensionCommandContext,
+  pi: ExtensionAPI
+): Promise<PackageMutationOutcome> {
+  return updatePackageInternal(source, ctx, pi);
+}
+
+export async function updatePackages(
+  ctx: ExtensionCommandContext,
+  pi: ExtensionAPI
+): Promise<void> {
+  await updatePackagesInternal(ctx, pi);
+}
+
+export async function updatePackagesWithOutcome(
+  ctx: ExtensionCommandContext,
+  pi: ExtensionAPI
+): Promise<PackageMutationOutcome> {
+  return updatePackagesInternal(ctx, pi);
 }
 
 function packageIdentity(source: string, fallbackName?: string): string {
@@ -234,11 +282,11 @@ function notifyRemovalSummary(
   }
 }
 
-export async function removePackage(
+async function removePackageInternal(
   source: string,
   ctx: ExtensionCommandContext,
   pi: ExtensionAPI
-): Promise<void> {
+): Promise<PackageMutationOutcome> {
   const installed = await getInstalledPackagesAllScopes(ctx, pi);
   const direct = installed.find((p) => p.source === source);
   const identity = packageIdentity(source, direct?.name);
@@ -251,13 +299,13 @@ export async function removePackage(
 
   if (scopeChoice === "cancel") {
     notify(ctx, "Removal cancelled.", "info");
-    return;
+    return NO_PACKAGE_MUTATION_OUTCOME;
   }
 
   const targets = buildRemovalTargets(matching, source, ctx.hasUI, scopeChoice);
   if (targets.length === 0) {
     notify(ctx, "Nothing to remove.", "info");
-    return;
+    return NO_PACKAGE_MUTATION_OUTCOME;
   }
 
   const confirmed = await confirmAction(
@@ -268,7 +316,7 @@ export async function removePackage(
   );
   if (!confirmed) {
     notify(ctx, "Removal cancelled.", "info");
-    return;
+    return NO_PACKAGE_MUTATION_OUTCOME;
   }
 
   const failures = await executeRemovalTargets(targets, ctx, pi);
@@ -281,10 +329,28 @@ export async function removePackage(
 
   void updateExtmgrStatus(ctx, pi);
 
-  await confirmRestart(
+  const restartRequested = await confirmRestart(
     ctx,
     `Removal complete.\n\n⚠️  Extensions/prompts/skills/themes from removed packages are fully unloaded after restarting pi.`
   );
+
+  return packageMutationOutcome({ restartRequested });
+}
+
+export async function removePackage(
+  source: string,
+  ctx: ExtensionCommandContext,
+  pi: ExtensionAPI
+): Promise<void> {
+  await removePackageInternal(source, ctx, pi);
+}
+
+export async function removePackageWithOutcome(
+  source: string,
+  ctx: ExtensionCommandContext,
+  pi: ExtensionAPI
+): Promise<PackageMutationOutcome> {
+  return removePackageInternal(source, ctx, pi);
 }
 
 export async function promptRemove(ctx: ExtensionCommandContext, pi: ExtensionAPI): Promise<void> {
@@ -344,12 +410,14 @@ export async function showPackageActions(
         : "back";
 
   switch (action) {
-    case "remove":
-      await removePackage(pkg.source, ctx, pi);
-      return false;
-    case "update":
-      await updatePackage(pkg.source, ctx, pi);
-      return false;
+    case "remove": {
+      const outcome = await removePackageWithOutcome(pkg.source, ctx, pi);
+      return outcome.reloaded || outcome.restartRequested;
+    }
+    case "update": {
+      const outcome = await updatePackageWithOutcome(pkg.source, ctx, pi);
+      return outcome.reloaded || outcome.restartRequested;
+    }
     case "details": {
       const sizeStr = pkg.size !== undefined ? `\nSize: ${formatBytes(pkg.size)}` : "";
       notify(
