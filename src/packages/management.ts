@@ -71,9 +71,11 @@ async function updatePackageInternal(
   logPackageUpdate(pi, source, source, undefined, true);
   success(ctx, `Updated ${source}`);
   clearUpdatesAvailable(pi, ctx);
-  void updateExtmgrStatus(ctx, pi);
 
   const reloaded = await confirmReload(ctx, "Package updated.");
+  if (!reloaded) {
+    void updateExtmgrStatus(ctx, pi);
+  }
   return packageMutationOutcome({ reloaded });
 }
 
@@ -100,9 +102,11 @@ async function updatePackagesInternal(
 
   success(ctx, "Packages updated");
   clearUpdatesAvailable(pi, ctx);
-  void updateExtmgrStatus(ctx, pi);
 
   const reloaded = await confirmReload(ctx, "Packages updated.");
+  if (!reloaded) {
+    void updateExtmgrStatus(ctx, pi);
+  }
   return packageMutationOutcome({ reloaded });
 }
 
@@ -334,12 +338,14 @@ async function removePackageInternal(
   if (failures.length === 0) {
     clearUpdatesAvailable(pi, ctx);
   }
-  void updateExtmgrStatus(ctx, pi);
 
   const restartRequested = await confirmRestart(
     ctx,
     `Removal complete.\n\n⚠️  Extensions/prompts/skills/themes from removed packages are fully unloaded after restarting pi.`
   );
+  if (!restartRequested) {
+    void updateExtmgrStatus(ctx, pi);
+  }
 
   return packageMutationOutcome({ restartRequested });
 }

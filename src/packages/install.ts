@@ -129,8 +129,10 @@ export async function installPackage(
   success(ctx, `Installed ${normalized} (${scope})`);
   clearUpdatesAvailable(pi, ctx);
 
-  void updateExtmgrStatus(ctx, pi);
-  await confirmReload(ctx, "Package installed.");
+  const reloaded = await confirmReload(ctx, "Package installed.");
+  if (!reloaded) {
+    void updateExtmgrStatus(ctx, pi);
+  }
 }
 
 export async function installFromUrl(
@@ -189,8 +191,10 @@ export async function installFromUrl(
   logPackageInstall(pi, url, name, undefined, scope, true);
   success(ctx, `Installed ${name} to:\n${destPath}`);
   clearUpdatesAvailable(pi, ctx);
-  void updateExtmgrStatus(ctx, pi);
-  await confirmReload(ctx, "Extension installed.");
+  const reloaded = await confirmReload(ctx, "Extension installed.");
+  if (!reloaded) {
+    void updateExtmgrStatus(ctx, pi);
+  }
 }
 
 /**
@@ -405,6 +409,8 @@ export async function installPackageLocally(
   logPackageInstall(pi, `npm:${packageName}`, packageName, version, scope, true);
   success(ctx, `Installed ${packageName}@${version} locally to:\n${destResult}/index.ts`);
   clearUpdatesAvailable(pi, ctx);
-  void updateExtmgrStatus(ctx, pi);
-  await confirmReload(ctx, "Extension installed.");
+  const reloaded = await confirmReload(ctx, "Extension installed.");
+  if (!reloaded) {
+    void updateExtmgrStatus(ctx, pi);
+  }
 }
