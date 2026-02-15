@@ -237,6 +237,29 @@ export function parseInstalledPackagesOutput(text: string): InstalledPackage[] {
   return parseInstalledPackagesOutputInternal(text, { dedupeBySource: true });
 }
 
+/**
+ * Check if a specific source is installed by running `pi list` and checking output.
+ * Returns true if found, false if not found.
+ */
+export async function isSourceInstalled(
+  source: string,
+  ctx: ExtensionCommandContext | ExtensionContext,
+  pi: ExtensionAPI
+): Promise<boolean> {
+  try {
+    const res = await pi.exec("pi", ["list"], { timeout: TIMEOUTS.listPackages, cwd: ctx.cwd });
+    if (res.code !== 0) return false;
+
+    const normalized = source.toLowerCase().replace(/\\/g, "/");
+    const stdout = res.stdout || "";
+
+    // Check if the source appears in the output (case-insensitive, normalized paths)
+    return stdout.toLowerCase().replace(/\\/g, "/").includes(normalized);
+  } catch {
+    return false;
+  }
+}
+
 export function parseInstalledPackagesOutputAllScopes(text: string): InstalledPackage[] {
   return parseInstalledPackagesOutputInternal(text, { dedupeBySource: false });
 }

@@ -6,7 +6,8 @@ import { join } from "node:path";
 import { homedir } from "node:os";
 import type { ExtensionAPI, ExtensionCommandContext } from "@mariozechner/pi-coding-agent";
 import { normalizePackageSource } from "../utils/format.js";
-import { clearSearchCache } from "./discovery.js";
+import { clearSearchCache, isSourceInstalled } from "./discovery.js";
+import { waitForCondition } from "../utils/retry.js";
 import { logPackageInstall } from "../utils/history.js";
 import { clearUpdatesAvailable } from "../utils/settings.js";
 import { notify, error as notifyError, success } from "../utils/notify.js";
@@ -129,6 +130,24 @@ export async function installPackage(
   success(ctx, `Installed ${normalized} (${scope})`);
   clearUpdatesAvailable(pi, ctx);
 
+  // Wait for the extension to be discoverable before reloading.
+  // This prevents a race condition where ctx.reload() runs before
+  // settings.json or extension files are fully flushed to disk.
+  notify(ctx, "Waiting for extension to be ready...", "info");
+  const isReady = await waitForCondition(() => isSourceInstalled(normalized, ctx, pi), {
+    maxAttempts: 10,
+    delayMs: 100,
+    backoff: "exponential",
+  });
+
+  if (!isReady) {
+    notify(
+      ctx,
+      "Extension may not be immediately available. Reload pi manually if needed.",
+      "warning"
+    );
+  }
+
   const reloaded = await confirmReload(ctx, "Package installed.");
   if (!reloaded) {
     void updateExtmgrStatus(ctx, pi);
@@ -191,6 +210,23 @@ export async function installFromUrl(
   logPackageInstall(pi, url, name, undefined, scope, true);
   success(ctx, `Installed ${name} to:\n${destPath}`);
   clearUpdatesAvailable(pi, ctx);
+
+  // Wait for the extension file to be fully written and discoverable
+  notify(ctx, "Waiting for extension to be ready...", "info");
+  const isReady = await waitForCondition(() => isSourceInstalled(name, ctx, pi), {
+    maxAttempts: 10,
+    delayMs: 100,
+    backoff: "exponential",
+  });
+
+  if (!isReady) {
+    notify(
+      ctx,
+      "Extension may not be immediately available. Reload pi manually if needed.",
+      "warning"
+    );
+  }
+
   const reloaded = await confirmReload(ctx, "Extension installed.");
   if (!reloaded) {
     void updateExtmgrStatus(ctx, pi);
@@ -409,6 +445,23 @@ export async function installPackageLocally(
   logPackageInstall(pi, `npm:${packageName}`, packageName, version, scope, true);
   success(ctx, `Installed ${packageName}@${version} locally to:\n${destResult}/index.ts`);
   clearUpdatesAvailable(pi, ctx);
+
+  // Wait for the extension to be discoverable before reloading
+  notify(ctx, "Waiting for extension to be ready...", "info");
+  const isReady = await waitForCondition(() => isSourceInstalled(`npm:${packageName}`, ctx, pi), {
+    maxAttempts: 10,
+    delayMs: 100,
+    backoff: "exponential",
+  });
+
+  if (!isReady) {
+    notify(
+      ctx,
+      "Extension may not be immediately available. Reload pi manually if needed.",
+      "warning"
+    );
+  }
+
   const reloaded = await confirmReload(ctx, "Extension installed.");
   if (!reloaded) {
     void updateExtmgrStatus(ctx, pi);

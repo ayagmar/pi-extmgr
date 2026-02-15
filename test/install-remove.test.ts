@@ -9,9 +9,10 @@ void test("installPackage calls pi install with normalized npm source", async ()
 
   await installPackage("pi-extmgr", ctx, pi);
 
-  assert.equal(calls.length, 1);
-  assert.equal(calls[0]?.command, "pi");
-  assert.deepEqual(calls[0]?.args, ["install", "npm:pi-extmgr"]);
+  const installCalls = calls.filter((c) => c.command === "pi" && c.args[0] === "install");
+  assert.equal(installCalls.length, 1);
+  assert.equal(installCalls[0]?.command, "pi");
+  assert.deepEqual(installCalls[0]?.args, ["install", "npm:pi-extmgr"]);
 });
 
 void test("installPackage normalizes git@ sources to git: prefix", async () => {
@@ -19,9 +20,10 @@ void test("installPackage normalizes git@ sources to git: prefix", async () => {
 
   await installPackage("git@github.com:user/repo.git", ctx, pi);
 
-  assert.equal(calls.length, 1);
-  assert.equal(calls[0]?.command, "pi");
-  assert.deepEqual(calls[0]?.args, ["install", "git:git@github.com:user/repo.git"]);
+  const installCalls = calls.filter((c) => c.command === "pi" && c.args[0] === "install");
+  assert.equal(installCalls.length, 1);
+  assert.equal(installCalls[0]?.command, "pi");
+  assert.deepEqual(installCalls[0]?.args, ["install", "git:git@github.com:user/repo.git"]);
 });
 
 void test("removePackage calls pi remove", async () => {

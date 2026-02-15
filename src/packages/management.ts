@@ -7,7 +7,9 @@ import {
   getInstalledPackages,
   clearSearchCache,
   parseInstalledPackagesOutputAllScopes,
+  isSourceInstalled,
 } from "./discovery.js";
+import { waitForCondition } from "../utils/retry.js";
 import { formatInstalledPackageLabel, formatBytes, parseNpmSource } from "../utils/format.js";
 import { getPackageSourceKind, splitGitRepoAndRef } from "../utils/package-source.js";
 import { logPackageUpdate, logPackageRemove } from "../utils/history.js";
@@ -337,6 +339,26 @@ async function removePackageInternal(
 
   if (failures.length === 0) {
     clearUpdatesAvailable(pi, ctx);
+  }
+
+  // Wait for the extension to be fully removed from pi list before restarting.
+  // This prevents a race condition where the removal hasn't flushed to disk yet.
+  if (failures.length === 0 && targets.length > 0) {
+    notify(ctx, "Waiting for removal to complete...", "info");
+    const mainTarget = targets[0];
+    if (mainTarget) {
+      const isRemoved = await waitForCondition(
+        async () => {
+          const stillInstalled = await isSourceInstalled(mainTarget.source, ctx, pi);
+          return !stillInstalled;
+        },
+        { maxAttempts: 10, delayMs: 100, backoff: "exponential" }
+      );
+
+      if (!isRemoved) {
+        notify(ctx, "Extension may still be active. Restart pi manually if needed.", "warning");
+      }
+    }
   }
 
   const restartRequested = await confirmRestart(
