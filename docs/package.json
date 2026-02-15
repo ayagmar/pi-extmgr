@@ -1,0 +1,12 @@
+{
+  "name": "pi-extmgr-docs",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "build": "tailwindcss -i ./src/input.css -o ./assets/tailwind.css --minify",
+    "watch": "tailwindcss -i ./src/input.css -o ./assets/tailwind.css --watch"
+  },
+  "devDependencies": {
+    "tailwindcss": "^3.4.0"
+  }
+}

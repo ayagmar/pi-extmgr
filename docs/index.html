@@ -1,0 +1,399 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>pi-extmgr — Extension Manager for Pi</title>
+    <meta
+      name="description"
+      content="A better way to manage Pi extensions. Browse, install, enable/disable, and remove extensions from one place."
+    />
+
+    <!-- Compiled Tailwind CSS -->
+    <link rel="stylesheet" href="assets/tailwind.css" />
+
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+  </head>
+  <body class="bg-neutral-950 text-neutral-300 font-sans antialiased">
+    <!-- Header -->
+    <header
+      class="fixed top-0 left-0 right-0 z-50 bg-neutral-950/80 backdrop-blur-md border-b border-neutral-800/50"
+    >
+      <div class="max-w-5xl mx-auto px-6 h-16 flex items-center justify-between">
+        <a href="#" class="flex items-center gap-2 text-white font-medium">
+          <span class="text-pi-400">π</span>
+          <span>extmgr</span>
+        </a>
+        <nav class="hidden sm:flex items-center gap-6 text-sm">
+          <a
+            href="https://pi.dev"
+            target="_blank"
+            rel="noopener"
+            class="text-pi-400 hover:text-pi-500 transition-colors"
+            >pi.dev ↗</a
+          >
+          <a href="#features" class="hover:text-white transition-colors">Features</a>
+          <a href="#install" class="hover:text-white transition-colors">Install</a>
+          <a href="https://github.com/ayagmar/pi-extmgr" class="hover:text-white transition-colors"
+            >GitHub</a
+          >
+        </nav>
+      </div>
+    </header>
+
+    <!-- Hero -->
+    <section class="pt-32 pb-20 px-6">
+      <div class="max-w-5xl mx-auto">
+        <div class="max-w-2xl">
+          <p class="text-pi-400 text-sm font-medium mb-4">
+            Extension Manager for
+            <a href="https://pi.dev" target="_blank" rel="noopener" class="hover:underline"
+              >pi.dev</a
+            >
+          </p>
+          <h1 class="text-4xl sm:text-5xl font-semibold text-white leading-tight mb-6">
+            Manage extensions<br />
+            <span class="gradient-text">without the friction</span>
+          </h1>
+          <p class="text-lg text-neutral-400 mb-8 leading-relaxed">
+            Browse, install, enable, and remove
+            <a
+              href="https://pi.dev"
+              target="_blank"
+              rel="noopener"
+              class="text-neutral-300 hover:text-white underline underline-offset-4"
+              >Pi</a
+            >
+            extensions from a unified interface. No more digging through directories or editing
+            config files.
+          </p>
+
+          <!-- Live Stats -->
+          <div class="flex flex-wrap gap-6 mb-8" id="stats">
+            <div class="flex items-center gap-2">
+              <svg class="w-4 h-4 text-neutral-500" fill="currentColor" viewBox="0 0 24 24">
+                <path
+                  d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"
+                />
+              </svg>
+              <span class="text-white font-mono" id="npm-downloads">—</span>
+              <span class="text-neutral-500 text-sm">downloads/wk</span>
+            </div>
+            <div class="flex items-center gap-2">
+              <svg class="w-4 h-4 text-neutral-500" fill="currentColor" viewBox="0 0 24 24">
+                <path
+                  d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"
+                />
+              </svg>
+              <span class="text-white font-mono" id="github-stars">—</span>
+              <span class="text-neutral-500 text-sm">stars</span>
+            </div>
+            <div class="flex items-center gap-2">
+              <svg
+                class="w-4 h-4 text-neutral-500"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z"
+                />
+              </svg>
+              <span class="text-white font-mono" id="latest-version">—</span>
+              <span class="text-neutral-500 text-sm">latest</span>
+            </div>
+          </div>
+
+          <div class="flex flex-wrap gap-4">
+            <a
+              href="#install"
+              class="inline-flex items-center gap-2 bg-pi-600 hover:bg-pi-500 text-white px-5 py-2.5 rounded-lg font-medium transition-colors"
+            >
+              Get Started
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M17 8l4 4m0 0l-4 4m4-4H3"
+                />
+              </svg>
+            </a>
+            <a
+              href="https://github.com/ayagmar/pi-extmgr"
+              class="inline-flex items-center gap-2 bg-neutral-800 hover:bg-neutral-700 text-white px-5 py-2.5 rounded-lg font-medium transition-colors"
+            >
+              View on GitHub
+            </a>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Terminal Preview -->
+    <section class="pb-24 px-6">
+      <div class="max-w-5xl mx-auto">
+        <div class="bg-neutral-900 rounded-xl border border-neutral-800 overflow-hidden shadow-2xl">
+          <div
+            class="flex items-center gap-2 px-4 py-3 bg-neutral-800/50 border-b border-neutral-800"
+          >
+            <div class="w-3 h-3 rounded-full bg-neutral-600"></div>
+            <div class="w-3 h-3 rounded-full bg-neutral-600"></div>
+            <div class="w-3 h-3 rounded-full bg-neutral-600"></div>
+            <span class="ml-4 text-xs text-neutral-500 font-mono">pi</span>
+          </div>
+          <div class="terminal p-6 font-mono text-sm overflow-x-auto">
+            <div class="text-neutral-500 mb-2">$ pi install npm:pi-extmgr</div>
+            <div class="text-pi-400 mb-4">✓ Extension installed successfully</div>
+            <div class="text-neutral-500 mb-2">$ pi</div>
+            <div class="text-neutral-400 mb-2">
+              &gt; <span class="text-white">/extensions</span>
+            </div>
+            <div class="text-neutral-500">
+              <div class="flex items-center gap-2 mb-1">
+                <span class="text-pi-400">●</span>
+                <span>my-extension</span>
+                <span class="text-neutral-600 ml-auto">global</span>
+              </div>
+              <div class="flex items-center gap-2 mb-1">
+                <span class="text-neutral-600">○</span>
+                <span>another-ext</span>
+                <span class="text-neutral-600 ml-auto">project</span>
+              </div>
+              <div class="flex items-center gap-2 text-neutral-600">
+                <span>○</span>
+                <span>legacy-tool</span>
+                <span class="ml-auto">global</span>
+              </div>
+            </div>
+            <div class="mt-4 text-neutral-500">
+              <span class="text-neutral-400">Press</span>
+              <span class="text-white bg-neutral-700 px-1.5 py-0.5 rounded text-xs">S</span>
+              <span class="text-neutral-400">to save changes</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Screenshots -->
+    <section class="pb-24 px-6">
+      <div class="max-w-5xl mx-auto">
+        <h2 class="text-2xl font-semibold text-white mb-8">See it in action</h2>
+        <div class="grid md:grid-cols-2 gap-6">
+          <div class="space-y-3">
+            <div class="bg-neutral-900 rounded-xl border border-neutral-800 overflow-hidden">
+              <img
+                src="assets/extension-manager.png"
+                alt="Extension Manager showing local extensions"
+                class="w-full h-auto"
+              />
+            </div>
+            <p class="text-sm text-neutral-500">
+              Unified manager — local extensions and packages in one list
+            </p>
+          </div>
+          <div class="space-y-3">
+            <div class="bg-neutral-900 rounded-xl border border-neutral-800 overflow-hidden">
+              <img
+                src="assets/remote-browser.png"
+                alt="Remote browser showing npm packages"
+                class="w-full h-auto"
+              />
+            </div>
+            <p class="text-sm text-neutral-500">Remote browser — search and install from npm</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Features -->
+    <section id="features" class="py-20 px-6 border-t border-neutral-800/50">
+      <div class="max-w-5xl mx-auto">
+        <div class="grid sm:grid-cols-3 gap-12">
+          <div>
+            <div
+              class="w-10 h-10 rounded-lg bg-pi-600/10 border border-pi-600/20 flex items-center justify-center mb-4"
+            >
+              <svg
+                class="w-5 h-5 text-pi-400"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"
+                />
+              </svg>
+            </div>
+            <h3 class="text-white font-medium mb-2">Unified Manager</h3>
+            <p class="text-neutral-400 text-sm leading-relaxed">
+              Local extensions and installed packages in one list. Toggle with Space, save with S.
+            </p>
+          </div>
+          <div>
+            <div
+              class="w-10 h-10 rounded-lg bg-pi-600/10 border border-pi-600/20 flex items-center justify-center mb-4"
+            >
+              <svg
+                class="w-5 h-5 text-pi-400"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+                />
+              </svg>
+            </div>
+            <h3 class="text-white font-medium mb-2">Remote Discovery</h3>
+            <p class="text-neutral-400 text-sm leading-relaxed">
+              Browse and install from npm or git. Search packages, install by source, done.
+            </p>
+          </div>
+          <div>
+            <div
+              class="w-10 h-10 rounded-lg bg-pi-600/10 border border-pi-600/20 flex items-center justify-center mb-4"
+            >
+              <svg
+                class="w-5 h-5 text-pi-400"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+                />
+              </svg>
+            </div>
+            <h3 class="text-white font-medium mb-2">Auto-Update</h3>
+            <p class="text-neutral-400 text-sm leading-relaxed">
+              Set it and forget it. Persistent schedules, background checks, status bar updates.
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Install Sources -->
+    <section class="py-20 px-6 border-t border-neutral-800/50 bg-neutral-900/30">
+      <div class="max-w-5xl mx-auto">
+        <div class="max-w-2xl">
+          <h3 class="text-white font-medium mb-4">Install from anywhere</h3>
+          <div class="space-y-2 font-mono text-sm">
+            <div class="flex gap-4 py-2 border-b border-neutral-800/50">
+              <code class="text-pi-400 w-32">npm:package</code>
+              <span class="text-neutral-400">npm registry</span>
+            </div>
+            <div class="flex gap-4 py-2 border-b border-neutral-800/50">
+              <code class="text-pi-400 w-32">git:url</code>
+              <span class="text-neutral-400">Git repositories</span>
+            </div>
+            <div class="flex gap-4 py-2 border-b border-neutral-800/50">
+              <code class="text-pi-400 w-32">https://...</code>
+              <span class="text-neutral-400">Direct GitHub URLs</span>
+            </div>
+            <div class="flex gap-4 py-2">
+              <code class="text-pi-400 w-32">/local/path</code>
+              <span class="text-neutral-400">Local development</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Install -->
+    <section id="install" class="py-20 px-6 border-t border-neutral-800/50">
+      <div class="max-w-5xl mx-auto">
+        <div class="max-w-2xl">
+          <h2 class="text-2xl font-semibold text-white mb-6">Install</h2>
+          <div class="bg-neutral-900 rounded-lg border border-neutral-800 p-4 mb-6">
+            <code class="font-mono text-sm text-neutral-300">pi install npm:pi-extmgr</code>
+          </div>
+          <p class="text-neutral-400 mb-8">
+            Then reload
+            <a
+              href="https://pi.dev"
+              target="_blank"
+              rel="noopener"
+              class="text-neutral-300 hover:text-white underline underline-offset-4"
+              >Pi</a
+            >
+            and type
+            <code class="text-white bg-neutral-800 px-1.5 py-0.5 rounded text-sm">/extensions</code>
+            to open the manager.
+          </p>
+
+          <h3 class="text-white font-medium mb-4">Quick Reference</h3>
+          <div class="space-y-2 font-mono text-sm">
+            <div class="flex gap-4 py-2 border-b border-neutral-800/50">
+              <span class="text-pi-400 w-24">/extensions</span>
+              <span class="text-neutral-400">Open the manager</span>
+            </div>
+            <div class="flex gap-4 py-2 border-b border-neutral-800/50">
+              <span class="text-pi-400 w-24">Space / Enter</span>
+              <span class="text-neutral-400">Toggle extension</span>
+            </div>
+            <div class="flex gap-4 py-2 border-b border-neutral-800/50">
+              <span class="text-pi-400 w-24">S</span>
+              <span class="text-neutral-400">Save changes</span>
+            </div>
+            <div class="flex gap-4 py-2 border-b border-neutral-800/50">
+              <span class="text-pi-400 w-24">i</span>
+              <span class="text-neutral-400">Quick install</span>
+            </div>
+            <div class="flex gap-4 py-2">
+              <span class="text-pi-400 w-24">R</span>
+              <span class="text-neutral-400">Browse remote</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="py-8 px-6 border-t border-neutral-800/50">
+      <div class="max-w-5xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
+        <p class="text-sm text-neutral-500">
+          MIT License ·
+          <a
+            href="https://github.com/ayagmar/pi-extmgr"
+            class="hover:text-neutral-300 transition-colors"
+            >GitHub</a
+          >
+        </p>
+        <p class="text-sm text-neutral-600">
+          Built for
+          <a
+            href="https://pi.dev"
+            target="_blank"
+            rel="noopener"
+            class="text-pi-400 hover:text-pi-500 transition-colors"
+            >pi.dev</a
+          >
+        </p>
+      </div>
+    </footer>
+
+    <!-- Scripts -->
+    <script src="assets/stats.js"></script>
+  </body>
+</html>

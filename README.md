@@ -1,11 +1,13 @@
 # pi-extmgr
 
-![pi-extmgr banner](https://i.imgur.com/bVM7ZcO.png)
+![pi-extmgr banner](https://i.imgur.com/Ce513Br.png)
 
 [![CI](https://github.com/ayagmar/pi-extmgr/actions/workflows/ci.yml/badge.svg)](https://github.com/ayagmar/pi-extmgr/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 A better way to manage Pi extensions. Browse, install, enable/disable, and remove extensions from one place.
+
+**🌐 [pi-extmgr landing page](https://ayagmar.github.io/pi-extmgr)**
 
 ## Install
 

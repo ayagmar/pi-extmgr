@@ -35,7 +35,7 @@
       "./src/index.ts"
     ],
     "video": "https://github.com/ayagmar/pi-extmgr/releases/download/demo/demo.mp4",
-    "image": "https://i.imgur.com/bVM7ZcO.png"
+    "image": "https://i.imgur.com/Ce513Br.png"
   },
   "peerDependencies": {
     "@mariozechner/pi-coding-agent": "*",
@@ -66,5 +66,5 @@
   "bugs": {
     "url": "https://github.com/ayagmar/pi-extmgr/issues"
   },
-  "homepage": "https://github.com/ayagmar/pi-extmgr/blob/master/README.md"
+  "homepage": "https://ayagmar.github.io/pi-extmgr"
 }
