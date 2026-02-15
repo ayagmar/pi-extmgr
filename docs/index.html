@@ -82,8 +82,25 @@
                   d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"
                 />
               </svg>
-              <span class="text-white font-mono" id="npm-downloads">—</span>
-              <span class="text-neutral-500 text-sm">downloads/wk</span>
+              <span class="text-white font-mono" id="npm-downloads-weekly">—</span>
+              <span class="text-neutral-500 text-sm">weekly</span>
+            </div>
+            <div class="flex items-center gap-2">
+              <svg
+                class="w-4 h-4 text-neutral-500"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"
+                />
+              </svg>
+              <span class="text-white font-mono" id="npm-downloads-total">—</span>
+              <span class="text-neutral-500 text-sm">total</span>
             </div>
             <div class="flex items-center gap-2">
               <svg class="w-4 h-4 text-neutral-500" fill="currentColor" viewBox="0 0 24 24">
@@ -202,34 +219,38 @@
         <h2 class="text-2xl font-semibold text-white mb-8">See it in action</h2>
         <div class="space-y-8">
           <div class="space-y-3">
-            <a
-              href="assets/extension-manager.png"
-              target="_blank"
-              class="block bg-neutral-900 rounded-xl border border-neutral-800 overflow-hidden hover:border-pi-600/50 transition-colors"
+            <button
+              type="button"
+              class="lightbox-trigger block w-full text-left bg-neutral-900 rounded-xl border border-neutral-800 overflow-hidden hover:border-pi-600/50 transition-colors"
+              data-lightbox-src="assets/extension-manager.png"
+              data-lightbox-alt="Extension Manager showing local extensions"
             >
               <img
                 src="assets/extension-manager.png"
                 alt="Extension Manager showing local extensions"
                 class="w-full h-auto"
               />
-            </a>
+            </button>
             <p class="text-sm text-neutral-500">
-              Unified manager — local extensions and packages in one list
+              Unified manager — local extensions and packages in one list (click to enlarge)
             </p>
           </div>
           <div class="space-y-3">
-            <a
-              href="assets/remote-browser.png"
-              target="_blank"
-              class="block bg-neutral-900 rounded-xl border border-neutral-800 overflow-hidden hover:border-pi-600/50 transition-colors"
+            <button
+              type="button"
+              class="lightbox-trigger block w-full text-left bg-neutral-900 rounded-xl border border-neutral-800 overflow-hidden hover:border-pi-600/50 transition-colors"
+              data-lightbox-src="assets/remote-browser.png"
+              data-lightbox-alt="Remote browser showing npm packages"
             >
               <img
                 src="assets/remote-browser.png"
                 alt="Remote browser showing npm packages"
                 class="w-full h-auto"
               />
-            </a>
-            <p class="text-sm text-neutral-500">Remote browser — search and install from npm</p>
+            </button>
+            <p class="text-sm text-neutral-500">
+              Remote browser — search and install from npm (click to enlarge)
+            </p>
           </div>
         </div>
       </div>
@@ -362,10 +383,10 @@
           </p>
 
           <h3 class="text-white font-medium mb-4">Quick Reference</h3>
-          <div class="space-y-2 font-mono text-sm">
+          <div class="grid sm:grid-cols-2 gap-2 font-mono text-sm">
             <div class="flex gap-4 py-2 border-b border-neutral-800/50">
               <span class="text-pi-400 w-24">/extensions</span>
-              <span class="text-neutral-400">Open the manager</span>
+              <span class="text-neutral-400">Open manager</span>
             </div>
             <div class="flex gap-4 py-2 border-b border-neutral-800/50">
               <span class="text-pi-400 w-24">Space / Enter</span>
@@ -379,14 +400,68 @@
               <span class="text-pi-400 w-24">i</span>
               <span class="text-neutral-400">Quick install</span>
             </div>
-            <div class="flex gap-4 py-2">
+            <div class="flex gap-4 py-2 border-b border-neutral-800/50">
+              <span class="text-pi-400 w-24">f</span>
+              <span class="text-neutral-400">Search / filter</span>
+            </div>
+            <div class="flex gap-4 py-2 border-b border-neutral-800/50">
               <span class="text-pi-400 w-24">R</span>
               <span class="text-neutral-400">Browse remote</span>
+            </div>
+            <div class="flex gap-4 py-2 border-b border-neutral-800/50">
+              <span class="text-pi-400 w-24">U</span>
+              <span class="text-neutral-400">Update all packages</span>
+            </div>
+            <div class="flex gap-4 py-2 border-b border-neutral-800/50">
+              <span class="text-pi-400 w-24">u</span>
+              <span class="text-neutral-400">Update selected</span>
+            </div>
+            <div class="flex gap-4 py-2 border-b border-neutral-800/50">
+              <span class="text-pi-400 w-24">P</span>
+              <span class="text-neutral-400">Command palette</span>
+            </div>
+            <div class="flex gap-4 py-2 border-b border-neutral-800/50">
+              <span class="text-pi-400 w-24">t</span>
+              <span class="text-neutral-400">Auto-update wizard</span>
+            </div>
+            <div class="flex gap-4 py-2 border-b border-neutral-800/50">
+              <span class="text-pi-400 w-24">X</span>
+              <span class="text-neutral-400">Remove selected</span>
+            </div>
+            <div class="flex gap-4 py-2 border-b border-neutral-800/50">
+              <span class="text-pi-400 w-24">?</span>
+              <span class="text-neutral-400">Help</span>
+            </div>
+            <div class="flex gap-4 py-2 sm:col-span-2">
+              <span class="text-pi-400 w-24">Esc</span>
+              <span class="text-neutral-400">Exit / cancel</span>
             </div>
           </div>
         </div>
       </div>
     </section>
+
+    <!-- Image Lightbox -->
+    <div
+      id="lightbox"
+      class="fixed inset-0 z-[100] hidden items-center justify-center bg-black/85 p-4"
+      aria-hidden="true"
+    >
+      <button
+        id="lightbox-close"
+        type="button"
+        class="absolute top-4 right-4 text-white/80 hover:text-white text-3xl leading-none"
+        aria-label="Close image preview"
+      >
+        ×
+      </button>
+      <img
+        id="lightbox-image"
+        src=""
+        alt=""
+        class="max-w-full max-h-[92vh] rounded-xl border border-neutral-700 shadow-2xl"
+      />
+    </div>
 
     <!-- Footer -->
     <footer class="py-8 px-6 border-t border-neutral-800/50">
