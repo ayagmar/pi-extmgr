@@ -18,7 +18,6 @@ import { notify, error as notifyError, success } from "../utils/notify.js";
 import {
   confirmAction,
   confirmReload,
-  confirmRestart,
   showProgress,
   formatListOutput,
 } from "../utils/ui-helpers.js";
@@ -28,12 +27,10 @@ import { TIMEOUTS, UI } from "../constants.js";
 
 export interface PackageMutationOutcome {
   reloaded: boolean;
-  restartRequested: boolean;
 }
 
 const NO_PACKAGE_MUTATION_OUTCOME: PackageMutationOutcome = {
   reloaded: false,
-  restartRequested: false,
 };
 
 function packageMutationOutcome(
@@ -361,15 +358,12 @@ async function removePackageInternal(
     }
   }
 
-  const restartRequested = await confirmRestart(
-    ctx,
-    `Removal complete.\n\n⚠️  Extensions/prompts/skills/themes from removed packages are fully unloaded after restarting pi.`
-  );
-  if (!restartRequested) {
+  const reloaded = await confirmReload(ctx, "Removal complete.");
+  if (!reloaded) {
     void updateExtmgrStatus(ctx, pi);
   }
 
-  return packageMutationOutcome({ restartRequested });
+  return packageMutationOutcome({ reloaded });
 }
 
 export async function removePackage(
@@ -447,11 +441,11 @@ export async function showPackageActions(
   switch (action) {
     case "remove": {
       const outcome = await removePackageWithOutcome(pkg.source, ctx, pi);
-      return outcome.reloaded || outcome.restartRequested;
+      return outcome.reloaded;
     }
     case "update": {
       const outcome = await updatePackageWithOutcome(pkg.source, ctx, pi);
-      return outcome.reloaded || outcome.restartRequested;
+      return outcome.reloaded;
     }
     case "details": {
       const sizeStr = pkg.size !== undefined ? `\nSize: ${formatBytes(pkg.size)}` : "";

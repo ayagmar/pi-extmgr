@@ -142,7 +142,6 @@ Examples:
 - **Settings/cache writes are hardened**: extmgr serializes writes and uses safe file replacement to reduce JSON corruption issues.
 - **Invalid JSON is handled safely**: malformed `auto-update.json` / metadata cache files are backed up and reset; invalid `.pi/settings.json` is not overwritten during package-extension toggles.
 - **Reload is built-in**: When extmgr asks to reload, it calls `ctx.reload()` directly.
-- **Remove requires restart**: After removing a package, you need to fully restart Pi (not just a reload) for it to be completely unloaded.
 
 ## License
 

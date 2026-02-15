@@ -650,7 +650,7 @@ async function navigateWithPendingGuard(
       return "done";
     case "update-all": {
       const outcome = await updatePackagesWithOutcome(ctx, pi);
-      return outcome.reloaded || outcome.restartRequested ? "exit" : "done";
+      return outcome.reloaded ? "exit" : "done";
     }
     case "auto-update":
       await promptAutoUpdateWizard(pi, ctx, (packages) => {
@@ -819,11 +819,11 @@ async function handleUnifiedAction(
     switch (result.action) {
       case "update": {
         const outcome = await updatePackageWithOutcome(pkg.source, ctx, pi);
-        return outcome.reloaded || outcome.restartRequested;
+        return outcome.reloaded;
       }
       case "remove": {
         const outcome = await removePackageWithOutcome(pkg.source, ctx, pi);
-        return outcome.reloaded || outcome.restartRequested;
+        return outcome.reloaded;
       }
       case "details": {
         const sizeStr = pkg.size !== undefined ? `\nSize: ${formatBytes(pkg.size)}` : "";
