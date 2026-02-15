@@ -8,6 +8,7 @@ import type { ExtensionAPI, ExtensionCommandContext } from "@mariozechner/pi-cod
 import { normalizePackageSource } from "../utils/format.js";
 import { clearSearchCache } from "./discovery.js";
 import { logPackageInstall } from "../utils/history.js";
+import { clearUpdatesAvailable } from "../utils/settings.js";
 import { notify, error as notifyError, success } from "../utils/notify.js";
 import { confirmAction, confirmReload, showProgress } from "../utils/ui-helpers.js";
 import { tryOperation } from "../utils/mode.js";
@@ -126,6 +127,7 @@ export async function installPackage(
   clearSearchCache();
   logPackageInstall(pi, normalized, normalized, undefined, scope, true);
   success(ctx, `Installed ${normalized} (${scope})`);
+  clearUpdatesAvailable(pi, ctx);
 
   void updateExtmgrStatus(ctx, pi);
   await confirmReload(ctx, "Package installed.");
@@ -186,6 +188,7 @@ export async function installFromUrl(
   const { fileName: name, destPath } = result;
   logPackageInstall(pi, url, name, undefined, scope, true);
   success(ctx, `Installed ${name} to:\n${destPath}`);
+  clearUpdatesAvailable(pi, ctx);
   void updateExtmgrStatus(ctx, pi);
   await confirmReload(ctx, "Extension installed.");
 }
@@ -401,6 +404,7 @@ export async function installPackageLocally(
   clearSearchCache();
   logPackageInstall(pi, `npm:${packageName}`, packageName, version, scope, true);
   success(ctx, `Installed ${packageName}@${version} locally to:\n${destResult}/index.ts`);
+  clearUpdatesAvailable(pi, ctx);
   void updateExtmgrStatus(ctx, pi);
   await confirmReload(ctx, "Extension installed.");
 }

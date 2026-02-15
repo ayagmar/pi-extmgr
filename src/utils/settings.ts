@@ -266,6 +266,23 @@ export function saveAutoUpdateConfig(pi: ExtensionAPI, config: Partial<AutoUpdat
 }
 
 /**
+ * Clear the updates available list after package mutations.
+ * Call this after install/update/remove to prevent stale update notifications.
+ */
+export function clearUpdatesAvailable(
+  pi: ExtensionAPI,
+  ctx: ExtensionCommandContext | ExtensionContext
+): void {
+  const config = getAutoUpdateConfig(ctx);
+  if (config.updatesAvailable && config.updatesAvailable.length > 0) {
+    saveAutoUpdateConfig(pi, {
+      ...config,
+      updatesAvailable: [],
+    });
+  }
+}
+
+/**
  * Parse duration string to milliseconds
  * Supports: 1h, 2h, 1d, 7d, 1m, 3m, etc.
  * Also supports: never, off, disable, daily, weekly

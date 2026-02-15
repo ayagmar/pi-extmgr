@@ -11,6 +11,7 @@ import {
 import { formatInstalledPackageLabel, formatBytes, parseNpmSource } from "../utils/format.js";
 import { getPackageSourceKind, splitGitRepoAndRef } from "../utils/package-source.js";
 import { logPackageUpdate, logPackageRemove } from "../utils/history.js";
+import { clearUpdatesAvailable } from "../utils/settings.js";
 import { notify, error as notifyError, success } from "../utils/notify.js";
 import {
   confirmAction,
@@ -69,6 +70,7 @@ async function updatePackageInternal(
 
   logPackageUpdate(pi, source, source, undefined, true);
   success(ctx, `Updated ${source}`);
+  clearUpdatesAvailable(pi, ctx);
   void updateExtmgrStatus(ctx, pi);
 
   const reloaded = await confirmReload(ctx, "Package updated.");
@@ -97,6 +99,7 @@ async function updatePackagesInternal(
   }
 
   success(ctx, "Packages updated");
+  clearUpdatesAvailable(pi, ctx);
   void updateExtmgrStatus(ctx, pi);
 
   const reloaded = await confirmReload(ctx, "Packages updated.");
@@ -328,6 +331,9 @@ async function removePackageInternal(
   );
   notifyRemovalSummary(source, remaining, failures, ctx);
 
+  if (failures.length === 0) {
+    clearUpdatesAvailable(pi, ctx);
+  }
   void updateExtmgrStatus(ctx, pi);
 
   const restartRequested = await confirmRestart(
