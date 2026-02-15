@@ -1,6 +1,6 @@
 {
   "name": "pi-extmgr",
-  "version": "0.1.17",
+  "version": "0.1.18",
   "description": "Enhanced UX for managing local Pi extensions and community packages",
   "keywords": [
     "pi-package",
