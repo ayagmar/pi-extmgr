@@ -8,7 +8,15 @@ import type {
 } from "@mariozechner/pi-coding-agent";
 import { getInstalledPackages } from "../packages/discovery.js";
 import { getAutoUpdateStatus } from "./auto-update.js";
-import { getAutoUpdateConfigAsync } from "./settings.js";
+import { getAutoUpdateConfigAsync, saveAutoUpdateConfig } from "./settings.js";
+
+function filterStaleUpdates(
+  knownUpdates: string[],
+  installedPackages: Awaited<ReturnType<typeof getInstalledPackages>>
+): string[] {
+  const installedNames = new Set(installedPackages.map((p) => p.name));
+  return knownUpdates.filter((name) => installedNames.has(name));
+}
 
 export async function updateExtmgrStatus(
   ctx: ExtensionCommandContext | ExtensionContext,
@@ -32,9 +40,20 @@ export async function updateExtmgrStatus(
       statusParts.push(autoUpdateStatus);
     }
 
+    // Validate updates against actually installed packages (handles external pi update)
     const knownUpdates = autoUpdateConfig.updatesAvailable ?? [];
-    if (knownUpdates.length > 0) {
-      statusParts.push(`${knownUpdates.length} update${knownUpdates.length === 1 ? "" : "s"}`);
+    const validUpdates = filterStaleUpdates(knownUpdates, packages);
+
+    // If stale updates were filtered, persist the correction
+    if (validUpdates.length !== knownUpdates.length) {
+      saveAutoUpdateConfig(pi, {
+        ...autoUpdateConfig,
+        updatesAvailable: validUpdates,
+      });
+    }
+
+    if (validUpdates.length > 0) {
+      statusParts.push(`${validUpdates.length} update${validUpdates.length === 1 ? "" : "s"}`);
     }
 
     if (statusParts.length > 0) {
