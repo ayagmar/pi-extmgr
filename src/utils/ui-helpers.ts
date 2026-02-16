@@ -29,32 +29,6 @@ export async function confirmReload(
 }
 
 /**
- * Confirm and trigger shutdown (for actions requiring full restart)
- * Returns true if shutdown was triggered
- */
-export async function confirmRestart(
-  ctx: ExtensionCommandContext,
-  reason: string
-): Promise<boolean> {
-  if (!ctx.hasUI) {
-    notify(ctx, `⚠️  ${reason}\nFull restart required to complete. Exit and restart pi manually.`);
-    return false;
-  }
-
-  const confirmed = await ctx.ui.confirm(
-    "Restart Required",
-    `${reason}\nPackage removed. Commands may still work until you restart pi. Exit now?`
-  );
-
-  if (confirmed) {
-    ctx.shutdown();
-    return true;
-  }
-
-  return false;
-}
-
-/**
  * Confirm action with timeout
  */
 export async function confirmAction(
