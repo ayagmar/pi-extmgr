@@ -17,7 +17,7 @@ import {
   stopAutoUpdateTimer,
   type ContextProvider,
 } from "./utils/auto-update.js";
-import { hydrateAutoUpdateConfig } from "./utils/settings.js";
+import { hydrateAutoUpdateConfig, getAutoUpdateConfig } from "./utils/settings.js";
 import {
   getExtensionsAutocompleteItems,
   resolveCommand,
@@ -72,8 +72,11 @@ export default function extensionsManager(pi: ExtensionAPI) {
 
     if (!ctx.hasUI) return;
 
-    const getCtx: ContextProvider = () => ctx;
-    startAutoUpdateTimer(pi, getCtx, createAutoUpdateNotificationHandler(ctx));
+    const config = getAutoUpdateConfig(ctx);
+    if (config.enabled && config.intervalMs > 0) {
+      const getCtx: ContextProvider = () => ctx;
+      startAutoUpdateTimer(pi, getCtx, createAutoUpdateNotificationHandler(ctx));
+    }
 
     setImmediate(() => {
       updateStatusBar(ctx).catch((err) => {
