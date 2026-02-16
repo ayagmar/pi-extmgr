@@ -131,6 +131,36 @@ void test("discoverPackageExtensions resolves file:// package sources", async ()
   }
 });
 
+void test("discoverPackageExtensions handles resolved package.json paths", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "pi-extmgr-cwd-"));
+  const pkgRoot = join(cwd, "vendor", "manifest-path-pkg");
+
+  try {
+    await mkdir(pkgRoot, { recursive: true });
+    await writeFile(
+      join(pkgRoot, "package.json"),
+      JSON.stringify({ name: "manifest-path-pkg", pi: { extensions: ["./index.ts"] } }, null, 2),
+      "utf8"
+    );
+    await writeFile(join(pkgRoot, "index.ts"), "// manifest path package extension\n", "utf8");
+
+    const installed: InstalledPackage[] = [
+      {
+        source: "npm:manifest-path-pkg@1.0.0",
+        name: "manifest-path-pkg",
+        scope: "project",
+        resolvedPath: join(pkgRoot, "package.json"),
+      },
+    ];
+
+    const discovered = await discoverPackageExtensions(installed, cwd);
+    assert.equal(discovered.length, 1);
+    assert.equal(discovered[0]?.extensionPath, "index.ts");
+  } finally {
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
+
 void test("setPackageExtensionState fails safely when settings.json is invalid", async () => {
   const cwd = await mkdtemp(join(tmpdir(), "pi-extmgr-cwd-"));
   const agentDir = await mkdtemp(join(tmpdir(), "pi-extmgr-agent-"));

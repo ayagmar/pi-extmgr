@@ -27,14 +27,24 @@ function normalizeSource(source: string): string {
     .trim();
 }
 
+function normalizePackageRootCandidate(candidate: string): string {
+  const resolved = resolve(candidate);
+
+  if (/(?:^|[\\/])package\.json$/i.test(resolved) || /\.(?:[cm]?[jt]s)$/i.test(resolved)) {
+    return dirname(resolved);
+  }
+
+  return resolved;
+}
+
 function toPackageRoot(pkg: InstalledPackage, cwd: string): string | undefined {
   if (pkg.resolvedPath) {
-    return resolve(pkg.resolvedPath);
+    return normalizePackageRootCandidate(pkg.resolvedPath);
   }
 
   if (pkg.source.startsWith("file://")) {
     try {
-      return resolve(fileURLToPath(pkg.source));
+      return normalizePackageRootCandidate(fileURLToPath(pkg.source));
     } catch {
       return undefined;
     }
@@ -45,7 +55,7 @@ function toPackageRoot(pkg: InstalledPackage, cwd: string): string | undefined {
     /^[a-zA-Z]:[\\/]/.test(pkg.source) ||
     pkg.source.startsWith("\\\\")
   ) {
-    return resolve(pkg.source);
+    return normalizePackageRootCandidate(pkg.source);
   }
 
   if (
@@ -54,11 +64,11 @@ function toPackageRoot(pkg: InstalledPackage, cwd: string): string | undefined {
     pkg.source.startsWith(".\\") ||
     pkg.source.startsWith("..\\")
   ) {
-    return resolve(cwd, pkg.source);
+    return normalizePackageRootCandidate(resolve(cwd, pkg.source));
   }
 
   if (pkg.source.startsWith("~/")) {
-    return resolve(join(homedir(), pkg.source.slice(2)));
+    return normalizePackageRootCandidate(join(homedir(), pkg.source.slice(2)));
   }
 
   return undefined;
