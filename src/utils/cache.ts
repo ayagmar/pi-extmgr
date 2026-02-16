@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { homedir } from "node:os";
 import type { NpmPackage, InstalledPackage } from "../types/index.js";
 import { CACHE_LIMITS } from "../constants.js";
+import { parseNpmSource } from "./format.js";
 
 const CACHE_DIR = process.env.PI_EXTMGR_CACHE_DIR
   ? process.env.PI_EXTMGR_CACHE_DIR
@@ -365,14 +366,12 @@ export async function getPackageDescriptions(
   const cache = await loadCache();
 
   for (const pkg of packages) {
-    if (pkg.source.startsWith("npm:")) {
-      const pkgName = pkg.source.slice(4).split("@")[0];
-      if (pkgName) {
-        const cached = cache.packages.get(pkgName);
-        if (cached?.description && isCacheValid(cached.timestamp)) {
-          descriptions.set(pkg.source, cached.description);
-        }
-      }
+    const npmSource = parseNpmSource(pkg.source);
+    if (!npmSource?.name) continue;
+
+    const cached = cache.packages.get(npmSource.name);
+    if (cached?.description && isCacheValid(cached.timestamp)) {
+      descriptions.set(pkg.source, cached.description);
     }
   }
 
