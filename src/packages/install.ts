@@ -1,11 +1,12 @@
 /**
  * Package installation logic
  */
-import { mkdir, rm, writeFile, access, cp } from "node:fs/promises";
+import { mkdir, rm, writeFile, cp, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import type { ExtensionAPI, ExtensionCommandContext } from "@mariozechner/pi-coding-agent";
 import { normalizePackageSource } from "../utils/format.js";
+import { fileExists } from "../utils/fs.js";
 import { clearSearchCache, isSourceInstalled } from "./discovery.js";
 import { waitForCondition } from "../utils/retry.js";
 import { logPackageInstall } from "../utils/history.js";
@@ -65,6 +66,37 @@ function safeExtractGithubMatch(
   }
 
   return { owner, repo, branch, filePath };
+}
+
+function normalizeRelativePath(value: string): string {
+  return value.replace(/\\/g, "/").replace(/^\.\//, "").replace(/^\/+/, "");
+}
+
+async function hasStandaloneEntrypoint(packageRoot: string): Promise<boolean> {
+  try {
+    const manifestPath = join(packageRoot, "package.json");
+    const raw = await readFile(manifestPath, "utf8");
+    const parsed = JSON.parse(raw) as { pi?: { extensions?: unknown } };
+    const declared = parsed.pi?.extensions;
+
+    if (Array.isArray(declared) && declared.length > 0) {
+      for (const entry of declared) {
+        if (typeof entry !== "string" || !entry.trim()) continue;
+        const candidate = join(packageRoot, normalizeRelativePath(entry));
+        if (await fileExists(candidate)) {
+          return true;
+        }
+      }
+      return false;
+    }
+  } catch {
+    // Ignore invalid/missing manifest and fall back to conventional entrypoints.
+  }
+
+  return (
+    (await fileExists(join(packageRoot, "index.ts"))) ||
+    (await fileExists(join(packageRoot, "index.js")))
+  );
 }
 
 export async function installPackage(
@@ -210,22 +242,6 @@ export async function installFromUrl(
   logPackageInstall(pi, url, name, undefined, scope, true);
   success(ctx, `Installed ${name} to:\n${destPath}`);
   clearUpdatesAvailable(pi, ctx);
-
-  // Wait for the extension file to be fully written and discoverable
-  notify(ctx, "Waiting for extension to be ready...", "info");
-  const isReady = await waitForCondition(() => isSourceInstalled(name, ctx, pi), {
-    maxAttempts: 10,
-    delayMs: 100,
-    backoff: "exponential",
-  });
-
-  if (!isReady) {
-    notify(
-      ctx,
-      "Extension may not be immediately available. Reload pi manually if needed.",
-      "warning"
-    );
-  }
 
   const reloaded = await confirmReload(ctx, "Extension installed.");
   if (!reloaded) {
@@ -382,12 +398,11 @@ export async function installPackageLocally(
         throw new Error(`Extraction failed: ${extractRes.stderr || extractRes.stdout}`);
       }
 
-      // Verify index.ts exists
-      const indexPath = join(extractDir, "index.ts");
-      try {
-        await access(indexPath);
-      } catch {
-        throw new Error(`Package ${packageName} does not have an index.ts file`);
+      const hasEntrypoint = await hasStandaloneEntrypoint(extractDir);
+      if (!hasEntrypoint) {
+        throw new Error(
+          `Package ${packageName} does not contain a runnable extension entrypoint (pi.extensions, index.ts, or index.js)`
+        );
       }
 
       return true;
@@ -443,24 +458,8 @@ export async function installPackageLocally(
 
   clearSearchCache();
   logPackageInstall(pi, `npm:${packageName}`, packageName, version, scope, true);
-  success(ctx, `Installed ${packageName}@${version} locally to:\n${destResult}/index.ts`);
+  success(ctx, `Installed ${packageName}@${version} locally to:\n${destResult}`);
   clearUpdatesAvailable(pi, ctx);
-
-  // Wait for the extension to be discoverable before reloading
-  notify(ctx, "Waiting for extension to be ready...", "info");
-  const isReady = await waitForCondition(() => isSourceInstalled(`npm:${packageName}`, ctx, pi), {
-    maxAttempts: 10,
-    delayMs: 100,
-    backoff: "exponential",
-  });
-
-  if (!isReady) {
-    notify(
-      ctx,
-      "Extension may not be immediately available. Reload pi manually if needed.",
-      "warning"
-    );
-  }
 
   const reloaded = await confirmReload(ctx, "Extension installed.");
   if (!reloaded) {
