@@ -134,7 +134,7 @@ export async function installPackage(
   // This prevents a race condition where ctx.reload() runs before
   // settings.json or extension files are fully flushed to disk.
   notify(ctx, "Waiting for extension to be ready...", "info");
-  const isReady = await waitForCondition(() => isSourceInstalled(normalized, ctx, pi), {
+  const isReady = await waitForCondition(() => isSourceInstalled(normalized, ctx, pi, { scope }), {
     maxAttempts: 10,
     delayMs: 100,
     backoff: "exponential",

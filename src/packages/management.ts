@@ -338,23 +338,25 @@ async function removePackageInternal(
     clearUpdatesAvailable(pi, ctx);
   }
 
-  // Wait for the extension to be fully removed from pi list before restarting.
-  // This prevents a race condition where the removal hasn't flushed to disk yet.
+  // Wait for selected targets to disappear from their target scopes before reloading.
   if (failures.length === 0 && targets.length > 0) {
     notify(ctx, "Waiting for removal to complete...", "info");
-    const mainTarget = targets[0];
-    if (mainTarget) {
-      const isRemoved = await waitForCondition(
-        async () => {
-          const stillInstalled = await isSourceInstalled(mainTarget.source, ctx, pi);
-          return !stillInstalled;
-        },
-        { maxAttempts: 10, delayMs: 100, backoff: "exponential" }
-      );
+    const isRemoved = await waitForCondition(
+      async () => {
+        const installedChecks = await Promise.all(
+          targets.map((target) =>
+            isSourceInstalled(target.source, ctx, pi, {
+              scope: target.scope,
+            })
+          )
+        );
+        return installedChecks.every((installedInScope) => !installedInScope);
+      },
+      { maxAttempts: 10, delayMs: 100, backoff: "exponential" }
+    );
 
-      if (!isRemoved) {
-        notify(ctx, "Extension may still be active. Restart pi manually if needed.", "warning");
-      }
+    if (!isRemoved) {
+      notify(ctx, "Extension may still be active. Restart pi manually if needed.", "warning");
     }
   }
 

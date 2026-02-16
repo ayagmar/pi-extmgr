@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   getInstalledPackages,
+  isSourceInstalled,
   parseInstalledPackagesOutput,
   parseInstalledPackagesOutputAllScopes,
 } from "../src/packages/discovery.js";
@@ -73,6 +74,50 @@ Project:
   assert.equal(result.length, 2);
   assert.equal(result[0]?.scope, "global");
   assert.equal(result[1]?.scope, "project");
+});
+
+void test("isSourceInstalled matches exact package sources (no substring false positives)", async () => {
+  const { pi, ctx } = createMockHarness({
+    execImpl: (command, args) => {
+      if (command === "pi" && args[0] === "list") {
+        return {
+          code: 0,
+          stdout: "Global:\n  npm:demo-package-two@1.0.0\n",
+          stderr: "",
+          killed: false,
+        };
+      }
+      return { code: 1, stdout: "", stderr: "unexpected", killed: false };
+    },
+  });
+
+  assert.equal(await isSourceInstalled("npm:demo-package", ctx, pi), false);
+  assert.equal(await isSourceInstalled("npm:demo-package-two@1.0.0", ctx, pi), true);
+});
+
+void test("isSourceInstalled supports scope-aware checks", async () => {
+  const { pi, ctx } = createMockHarness({
+    execImpl: (command, args) => {
+      if (command === "pi" && args[0] === "list") {
+        return {
+          code: 0,
+          stdout: "Global:\n  npm:demo-package@1.0.0\nProject:\n  npm:demo-package@1.0.0\n",
+          stderr: "",
+          killed: false,
+        };
+      }
+      return { code: 1, stdout: "", stderr: "unexpected", killed: false };
+    },
+  });
+
+  assert.equal(
+    await isSourceInstalled("npm:demo-package@1.0.0", ctx, pi, { scope: "global" }),
+    true
+  );
+  assert.equal(
+    await isSourceInstalled("npm:demo-package@1.0.0", ctx, pi, { scope: "project" }),
+    true
+  );
 });
 
 void test("parseInstalledPackagesOutput parses ssh git sources", () => {

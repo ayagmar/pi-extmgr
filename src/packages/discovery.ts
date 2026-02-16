@@ -238,23 +238,28 @@ export function parseInstalledPackagesOutput(text: string): InstalledPackage[] {
 }
 
 /**
- * Check if a specific source is installed by running `pi list` and checking output.
- * Returns true if found, false if not found.
+ * Check whether a specific package source is installed.
+ * Matches on normalized package source and optional scope.
  */
 export async function isSourceInstalled(
   source: string,
   ctx: ExtensionCommandContext | ExtensionContext,
-  pi: ExtensionAPI
+  pi: ExtensionAPI,
+  options?: { scope?: "global" | "project" }
 ): Promise<boolean> {
   try {
     const res = await pi.exec("pi", ["list"], { timeout: TIMEOUTS.listPackages, cwd: ctx.cwd });
     if (res.code !== 0) return false;
 
-    const normalized = source.toLowerCase().replace(/\\/g, "/");
-    const stdout = res.stdout || "";
+    const installed = parseInstalledPackagesOutputAllScopes(res.stdout || "");
+    const expected = normalizeSourceIdentity(source);
 
-    // Check if the source appears in the output (case-insensitive, normalized paths)
-    return stdout.toLowerCase().replace(/\\/g, "/").includes(normalized);
+    return installed.some((pkg) => {
+      if (normalizeSourceIdentity(pkg.source) !== expected) {
+        return false;
+      }
+      return options?.scope ? pkg.scope === options.scope : true;
+    });
   } catch {
     return false;
   }
