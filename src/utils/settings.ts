@@ -7,9 +7,10 @@ import type {
   ExtensionCommandContext,
   ExtensionContext,
 } from "@mariozechner/pi-coding-agent";
-import { readFile, writeFile, mkdir, access, rename, rm } from "node:fs/promises";
+import { readFile, writeFile, mkdir, rename, rm } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { fileExists } from "./fs.js";
 
 export interface AutoUpdateConfig {
   intervalMs: number;
@@ -114,18 +115,6 @@ function getSessionConfig(
   }
 
   return undefined;
-}
-
-/**
- * Checks if a file exists
- */
-async function fileExists(path: string): Promise<boolean> {
-  try {
-    await access(path);
-    return true;
-  } catch {
-    return false;
-  }
 }
 
 /**
