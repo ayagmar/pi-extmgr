@@ -28,6 +28,8 @@ export const TIMEOUTS = {
   packageInstall: 180_000,
   /** Package update timeout (2 minutes) */
   packageUpdate: 120_000,
+  /** Bulk package update timeout (5 minutes) */
+  packageUpdateAll: 300_000,
   /** Package removal timeout (1 minute) */
   packageRemove: 60_000,
   /** Package listing timeout */

@@ -84,7 +84,7 @@ async function updatePackagesInternal(
 ): Promise<PackageMutationOutcome> {
   showProgress(ctx, "Updating", "all packages");
 
-  const res = await pi.exec("pi", ["update"], { timeout: 300000, cwd: ctx.cwd });
+  const res = await pi.exec("pi", ["update"], { timeout: TIMEOUTS.packageUpdateAll, cwd: ctx.cwd });
 
   if (res.code !== 0) {
     notifyError(ctx, `Update failed: ${res.stderr || res.stdout || `exit ${res.code}`}`);
