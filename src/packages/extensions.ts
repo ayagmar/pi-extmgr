@@ -1,9 +1,13 @@
-import { mkdir, readFile, writeFile, rename, rm } from "node:fs/promises";
-import { dirname, join, relative, resolve } from "node:path";
+import { mkdir, readFile, writeFile, rename, rm, readdir } from "node:fs/promises";
+import type { Dirent } from "node:fs";
+import { dirname, join, matchesGlob, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { homedir } from "node:os";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import { getAgentDir } from "@mariozechner/pi-coding-agent";
 import type { InstalledPackage, PackageExtensionEntry, Scope, State } from "../types/index.js";
+import { parseNpmSource } from "../utils/format.js";
 import { fileExists, readSummary } from "../utils/fs.js";
 
 interface PackageSettingsObject {
@@ -14,6 +18,9 @@ interface PackageSettingsObject {
 interface SettingsFile {
   packages?: (string | PackageSettingsObject)[];
 }
+
+const execFileAsync = promisify(execFile);
+let globalNpmRootCache: string | null | undefined;
 
 function normalizeRelativePath(value: string): string {
   const normalized = value.replace(/\\/g, "/").replace(/^\.\//, "").replace(/^\/+/, "");
@@ -37,9 +44,67 @@ function normalizePackageRootCandidate(candidate: string): string {
   return resolved;
 }
 
-function toPackageRoot(pkg: InstalledPackage, cwd: string): string | undefined {
+async function getGlobalNpmRoot(): Promise<string | undefined> {
+  if (globalNpmRootCache !== undefined) {
+    return globalNpmRootCache ?? undefined;
+  }
+
+  try {
+    const { stdout } = await execFileAsync("npm", ["root", "-g"], {
+      timeout: 2_000,
+      windowsHide: true,
+    });
+    const root = stdout.trim();
+    globalNpmRootCache = root || null;
+  } catch {
+    globalNpmRootCache = null;
+  }
+
+  return globalNpmRootCache ?? undefined;
+}
+
+async function resolveNpmPackageRoot(
+  pkg: InstalledPackage,
+  cwd: string
+): Promise<string | undefined> {
+  const parsed = parseNpmSource(pkg.source);
+  if (!parsed?.name) {
+    return undefined;
+  }
+
+  const packageName = parsed.name;
+  const projectCandidates = [
+    join(cwd, ".pi", "npm", "node_modules", packageName),
+    join(cwd, "node_modules", packageName),
+  ];
+
+  const packageDir = process.env.PI_PACKAGE_DIR || join(homedir(), ".pi", "agent");
+  const globalCandidates = [join(packageDir, "npm", "node_modules", packageName)];
+
+  const npmGlobalRoot = await getGlobalNpmRoot();
+  if (npmGlobalRoot) {
+    globalCandidates.unshift(join(npmGlobalRoot, packageName));
+  }
+
+  const candidates =
+    pkg.scope === "project" ? projectCandidates : [...globalCandidates, ...projectCandidates];
+
+  for (const candidate of candidates) {
+    if (await fileExists(join(candidate, "package.json"))) {
+      return candidate;
+    }
+  }
+
+  return undefined;
+}
+
+async function toPackageRoot(pkg: InstalledPackage, cwd: string): Promise<string | undefined> {
   if (pkg.resolvedPath) {
     return normalizePackageRootCandidate(pkg.resolvedPath);
+  }
+
+  if (pkg.source.startsWith("npm:")) {
+    return resolveNpmPackageRoot(pkg, cwd);
   }
 
   if (pkg.source.startsWith("file://")) {
@@ -141,23 +206,75 @@ async function writeSettingsFile(path: string, settings: SettingsFile): Promise<
   }
 }
 
+function matchesFilterPattern(targetPath: string, pattern: string): boolean {
+  const normalizedPattern = normalizeRelativePath(pattern.trim());
+  if (!normalizedPattern) return false;
+  if (targetPath === normalizedPattern) return true;
+
+  try {
+    return matchesGlob(targetPath, normalizedPattern);
+  } catch {
+    return false;
+  }
+}
+
 function getPackageFilterState(filters: string[] | undefined, extensionPath: string): State {
-  if (!filters || filters.length === 0) {
+  // Omitted key => all enabled (pi default).
+  if (filters === undefined) {
     return "enabled";
   }
 
-  const normalizedTarget = normalizeRelativePath(extensionPath);
-  let state: State = "enabled";
-
-  for (const token of filters) {
-    if (!token || (token[0] !== "+" && token[0] !== "-")) continue;
-    const sign = token[0];
-    const path = normalizeRelativePath(token.slice(1));
-    if (path !== normalizedTarget) continue;
-    state = sign === "+" ? "enabled" : "disabled";
+  // Explicit empty array => load none.
+  if (filters.length === 0) {
+    return "disabled";
   }
 
-  return state;
+  const normalizedTarget = normalizeRelativePath(extensionPath);
+  const includePatterns: string[] = [];
+  const excludePatterns: string[] = [];
+  let markerOverride: State | undefined;
+
+  for (const rawToken of filters) {
+    const token = rawToken.trim();
+    if (!token) continue;
+
+    const prefix = token[0];
+
+    if (prefix === "+" || prefix === "-") {
+      const markerPath = normalizeRelativePath(token.slice(1));
+      if (markerPath === normalizedTarget) {
+        markerOverride = prefix === "+" ? "enabled" : "disabled";
+      }
+      continue;
+    }
+
+    if (prefix === "!") {
+      const pattern = normalizeRelativePath(token.slice(1));
+      if (pattern) {
+        excludePatterns.push(pattern);
+      }
+      continue;
+    }
+
+    const include = normalizeRelativePath(token);
+    if (include) {
+      includePatterns.push(include);
+    }
+  }
+
+  let enabled =
+    includePatterns.length === 0 ||
+    includePatterns.some((p) => matchesFilterPattern(normalizedTarget, p));
+
+  if (enabled && excludePatterns.some((p) => matchesFilterPattern(normalizedTarget, p))) {
+    enabled = false;
+  }
+
+  if (markerOverride !== undefined) {
+    enabled = markerOverride === "enabled";
+  }
+
+  return enabled ? "enabled" : "disabled";
 }
 
 async function getPackageExtensionState(
@@ -185,26 +302,130 @@ async function getPackageExtensionState(
   return getPackageFilterState(entry.extensions, extensionPath);
 }
 
-async function discoverEntrypoints(packageRoot: string): Promise<string[]> {
-  const packageJsonPath = join(packageRoot, "package.json");
-  let manifestExtensions: string[] | undefined;
+function isExtensionEntrypointPath(path: string): boolean {
+  return /\.(ts|js)$/i.test(path);
+}
 
-  try {
-    const raw = await readFile(packageJsonPath, "utf8");
-    const parsed = JSON.parse(raw) as { pi?: { extensions?: unknown } };
-    const ext = parsed.pi?.extensions;
-    if (Array.isArray(ext)) {
-      const entries = ext.filter((value): value is string => typeof value === "string");
-      if (entries.length > 0) {
-        manifestExtensions = entries;
-      }
+function hasGlobMagic(path: string): boolean {
+  return /[*?{}[\]]/.test(path);
+}
+
+function isSafeRelativePath(path: string): boolean {
+  return path !== "" && path !== ".." && !path.startsWith("../") && !path.includes("/../");
+}
+
+function selectDirectoryFiles(allFiles: string[], directoryPath: string): string[] {
+  const prefix = `${directoryPath}/`;
+  return allFiles.filter((file) => file.startsWith(prefix));
+}
+
+function applySelection(selected: Set<string>, files: Iterable<string>, exclude: boolean): void {
+  for (const file of files) {
+    if (exclude) {
+      selected.delete(file);
+    } else {
+      selected.add(file);
     }
+  }
+}
+
+async function collectExtensionFilesFromDir(
+  packageRoot: string,
+  startDir: string
+): Promise<string[]> {
+  const collected: string[] = [];
+
+  let entries: Dirent[];
+  try {
+    entries = await readdir(startDir, { withFileTypes: true });
   } catch {
-    // Ignore invalid/missing package.json and fall back.
+    return collected;
   }
 
-  if (manifestExtensions && manifestExtensions.length > 0) {
-    return manifestExtensions.map((entry) => normalizeRelativePath(entry));
+  for (const entry of entries) {
+    const absolutePath = join(startDir, entry.name);
+
+    if (entry.isDirectory()) {
+      collected.push(...(await collectExtensionFilesFromDir(packageRoot, absolutePath)));
+      continue;
+    }
+
+    if (!entry.isFile()) {
+      continue;
+    }
+
+    const relativePath = normalizeRelativePath(relative(packageRoot, absolutePath));
+    if (isExtensionEntrypointPath(relativePath)) {
+      collected.push(relativePath);
+    }
+  }
+
+  return collected;
+}
+
+async function resolveManifestExtensionEntries(
+  packageRoot: string,
+  entries: string[]
+): Promise<string[]> {
+  const selected = new Set<string>();
+  const allFiles = await collectExtensionFilesFromDir(packageRoot, packageRoot);
+
+  for (const rawToken of entries) {
+    const token = rawToken.trim();
+    if (!token) continue;
+
+    const exclude = token.startsWith("!");
+    const pattern = normalizeRelativePath(exclude ? token.slice(1) : token);
+    if (!isSafeRelativePath(pattern)) {
+      continue;
+    }
+
+    if (hasGlobMagic(pattern)) {
+      const matchedFiles = allFiles.filter((file) => matchesFilterPattern(file, pattern));
+      applySelection(selected, matchedFiles, exclude);
+      continue;
+    }
+
+    const directoryFiles = selectDirectoryFiles(allFiles, pattern);
+    if (directoryFiles.length > 0) {
+      applySelection(selected, directoryFiles, exclude);
+      continue;
+    }
+
+    if (isExtensionEntrypointPath(pattern)) {
+      applySelection(selected, [pattern], exclude);
+    }
+  }
+
+  return Array.from(selected).sort((a, b) => a.localeCompare(b));
+}
+
+export async function resolveManifestExtensionEntrypoints(
+  packageRoot: string
+): Promise<string[] | undefined> {
+  const packageJsonPath = join(packageRoot, "package.json");
+
+  let parsed: { pi?: { extensions?: unknown } };
+  try {
+    const raw = await readFile(packageJsonPath, "utf8");
+    parsed = JSON.parse(raw) as { pi?: { extensions?: unknown } };
+  } catch {
+    return undefined;
+  }
+
+  const extensions = parsed.pi?.extensions;
+  if (!Array.isArray(extensions)) {
+    return undefined;
+  }
+
+  const entries = extensions.filter((value): value is string => typeof value === "string");
+  return resolveManifestExtensionEntries(packageRoot, entries);
+}
+
+async function discoverEntrypoints(packageRoot: string): Promise<string[]> {
+  const manifestEntrypoints = await resolveManifestExtensionEntrypoints(packageRoot);
+  if (manifestEntrypoints !== undefined) {
+    return manifestEntrypoints;
   }
 
   const indexTs = join(packageRoot, "index.ts");
@@ -227,7 +448,7 @@ export async function discoverPackageExtensions(
   const entries: PackageExtensionEntry[] = [];
 
   for (const pkg of packages) {
-    const packageRoot = toPackageRoot(pkg, cwd);
+    const packageRoot = await toPackageRoot(pkg, cwd);
     if (!packageRoot) continue;
 
     const extensionPaths = await discoverEntrypoints(packageRoot);
@@ -318,9 +539,4 @@ export async function setPackageExtensionState(
       error: error instanceof Error ? error.message : String(error),
     };
   }
-}
-
-export function toProjectRelativePath(path: string, cwd: string): string {
-  const rel = relative(cwd, path);
-  return rel.startsWith("..") ? path : normalizeRelativePath(rel);
 }
