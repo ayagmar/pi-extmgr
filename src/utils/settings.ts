@@ -38,6 +38,16 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
+function isValidStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((item): item is string => typeof item === "string");
+}
+
+function sanitizeStringArray(value: unknown): string[] | undefined {
+  if (!isValidStringArray(value)) return undefined;
+  const sanitized = value.map((s) => s.trim()).filter(Boolean);
+  return sanitized.length > 0 ? sanitized : undefined;
+}
+
 function sanitizeAutoUpdateConfig(input: unknown): AutoUpdateConfig {
   if (!isRecord(input)) {
     return { ...DEFAULT_CONFIG };
@@ -74,15 +84,9 @@ function sanitizeAutoUpdateConfig(input: unknown): AutoUpdateConfig {
     config.nextCheck = input.nextCheck;
   }
 
-  if (Array.isArray(input.updatesAvailable)) {
-    const updates = input.updatesAvailable
-      .filter((value): value is string => typeof value === "string")
-      .map((value) => value.trim())
-      .filter(Boolean);
-
-    if (updates.length > 0) {
-      config.updatesAvailable = updates;
-    }
+  const updates = sanitizeStringArray(input.updatesAvailable);
+  if (updates) {
+    config.updatesAvailable = updates;
   }
 
   if (!config.enabled || config.intervalMs === 0) {
@@ -198,7 +202,6 @@ async function writeConfigToDisk(config: AutoUpdateConfig): Promise<void> {
 
 function enqueueConfigWrite(config: AutoUpdateConfig): void {
   settingsWriteQueue = settingsWriteQueue
-    .catch(() => undefined)
     .then(() => writeConfigToDisk(config))
     .catch((error) => {
       console.warn("[extmgr] Failed to write settings:", error);

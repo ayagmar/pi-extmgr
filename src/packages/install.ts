@@ -48,18 +48,20 @@ function getExtensionInstallDir(ctx: ExtensionCommandContext, scope: InstallScop
   return join(homedir(), ".pi", "agent", "extensions");
 }
 
+interface GithubUrlInfo {
+  owner: string;
+  repo: string;
+  branch: string;
+  filePath: string;
+}
+
 /**
  * Safely extracts regex match groups with validation
  */
-function safeExtractGithubMatch(
-  match: RegExpMatchArray | null
-): { owner: string; repo: string; branch: string; filePath: string } | undefined {
+function safeExtractGithubMatch(match: RegExpMatchArray | null): GithubUrlInfo | undefined {
   if (!match) return undefined;
 
-  const owner = match[1];
-  const repo = match[2];
-  const branch = match[3];
-  const filePath = match[4];
+  const [, owner, repo, branch, filePath] = match;
 
   if (!owner || !repo || !branch || !filePath) {
     return undefined;

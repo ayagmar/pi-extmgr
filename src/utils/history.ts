@@ -155,15 +155,19 @@ export function logCacheClear(pi: ExtensionAPI, success: boolean, error?: string
   });
 }
 
+function isExtensionChangeEntry(value: unknown): value is ExtensionChangeEntry {
+  if (!value || typeof value !== "object") return false;
+
+  const maybe = value as Partial<ExtensionChangeEntry>;
+  if (typeof maybe.action !== "string") return false;
+  if (typeof maybe.timestamp !== "number") return false;
+  if (typeof maybe.success !== "boolean") return false;
+
+  return true;
+}
+
 function asChangeEntry(data: unknown): ExtensionChangeEntry | undefined {
-  if (!data || typeof data !== "object") return undefined;
-
-  const maybe = data as Partial<ExtensionChangeEntry>;
-  if (typeof maybe.action !== "string") return undefined;
-  if (typeof maybe.timestamp !== "number") return undefined;
-  if (typeof maybe.success !== "boolean") return undefined;
-
-  return maybe as ExtensionChangeEntry;
+  return isExtensionChangeEntry(data) ? data : undefined;
 }
 
 function matchesHistoryFilters(change: ExtensionChangeEntry, filters: HistoryFilters): boolean {
@@ -284,18 +288,17 @@ export async function queryGlobalHistory(
         continue;
       }
 
-      if (!parsed || typeof parsed !== "object") continue;
-      const entry = parsed as {
-        type?: string;
-        customType?: string;
-        data?: unknown;
-      };
+      if (!isRecord(parsed)) continue;
 
-      if (entry.type !== "custom" || entry.customType !== EXT_CHANGE_CUSTOM_TYPE || !entry.data) {
+      if (
+        parsed.type !== "custom" ||
+        parsed.customType !== EXT_CHANGE_CUSTOM_TYPE ||
+        !parsed.data
+      ) {
         continue;
       }
 
-      const change = asChangeEntry(entry.data);
+      const change = asChangeEntry(parsed.data);
       if (change) {
         all.push({ change, sessionFile: file });
       }
@@ -311,6 +314,10 @@ export async function queryGlobalHistory(
 /**
  * Format a change entry for display
  */
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
 export function formatChangeEntry(entry: ExtensionChangeEntry): string {
   const time = new Date(entry.timestamp).toLocaleString();
   const icon = entry.success ? "✓" : "✗";
