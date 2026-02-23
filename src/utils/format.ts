@@ -57,28 +57,43 @@ export function formatBytes(bytes: number): string {
   return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`;
 }
 
+const GIT_PATTERNS = {
+  gitPrefix: /^git:/,
+  httpPrefix: /^https?:\/\//,
+  sshPrefix: /^ssh:\/\//,
+  gitProtoPrefix: /^git:\/\//,
+  gitSsh: /^git@[^\s:]+:.+/,
+} as const;
+
+const LOCAL_PATH_PATTERNS = {
+  unixAbsolute: /^\//,
+  unixRelative: /^\.\.?\//,
+  windowsRelative: /^\.\.?\\/,
+  homeRelative: /^~\//,
+  fileProto: /^file:\/\//,
+  windowsDrive: /^[a-zA-Z]:[\\/]/,
+  uncPath: /^\\\\/,
+} as const;
+
 function isGitLikeSource(source: string): boolean {
   return (
-    source.startsWith("git:") ||
-    source.startsWith("http://") ||
-    source.startsWith("https://") ||
-    source.startsWith("ssh://") ||
-    source.startsWith("git://") ||
-    /^git@[^\s:]+:.+/.test(source)
+    GIT_PATTERNS.gitPrefix.test(source) ||
+    GIT_PATTERNS.httpPrefix.test(source) ||
+    GIT_PATTERNS.sshPrefix.test(source) ||
+    GIT_PATTERNS.gitProtoPrefix.test(source) ||
+    GIT_PATTERNS.gitSsh.test(source)
   );
 }
 
 function isLocalPathSource(source: string): boolean {
   return (
-    source.startsWith("/") ||
-    source.startsWith("./") ||
-    source.startsWith("../") ||
-    source.startsWith(".\\") ||
-    source.startsWith("..\\") ||
-    source.startsWith("~/") ||
-    source.startsWith("file://") ||
-    /^[a-zA-Z]:[\\/]/.test(source) ||
-    source.startsWith("\\\\")
+    LOCAL_PATH_PATTERNS.unixAbsolute.test(source) ||
+    LOCAL_PATH_PATTERNS.unixRelative.test(source) ||
+    LOCAL_PATH_PATTERNS.windowsRelative.test(source) ||
+    LOCAL_PATH_PATTERNS.homeRelative.test(source) ||
+    LOCAL_PATH_PATTERNS.fileProto.test(source) ||
+    LOCAL_PATH_PATTERNS.windowsDrive.test(source) ||
+    LOCAL_PATH_PATTERNS.uncPath.test(source)
   );
 }
 
@@ -93,7 +108,7 @@ export function normalizePackageSource(source: string): string {
   const trimmed = source.trim();
   if (!trimmed) return trimmed;
 
-  if (/^git@[^\s:]+:.+/.test(trimmed)) {
+  if (GIT_PATTERNS.gitSsh.test(trimmed)) {
     return `git:${trimmed}`;
   }
 
