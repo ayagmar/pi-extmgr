@@ -119,7 +119,6 @@ export function logPackageUpdate(
     packageSource: source,
     packageName: name,
     version: toVersion,
-    scope: source.includes("node_modules") ? "global" : "project",
     success,
     error,
   });

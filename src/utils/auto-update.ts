@@ -20,7 +20,7 @@ import {
 import { parseNpmSource } from "./format.js";
 import { TIMEOUTS } from "../constants.js";
 
-import { startTimer, stopTimer, isTimerRunning, runOnce } from "./timer.js";
+import { startTimer, stopTimer, isTimerRunning } from "./timer.js";
 
 // Context provider for safe session handling
 export type ContextProvider = () => (ExtensionCommandContext | ExtensionContext) | undefined;
@@ -47,12 +47,11 @@ export function startAutoUpdateTimer(
   const interval = getScheduleInterval(config);
   if (!interval) return;
 
-  // Run an initial check immediately
-  runOnce(0, () => {
-    const checkCtx = getCtx();
-    if (!checkCtx) return;
-    void checkForUpdates(pi, checkCtx, onUpdateAvailable);
-  });
+  // Run an initial check immediately.
+  const initialCtx = getCtx();
+  if (initialCtx) {
+    void checkForUpdates(pi, initialCtx, onUpdateAvailable);
+  }
 
   // Set up recurring checks
   startTimer(interval, () => {

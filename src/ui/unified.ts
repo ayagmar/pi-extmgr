@@ -170,7 +170,7 @@ async function showInteractiveOnce(
     container.addChild(new Spacer(1));
 
     // Footer with keyboard shortcuts
-    const footerState = buildFooterState(items, staged, byId);
+    const footerState = buildFooterState(items);
     container.addChild(new Text(theme.fg("dim", buildFooterShortcuts(footerState)), 2, 0));
     container.addChild(new DynamicBorder((s: string) => theme.fg("accent", s)));
 
