@@ -132,16 +132,20 @@ const COMMAND_DEFINITIONS: Record<CommandId, CommandDefinition> = {
   },
 };
 
-const COMMAND_ALIAS_TO_ID: Record<string, CommandId> = Object.values(COMMAND_DEFINITIONS).reduce(
-  (acc, def) => {
-    acc[def.id] = def.id;
+function buildCommandAliasMap(
+  definitions: Record<CommandId, CommandDefinition>
+): Record<string, CommandId> {
+  const map: Record<string, CommandId> = {};
+  for (const def of Object.values(definitions)) {
+    map[def.id] = def.id;
     for (const alias of def.aliases ?? []) {
-      acc[alias] = def.id;
+      map[alias] = def.id;
     }
-    return acc;
-  },
-  {} as Record<string, CommandId>
-);
+  }
+  return map;
+}
+
+const COMMAND_ALIAS_TO_ID: Record<string, CommandId> = buildCommandAliasMap(COMMAND_DEFINITIONS);
 
 export function resolveCommand(tokens: string[]): { id: CommandId; args: string[] } | undefined {
   if (tokens.length === 0) {
