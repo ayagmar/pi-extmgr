@@ -206,16 +206,20 @@ async function writeSettingsFile(path: string, settings: SettingsFile): Promise<
   }
 }
 
+function safeMatchesGlob(targetPath: string, pattern: string): boolean {
+  try {
+    return matchesGlob(targetPath, pattern);
+  } catch {
+    return false;
+  }
+}
+
 function matchesFilterPattern(targetPath: string, pattern: string): boolean {
   const normalizedPattern = normalizeRelativePath(pattern.trim());
   if (!normalizedPattern) return false;
   if (targetPath === normalizedPattern) return true;
 
-  try {
-    return matchesGlob(targetPath, normalizedPattern);
-  } catch {
-    return false;
-  }
+  return safeMatchesGlob(targetPath, normalizedPattern);
 }
 
 function getPackageFilterState(filters: string[] | undefined, extensionPath: string): State {
@@ -375,7 +379,8 @@ async function resolveManifestExtensionEntries(
     if (!token) continue;
 
     const exclude = token.startsWith("!");
-    const pattern = normalizeRelativePath(exclude ? token.slice(1) : token);
+    const normalizedToken = normalizeRelativePath(exclude ? token.slice(1) : token);
+    const pattern = normalizedToken.replace(/[\\/]+$/g, "");
     if (!isSafeRelativePath(pattern)) {
       continue;
     }

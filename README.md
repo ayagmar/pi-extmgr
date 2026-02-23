@@ -17,6 +17,8 @@ pi install npm:pi-extmgr
 
 Then reload Pi.
 
+Requires Node.js `>=22.5.0`.
+
 ## Features
 
 - **Unified manager UI**

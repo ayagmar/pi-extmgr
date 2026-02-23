@@ -73,6 +73,43 @@ void test("discoverPackageExtensions resolves manifest directory entrypoints", a
   }
 });
 
+void test("discoverPackageExtensions resolves directory tokens with trailing slash", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "pi-extmgr-cwd-"));
+  const pkgRoot = join(cwd, "vendor", "dir-manifest-trailing");
+
+  try {
+    await mkdir(join(pkgRoot, "extensions", "sub"), { recursive: true });
+    await writeFile(
+      join(pkgRoot, "package.json"),
+      JSON.stringify(
+        { name: "dir-manifest-trailing", pi: { extensions: ["extensions/"] } },
+        null,
+        2
+      ),
+      "utf8"
+    );
+    await writeFile(join(pkgRoot, "extensions", "index.ts"), "// index\n", "utf8");
+    await writeFile(join(pkgRoot, "extensions", "sub", "feature.js"), "// feature\n", "utf8");
+
+    const installed: InstalledPackage[] = [
+      {
+        source: "./vendor/dir-manifest-trailing",
+        name: "dir-manifest-trailing",
+        scope: "project",
+        resolvedPath: pkgRoot,
+      },
+    ];
+
+    const discovered = await discoverPackageExtensions(installed, cwd);
+    assert.deepEqual(
+      discovered.map((entry) => entry.extensionPath),
+      ["extensions/index.ts", "extensions/sub/feature.js"]
+    );
+  } finally {
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
+
 void test("discoverPackageExtensions reads manifest entrypoints and project filter state", async () => {
   const cwd = await mkdtemp(join(tmpdir(), "pi-extmgr-cwd-"));
   const pkgRoot = join(cwd, "vendor", "demo");

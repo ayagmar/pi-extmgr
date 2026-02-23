@@ -262,6 +262,10 @@ async function showInteractiveOnce(
   return await handleUnifiedAction(result, items, staged, byId, ctx, pi);
 }
 
+function normalizePathForDuplicateCheck(value: string): string {
+  return value.replace(/\\/g, "/").toLowerCase();
+}
+
 export function buildUnifiedItems(
   localEntries: Awaited<ReturnType<typeof discoverExtensions>>,
   installedPackages: InstalledPackage[],
@@ -272,7 +276,7 @@ export function buildUnifiedItems(
 
   // Add local extensions
   for (const entry of localEntries) {
-    localPaths.add(entry.activePath.toLowerCase());
+    localPaths.add(normalizePathForDuplicateCheck(entry.activePath));
     items.push({
       type: "local",
       id: entry.id,
@@ -287,24 +291,27 @@ export function buildUnifiedItems(
   }
 
   for (const pkg of installedPackages) {
-    const pkgSourceLower = pkg.source.toLowerCase();
-    const pkgResolvedLower = pkg.resolvedPath?.toLowerCase() ?? "";
+    const pkgSourceNormalized = normalizePathForDuplicateCheck(pkg.source);
+    const pkgResolvedNormalized = pkg.resolvedPath
+      ? normalizePathForDuplicateCheck(pkg.resolvedPath)
+      : "";
 
     let isDuplicate = false;
     for (const localPath of localPaths) {
-      if (pkgSourceLower === localPath || pkgResolvedLower === localPath) {
+      if (pkgSourceNormalized === localPath || pkgResolvedNormalized === localPath) {
         isDuplicate = true;
         break;
       }
       if (
-        pkgResolvedLower &&
-        (localPath.startsWith(pkgResolvedLower + "/") || pkgResolvedLower.startsWith(localPath))
+        pkgResolvedNormalized &&
+        (localPath.startsWith(`${pkgResolvedNormalized}/`) ||
+          pkgResolvedNormalized.startsWith(localPath))
       ) {
         isDuplicate = true;
         break;
       }
-      const localDir = localPath.replace(/\\/g, "/").split("/").slice(0, -1).join("/");
-      if (pkgResolvedLower && pkgResolvedLower.replace(/\\/g, "/") === localDir) {
+      const localDir = localPath.split("/").slice(0, -1).join("/");
+      if (pkgResolvedNormalized && pkgResolvedNormalized === localDir) {
         isDuplicate = true;
         break;
       }

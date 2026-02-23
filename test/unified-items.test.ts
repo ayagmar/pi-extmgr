@@ -70,6 +70,25 @@ void test("buildUnifiedItems omits package rows that duplicate local extension p
   assert.equal(items[0]?.type, "local");
 });
 
+void test("buildUnifiedItems omits duplicate package rows with mixed path separators", () => {
+  const localEntries = [
+    createLocalEntry("C:\\repo\\.pi\\extensions\\demo\\index.ts", "demo/index.ts"),
+  ];
+  const installedPackages: InstalledPackage[] = [
+    {
+      source: "npm:demo",
+      name: "demo",
+      scope: "global",
+      resolvedPath: "C:/repo/.pi/extensions/demo",
+    },
+  ];
+
+  const items = buildUnifiedItems(localEntries, installedPackages, new Set());
+
+  assert.equal(items.length, 1);
+  assert.equal(items[0]?.type, "local");
+});
+
 void test("integration: pi list fixture with single-entry npm packages renders package rows once", async () => {
   const cwd = await mkdtemp(join(tmpdir(), "pi-extmgr-unified-"));
 
