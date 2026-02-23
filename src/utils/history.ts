@@ -239,6 +239,10 @@ export function querySessionChanges(
   return applyHistoryFilters(getAllSessionChanges(ctx), filters);
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
 async function walkSessionFiles(dir: string): Promise<string[]> {
   const result: string[] = [];
 
@@ -314,10 +318,6 @@ export async function queryGlobalHistory(
 /**
  * Format a change entry for display
  */
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
-}
-
 export function formatChangeEntry(entry: ExtensionChangeEntry): string {
   const time = new Date(entry.timestamp).toLocaleString();
   const icon = entry.success ? "✓" : "✗";
