@@ -1,13 +1,14 @@
 /**
  * Package installation logic
  */
-import { mkdir, rm, writeFile, cp, readFile } from "node:fs/promises";
+import { mkdir, rm, writeFile, cp } from "node:fs/promises";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import type { ExtensionAPI, ExtensionCommandContext } from "@mariozechner/pi-coding-agent";
 import { normalizePackageSource } from "../utils/format.js";
 import { fileExists } from "../utils/fs.js";
 import { clearSearchCache, isSourceInstalled } from "./discovery.js";
+import { resolveManifestExtensionEntrypoints } from "./extensions.js";
 import { waitForCondition } from "../utils/retry.js";
 import { logPackageInstall } from "../utils/history.js";
 import { clearUpdatesAvailable } from "../utils/settings.js";
@@ -70,29 +71,15 @@ function safeExtractGithubMatch(match: RegExpMatchArray | null): GithubUrlInfo |
   return { owner, repo, branch, filePath };
 }
 
-function normalizeRelativePath(value: string): string {
-  return value.replace(/\\/g, "/").replace(/^\.\//, "").replace(/^\/+/, "");
-}
-
 async function hasStandaloneEntrypoint(packageRoot: string): Promise<boolean> {
-  try {
-    const manifestPath = join(packageRoot, "package.json");
-    const raw = await readFile(manifestPath, "utf8");
-    const parsed = JSON.parse(raw) as { pi?: { extensions?: unknown } };
-    const declared = parsed.pi?.extensions;
-
-    if (Array.isArray(declared) && declared.length > 0) {
-      for (const entry of declared) {
-        if (typeof entry !== "string" || !entry.trim()) continue;
-        const candidate = join(packageRoot, normalizeRelativePath(entry));
-        if (await fileExists(candidate)) {
-          return true;
-        }
+  const declared = await resolveManifestExtensionEntrypoints(packageRoot);
+  if (declared !== undefined) {
+    for (const path of declared) {
+      if (await fileExists(join(packageRoot, path))) {
+        return true;
       }
-      return false;
     }
-  } catch {
-    // Ignore invalid/missing manifest and fall back to conventional entrypoints.
+    return false;
   }
 
   return (

@@ -47,11 +47,11 @@ export interface PackageExtensionEntry {
 }
 
 export interface UnifiedItem {
-  type: "local" | "package" | "package-extension";
+  type: "local" | "package";
   id: string;
   displayName: string;
   summary: string;
-  scope: Scope | "global" | "project";
+  scope: Scope;
   // Local extension fields
   state?: State | undefined;
   activePath?: string | undefined;
@@ -63,9 +63,6 @@ export interface UnifiedItem {
   description?: string | undefined;
   size?: number | undefined; // Package size in bytes
   updateAvailable?: boolean | undefined;
-  // Package extension fields
-  packageSource?: string | undefined;
-  extensionPath?: string | undefined;
 }
 
 export interface SearchCache {
@@ -82,7 +79,11 @@ export type UnifiedAction =
   | { type: "help" }
   | { type: "menu" }
   | { type: "quick"; action: "install" | "search" | "update-all" | "auto-update" }
-  | { type: "action"; itemId: string; action?: "menu" | "update" | "remove" | "details" };
+  | {
+      type: "action";
+      itemId: string;
+      action?: "menu" | "update" | "remove" | "details" | "configure";
+    };
 
 export type BrowseAction =
   | { type: "package"; name: string }

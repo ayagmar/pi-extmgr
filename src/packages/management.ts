@@ -10,7 +10,7 @@ import {
   isSourceInstalled,
 } from "./discovery.js";
 import { waitForCondition } from "../utils/retry.js";
-import { formatInstalledPackageLabel, formatBytes, parseNpmSource } from "../utils/format.js";
+import { formatInstalledPackageLabel, parseNpmSource } from "../utils/format.js";
 import { getPackageSourceKind, splitGitRepoAndRef } from "../utils/package-source.js";
 import { logPackageUpdate, logPackageRemove } from "../utils/history.js";
 import { clearUpdatesAvailable } from "../utils/settings.js";
@@ -405,62 +405,6 @@ export async function promptRemove(ctx: ExtensionCommandContext, pi: ExtensionAP
   const pkg = selectedIndex >= 0 ? packages[selectedIndex] : undefined;
   if (pkg) {
     await removePackage(pkg.source, ctx, pi);
-  }
-}
-
-export async function showPackageActions(
-  pkg: InstalledPackage,
-  ctx: ExtensionCommandContext,
-  pi: ExtensionAPI
-): Promise<boolean> {
-  if (!requireUI(ctx, "Package actions")) {
-    console.log(`Package: ${pkg.name}`);
-    console.log(`Version: ${pkg.version || "unknown"}`);
-    console.log(`Source: ${pkg.source}`);
-    console.log(`Scope: ${pkg.scope}`);
-    return true;
-  }
-
-  const choice = await ctx.ui.select(pkg.name, [
-    `Remove ${pkg.name}`,
-    `Update ${pkg.name}`,
-    "View details",
-    "Back to manager",
-  ]);
-
-  if (!choice || choice.includes("Back")) {
-    return false;
-  }
-
-  const action = choice.startsWith("Remove")
-    ? "remove"
-    : choice.startsWith("Update")
-      ? "update"
-      : choice.includes("details")
-        ? "details"
-        : "back";
-
-  switch (action) {
-    case "remove": {
-      const outcome = await removePackageWithOutcome(pkg.source, ctx, pi);
-      return outcome.reloaded;
-    }
-    case "update": {
-      const outcome = await updatePackageWithOutcome(pkg.source, ctx, pi);
-      return outcome.reloaded;
-    }
-    case "details": {
-      const sizeStr = pkg.size !== undefined ? `\nSize: ${formatBytes(pkg.size)}` : "";
-      notify(
-        ctx,
-        `Name: ${pkg.name}\nVersion: ${pkg.version || "unknown"}\nSource: ${pkg.source}\nScope: ${pkg.scope}${sizeStr}`,
-        "info"
-      );
-      return showPackageActions(pkg, ctx, pi);
-    }
-    case "back":
-    default:
-      return false;
   }
 }
 

@@ -17,11 +17,16 @@ pi install npm:pi-extmgr
 
 Then reload Pi.
 
+Requires Node.js `>=22.5.0`.
+
 ## Features
 
 - **Unified manager UI**
   - Local extensions (`~/.pi/agent/extensions`, `.pi/extensions`) and installed packages in one list
   - Scope indicators (global/project), status indicators, update badges
+- **Package extension configuration panel**
+  - Configure individual extension entrypoints inside an installed package (`c` on package row)
+  - Persists to package filters in `settings.json` (no manual JSON editing)
 - **Safe staged local extension toggles**
   - Toggle with `Space/Enter`, apply with `S`
   - Unsaved-change guard when leaving (save/discard/stay)
@@ -54,22 +59,23 @@ Open the manager:
 
 ### In the manager
 
-| Key           | Action                                           |
-| ------------- | ------------------------------------------------ |
-| `↑↓`          | Navigate                                         |
-| `Space/Enter` | Toggle local/package extension on/off            |
-| `S`           | Save changes                                     |
-| `Enter` / `A` | Actions on selected package (update/remove/view) |
-| `u`           | Update selected package directly                 |
-| `X`           | Remove selected item (package/local extension)   |
-| `i`           | Quick install by source                          |
-| `f`           | Quick search                                     |
-| `U`           | Update all packages                              |
-| `t`           | Auto-update wizard                               |
-| `P` / `M`     | Quick actions palette                            |
-| `R`           | Browse remote packages                           |
-| `?` / `H`     | Help                                             |
-| `Esc`         | Exit                                             |
+| Key           | Action                                                |
+| ------------- | ----------------------------------------------------- |
+| `↑↓`          | Navigate                                              |
+| `Space/Enter` | Toggle local extension on/off                         |
+| `S`           | Save local extension changes                          |
+| `Enter` / `A` | Actions on selected package (configure/update/remove) |
+| `c`           | Configure selected package extensions                 |
+| `u`           | Update selected package directly                      |
+| `X`           | Remove selected item (package/local extension)        |
+| `i`           | Quick install by source                               |
+| `f`           | Quick search                                          |
+| `U`           | Update all packages                                   |
+| `t`           | Auto-update wizard                                    |
+| `P` / `M`     | Quick actions palette                                 |
+| `R`           | Browse remote packages                                |
+| `?` / `H`     | Help                                                  |
+| `Esc`         | Exit                                                  |
 
 ### Commands
 
@@ -134,7 +140,9 @@ Examples:
 
 ## Tips
 
-- **Staged changes**: Toggle extensions on/off, then press `S` to apply all at once. A `*` shows pending changes.
+- **Staged local changes**: Toggle local extensions on/off, then press `S` to apply all at once.
+- **Package extension config**: Select a package and press `c` (or Enter/A → Configure) to enable/disable individual package entrypoints.
+  - After saving package extension config, restart pi to fully apply changes.
 - **Two install modes**:
   - **Managed** (npm): Auto-updates with `pi update`, stored in pi's package cache
   - **Local** (standalone): Copies to `~/.pi/agent/extensions/{package}/`, supports multi-file extensions

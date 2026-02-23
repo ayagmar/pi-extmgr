@@ -57,7 +57,7 @@
   "author": "ayagmar",
   "license": "MIT",
   "engines": {
-    "node": ">=22"
+    "node": ">=22.5.0"
   },
   "repository": {
     "type": "git",

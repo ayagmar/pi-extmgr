@@ -17,6 +17,7 @@ export function showHelp(ctx: ExtensionCommandContext): void {
     "  Space/Enter  Toggle local extension enabled/disabled",
     "  S            Save changes to local extensions",
     "  Enter/A      Open actions for selected package",
+    "  c            Configure selected package extensions (restart required after save)",
     "  u            Update selected package",
     "  X            Remove selected item (package or local extension)",
     "  i            Quick install by source",

@@ -14,10 +14,9 @@ export interface FooterState {
  */
 export function buildFooterState(items: UnifiedItem[]): FooterState {
   const hasLocals = items.some((i) => i.type === "local");
-  const hasPackageExtensions = items.some((i) => i.type === "package-extension");
 
   return {
-    hasToggleRows: hasLocals || hasPackageExtensions,
+    hasToggleRows: hasLocals,
     hasLocals,
     hasPackages: items.some((i) => i.type === "package"),
   };
@@ -33,10 +32,7 @@ export function getPendingToggleChangeCount(
     const item = byId.get(id);
     if (!item) continue;
 
-    if (
-      (item.type === "local" || item.type === "package-extension") &&
-      item.originalState !== state
-    ) {
+    if (item.type === "local" && item.originalState !== state) {
       count += 1;
     }
   }
@@ -54,6 +50,7 @@ export function buildFooterShortcuts(state: FooterState): string {
   if (state.hasToggleRows) parts.push("Space/Enter Toggle");
   if (state.hasToggleRows) parts.push("S Save");
   if (state.hasPackages) parts.push("Enter/A Actions");
+  if (state.hasPackages) parts.push("c Configure");
   if (state.hasPackages) parts.push("u Update");
   if (state.hasPackages || state.hasLocals) parts.push("X Remove");
 
