@@ -12,10 +12,6 @@ export interface FooterState {
   pendingChangeCount: number;
 }
 
-export interface FooterOptions {
-  hasChanges: boolean;
-}
-
 /**
  * Build the footer state from items and staged changes
  */
