@@ -20,8 +20,7 @@ import {
 import { parseNpmSource } from "./format.js";
 import { TIMEOUTS } from "../constants.js";
 
-// Global timer reference (module-level singleton)
-let autoUpdateTimer: ReturnType<typeof setInterval> | null = null;
+import { startTimer, stopTimer, isTimerRunning, runOnce } from "./timer.js";
 
 // Context provider for safe session handling
 export type ContextProvider = () => (ExtensionCommandContext | ExtensionContext) | undefined;
@@ -35,10 +34,8 @@ export function startAutoUpdateTimer(
   getCtx: ContextProvider,
   onUpdateAvailable?: (packages: string[]) => void
 ): void {
-  // Clear existing timer
   stopAutoUpdateTimer();
 
-  // Get fresh config from current context
   const ctx = getCtx();
   if (!ctx) return;
 
@@ -50,23 +47,22 @@ export function startAutoUpdateTimer(
   const interval = getScheduleInterval(config);
   if (!interval) return;
 
-  // Run an initial check immediately.
-  void (async () => {
+  // Run an initial check immediately
+  runOnce(0, () => {
     const checkCtx = getCtx();
     if (!checkCtx) return;
-    await checkForUpdates(pi, checkCtx, onUpdateAvailable);
-  })();
+    void checkForUpdates(pi, checkCtx, onUpdateAvailable);
+  });
 
-  // Set up interval with context provider
-  autoUpdateTimer = setInterval(() => {
+  // Set up recurring checks
+  startTimer(interval, () => {
     const checkCtx = getCtx();
     if (!checkCtx) {
-      // Session ended, stop timer
       stopAutoUpdateTimer();
       return;
     }
     void checkForUpdates(pi, checkCtx, onUpdateAvailable);
-  }, interval);
+  });
 
   // Persist that timer is running
   saveAutoUpdateConfig(pi, {
@@ -79,17 +75,14 @@ export function startAutoUpdateTimer(
  * Stop auto-update background checker
  */
 export function stopAutoUpdateTimer(): void {
-  if (autoUpdateTimer) {
-    clearInterval(autoUpdateTimer);
-    autoUpdateTimer = null;
-  }
+  stopTimer();
 }
 
 /**
  * Check if auto-update timer is running
  */
 export function isAutoUpdateRunning(): boolean {
-  return autoUpdateTimer !== null;
+  return isTimerRunning();
 }
 
 /**
