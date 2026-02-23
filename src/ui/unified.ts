@@ -44,6 +44,7 @@ import {
   getChangeMarker,
   formatSize,
 } from "./theme.js";
+import { buildFooterState, buildFooterShortcuts, getPendingToggleChangeCount } from "./footer.js";
 import { logExtensionToggle } from "../utils/history.js";
 import { getKnownUpdates, promptAutoUpdateWizard } from "../utils/auto-update.js";
 import { updateExtmgrStatus } from "../utils/status.js";
@@ -117,10 +118,6 @@ async function showInteractiveOnce(
 
   const result = await ctx.ui.custom<UnifiedAction>((tui, theme, _keybindings, done) => {
     const container = new Container();
-    const hasLocals = items.some((i) => i.type === "local");
-    const hasPackageExtensions = items.some((i) => i.type === "package-extension");
-    const hasToggleRows = hasLocals || hasPackageExtensions;
-    const hasPackages = items.some((i) => i.type === "package");
 
     // Header
     container.addChild(new DynamicBorder((s: string) => theme.fg("accent", s)));
@@ -173,8 +170,8 @@ async function showInteractiveOnce(
     container.addChild(new Spacer(1));
 
     // Footer with keyboard shortcuts
-    const footerParts = buildFooter(hasToggleRows, hasLocals, hasPackages, staged, byId);
-    container.addChild(new Text(theme.fg("dim", footerParts.join(" | ")), 2, 0));
+    const footerState = buildFooterState(items, staged, byId);
+    container.addChild(new Text(theme.fg("dim", buildFooterShortcuts(footerState)), 2, 0));
     container.addChild(new DynamicBorder((s: string) => theme.fg("accent", s)));
 
     return {
@@ -406,34 +403,6 @@ function buildSettingsItems(
   });
 }
 
-function buildFooter(
-  hasToggleRows: boolean,
-  hasLocals: boolean,
-  hasPackages: boolean,
-  staged: Map<string, State>,
-  byId: Map<string, UnifiedItem>
-): string[] {
-  const hasChanges = getPendingToggleChangeCount(staged, byId) > 0;
-
-  const footerParts: string[] = [];
-  footerParts.push("↑↓ Navigate");
-  if (hasToggleRows) footerParts.push("Space/Enter Toggle");
-  if (hasToggleRows) footerParts.push(hasChanges ? "S Save*" : "S Save");
-  if (hasPackages) footerParts.push("Enter/A Actions");
-  if (hasPackages) footerParts.push("u Update");
-  if (hasPackages || hasLocals) footerParts.push("X Remove");
-  footerParts.push("i Install");
-  footerParts.push("f Search");
-  footerParts.push("U Update all");
-  footerParts.push("t Auto-update");
-  footerParts.push("P Palette");
-  footerParts.push("R Browse");
-  footerParts.push("? Help");
-  footerParts.push("Esc Cancel");
-
-  return footerParts;
-}
-
 function formatUnifiedItemLabel(
   item: UnifiedItem,
   state: State,
@@ -496,24 +465,6 @@ function formatUnifiedItemLabel(
 
   const summary = theme.fg("dim", infoParts.join(" • "));
   return `${pkgIcon} [${scopeIcon}] ${name}${version}${updateBadge} - ${summary}`;
-}
-
-function getPendingToggleChangeCount(
-  staged: Map<string, State>,
-  byId: Map<string, UnifiedItem>
-): number {
-  let count = 0;
-  for (const [id, state] of staged.entries()) {
-    const item = byId.get(id);
-    if (!item) continue;
-    if (
-      (item.type === "local" || item.type === "package-extension") &&
-      item.originalState !== state
-    ) {
-      count += 1;
-    }
-  }
-  return count;
 }
 
 function getToggleItemsForApply(items: UnifiedItem[]): UnifiedItem[] {
