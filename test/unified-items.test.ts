@@ -4,8 +4,7 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parseInstalledPackagesOutput } from "../src/packages/discovery.js";
-import { discoverPackageExtensions } from "../src/packages/extensions.js";
-import type { InstalledPackage, PackageExtensionEntry } from "../src/types/index.js";
+import type { ExtensionEntry, InstalledPackage } from "../src/types/index.js";
 import { buildUnifiedItems } from "../src/ui/unified.js";
 
 function createPackage(source: string, name: string): InstalledPackage {
@@ -16,91 +15,62 @@ function createPackage(source: string, name: string): InstalledPackage {
   };
 }
 
-function createPackageExtension(
-  id: string,
-  packageSource: string,
-  extensionPath: string,
-  state: "enabled" | "disabled" = "enabled"
-): PackageExtensionEntry {
+function createLocalEntry(activePath: string, displayName: string): ExtensionEntry {
   return {
-    id,
-    packageSource,
-    packageName: "pi-extmgr",
-    packageScope: "global",
-    extensionPath,
-    absolutePath: `/tmp/${extensionPath}`,
-    displayName: `pi-extmgr/${extensionPath}`,
-    summary: "package extension",
-    state,
+    id: `global:${activePath}`,
+    scope: "global",
+    state: "enabled",
+    activePath,
+    disabledPath: `${activePath}.disabled`,
+    displayName,
+    summary: "local extension",
   };
 }
 
-void test("buildUnifiedItems hides single enabled package-extension row to avoid duplicate-looking entries", () => {
+void test("buildUnifiedItems includes local + package rows only", () => {
   const installedPackages = [createPackage("npm:pi-extmgr", "pi-extmgr")];
-  const packageExtensions = [
-    createPackageExtension(
-      "pkg-ext:global:npm:pi-extmgr:src/index.ts",
-      "npm:pi-extmgr",
-      "src/index.ts"
-    ),
+  const localEntries = [
+    createLocalEntry("/tmp/extensions/local.ts", "~/.pi/agent/extensions/local.ts"),
   ];
 
-  const items = buildUnifiedItems([], installedPackages, packageExtensions, new Set());
+  const items = buildUnifiedItems(localEntries, installedPackages, new Set());
+
+  assert.equal(items.length, 2);
+  assert.deepEqual(
+    items.map((item) => item.type),
+    ["local", "package"]
+  );
+});
+
+void test("buildUnifiedItems marks package update availability from knownUpdates", () => {
+  const installedPackages = [createPackage("npm:pi-extmgr", "pi-extmgr")];
+
+  const items = buildUnifiedItems([], installedPackages, new Set(["pi-extmgr"]));
 
   assert.equal(items.length, 1);
   assert.equal(items[0]?.type, "package");
-  assert.equal(items[0]?.source, "npm:pi-extmgr");
+  assert.equal(items[0]?.updateAvailable, true);
 });
 
-void test("buildUnifiedItems keeps disabled package-extension row visible for re-enable", () => {
-  const installedPackages = [createPackage("npm:pi-extmgr", "pi-extmgr")];
-  const packageExtensions = [
-    createPackageExtension(
-      "pkg-ext:global:npm:pi-extmgr:src/index.ts",
-      "npm:pi-extmgr",
-      "src/index.ts",
-      "disabled"
-    ),
-  ];
-
-  const items = buildUnifiedItems([], installedPackages, packageExtensions, new Set());
-  const types = items.map((item) => item.type);
-
-  assert.deepEqual(types, ["package", "package-extension"]);
-});
-
-void test("buildUnifiedItems keeps multiple package-extension rows visible", () => {
-  const installedPackages = [createPackage("npm:multi-ext", "multi-ext")];
-  const packageExtensions = [
+void test("buildUnifiedItems omits package rows that duplicate local extension paths", () => {
+  const localPath = "/tmp/vendor/demo/index.ts";
+  const localEntries = [createLocalEntry(localPath, "~/.pi/agent/extensions/demo/index.ts")];
+  const installedPackages: InstalledPackage[] = [
     {
-      ...createPackageExtension(
-        "pkg-ext:global:npm:multi-ext:extensions/a.ts",
-        "npm:multi-ext",
-        "extensions/a.ts"
-      ),
-      packageName: "multi-ext",
-      displayName: "multi-ext/extensions/a.ts",
-    },
-    {
-      ...createPackageExtension(
-        "pkg-ext:global:npm:multi-ext:extensions/b.ts",
-        "npm:multi-ext",
-        "extensions/b.ts"
-      ),
-      packageName: "multi-ext",
-      displayName: "multi-ext/extensions/b.ts",
+      source: "npm:demo",
+      name: "demo",
+      scope: "global",
+      resolvedPath: "/tmp/vendor/demo",
     },
   ];
 
-  const items = buildUnifiedItems([], installedPackages, packageExtensions, new Set());
+  const items = buildUnifiedItems(localEntries, installedPackages, new Set());
 
-  assert.equal(items.length, 3);
-  assert.equal(items[0]?.type, "package");
-  assert.equal(items[1]?.type, "package-extension");
-  assert.equal(items[2]?.type, "package-extension");
+  assert.equal(items.length, 1);
+  assert.equal(items[0]?.type, "local");
 });
 
-void test("integration: pi list fixture with single-entry npm packages does not render duplicate extension rows", async () => {
+void test("integration: pi list fixture with single-entry npm packages renders package rows once", async () => {
   const cwd = await mkdtemp(join(tmpdir(), "pi-extmgr-unified-"));
 
   try {
@@ -138,13 +108,10 @@ void test("integration: pi list fixture with single-entry npm packages does not 
     ].join("\n");
 
     const installed = parseInstalledPackagesOutput(listOutput);
-    const packageExtensions = await discoverPackageExtensions(installed, cwd);
-    const items = buildUnifiedItems([], installed, packageExtensions, new Set());
+    const items = buildUnifiedItems([], installed, new Set());
 
     assert.equal(installed.length, 2);
-    assert.equal(packageExtensions.length, 2);
     assert.equal(items.filter((item) => item.type === "package").length, 2);
-    assert.equal(items.filter((item) => item.type === "package-extension").length, 0);
     assert.deepEqual(
       items.filter((item) => item.type === "package").map((item) => item.displayName),
       ["pi-extmgr", "shitty-prompt"]
