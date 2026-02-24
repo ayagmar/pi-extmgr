@@ -7,11 +7,13 @@ export function tokenizeArgs(input: string): string[] {
   let current = "";
   let inSingleQuote = false;
   let inDoubleQuote = false;
+  let tokenStarted = false;
 
   const pushCurrent = () => {
-    if (current.length > 0) {
+    if (tokenStarted) {
       tokens.push(current);
       current = "";
+      tokenStarted = false;
     }
   };
 
@@ -51,15 +53,18 @@ export function tokenizeArgs(input: string): string[] {
 
     if (char === "'") {
       inSingleQuote = true;
+      tokenStarted = true;
       continue;
     }
 
     if (char === '"') {
       inDoubleQuote = true;
+      tokenStarted = true;
       continue;
     }
 
     if (char === "\\" && (next === '"' || next === "'" || /\s/.test(next ?? ""))) {
+      tokenStarted = true;
       if (next) {
         current += next;
         i++;
@@ -69,6 +74,7 @@ export function tokenizeArgs(input: string): string[] {
       continue;
     }
 
+    tokenStarted = true;
     current += char;
   }
 

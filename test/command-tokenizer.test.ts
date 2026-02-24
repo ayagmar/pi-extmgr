@@ -21,6 +21,10 @@ void test("tokenizeArgs supports quoted values", () => {
     "install",
     "git@github.com:user/my repo.git",
   ]);
+
+  assert.deepEqual(tokenizeArgs('cmd ""'), ["cmd", ""]);
+  assert.deepEqual(tokenizeArgs("cmd ''"), ["cmd", ""]);
+  assert.deepEqual(tokenizeArgs('cmd "" --flag'), ["cmd", "", "--flag"]);
 });
 
 void test("tokenizeArgs keeps windows paths intact", () => {
