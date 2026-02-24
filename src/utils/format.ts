@@ -132,7 +132,7 @@ export function normalizePackageSource(source: string): string {
     return `git:${trimmed}`;
   }
 
-  if (isPackageSource(trimmed)) {
+  if (trimmed.startsWith("npm:") || isGitLikeSource(trimmed) || isLocalPathSource(trimmed)) {
     return trimmed;
   }
 

@@ -209,12 +209,15 @@ void test("normalizePackageSource preserves git and local path sources", () => {
   );
   assert.equal(normalizePackageSource("~/dev/ext"), "~/dev/ext");
   assert.equal(normalizePackageSource(".\\extensions\\demo"), ".\\extensions\\demo");
+  assert.equal(normalizePackageSource("@scope/pkg"), "npm:@scope/pkg");
+});
+
+void test("normalizePackageSource unwraps quoted sources", () => {
   assert.equal(
     normalizePackageSource('"./extensions/My Cool Extension.ts"'),
     "./extensions/My Cool Extension.ts"
   );
   assert.equal(normalizePackageSource("'@scope/pkg'"), "npm:@scope/pkg");
-  assert.equal(normalizePackageSource("@scope/pkg"), "npm:@scope/pkg");
 });
 
 void test("isPackageSource recognizes git ssh and local path sources", () => {
