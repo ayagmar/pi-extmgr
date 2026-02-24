@@ -18,6 +18,10 @@ export function getPackageSourceKind(source: string): PackageSourceKind {
 
   if (
     normalized.startsWith("git:") ||
+    normalized.startsWith("git+http://") ||
+    normalized.startsWith("git+https://") ||
+    normalized.startsWith("git+ssh://") ||
+    normalized.startsWith("git+git://") ||
     normalized.startsWith("http://") ||
     normalized.startsWith("https://") ||
     normalized.startsWith("ssh://") ||
@@ -41,6 +45,14 @@ export function getPackageSourceKind(source: string): PackageSourceKind {
   }
 
   return "unknown";
+}
+
+export function normalizeLocalSourceIdentity(source: string): string {
+  const normalized = source.replace(/\\/g, "/");
+  const looksWindowsPath =
+    /^[a-zA-Z]:\//.test(normalized) || normalized.startsWith("//") || source.includes("\\");
+
+  return looksWindowsPath ? normalized.toLowerCase() : normalized;
 }
 
 export function splitGitRepoAndRef(gitSpec: string): { repo: string; ref?: string | undefined } {

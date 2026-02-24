@@ -11,7 +11,11 @@ import {
 } from "./discovery.js";
 import { waitForCondition } from "../utils/retry.js";
 import { formatInstalledPackageLabel, parseNpmSource } from "../utils/format.js";
-import { getPackageSourceKind, splitGitRepoAndRef } from "../utils/package-source.js";
+import {
+  getPackageSourceKind,
+  normalizeLocalSourceIdentity,
+  splitGitRepoAndRef,
+} from "../utils/package-source.js";
 import { logPackageUpdate, logPackageRemove } from "../utils/history.js";
 import { clearUpdatesAvailable } from "../utils/settings.js";
 import { notify, error as notifyError, success } from "../utils/notify.js";
@@ -33,10 +37,17 @@ const NO_PACKAGE_MUTATION_OUTCOME: PackageMutationOutcome = {
   reloaded: false,
 };
 
+const BULK_UPDATE_LABEL = "all packages";
+
 function packageMutationOutcome(
   overrides: Partial<PackageMutationOutcome>
 ): PackageMutationOutcome {
   return { ...NO_PACKAGE_MUTATION_OUTCOME, ...overrides };
+}
+
+function isUpToDateOutput(stdout: string): boolean {
+  const pinnedAsStatus = /^\s*pinned\b(?!\s+dependency\b)(?:\s*$|\s*[:(-])/im.test(stdout);
+  return /already\s+up\s+to\s+date/i.test(stdout) || pinnedAsStatus;
 }
 
 async function updatePackageInternal(
@@ -60,9 +71,10 @@ async function updatePackageInternal(
   }
 
   const stdout = res.stdout || "";
-  if (stdout.includes("already up to date") || stdout.includes("pinned")) {
+  if (isUpToDateOutput(stdout)) {
     notify(ctx, `${source} is already up to date (or pinned).`, "info");
     logPackageUpdate(pi, source, source, undefined, true);
+    clearUpdatesAvailable(pi, ctx);
     void updateExtmgrStatus(ctx, pi);
     return NO_PACKAGE_MUTATION_OUTCOME;
   }
@@ -87,18 +99,23 @@ async function updatePackagesInternal(
   const res = await pi.exec("pi", ["update"], { timeout: TIMEOUTS.packageUpdateAll, cwd: ctx.cwd });
 
   if (res.code !== 0) {
-    notifyError(ctx, `Update failed: ${res.stderr || res.stdout || `exit ${res.code}`}`);
+    const errorMsg = `Update failed: ${res.stderr || res.stdout || `exit ${res.code}`}`;
+    logPackageUpdate(pi, BULK_UPDATE_LABEL, BULK_UPDATE_LABEL, undefined, false, errorMsg);
+    notifyError(ctx, errorMsg);
     void updateExtmgrStatus(ctx, pi);
     return NO_PACKAGE_MUTATION_OUTCOME;
   }
 
   const stdout = res.stdout || "";
-  if (stdout.includes("already up to date") || stdout.trim() === "") {
+  if (isUpToDateOutput(stdout) || stdout.trim() === "") {
     notify(ctx, "All packages are already up to date.", "info");
+    logPackageUpdate(pi, BULK_UPDATE_LABEL, BULK_UPDATE_LABEL, undefined, true);
+    clearUpdatesAvailable(pi, ctx);
     void updateExtmgrStatus(ctx, pi);
     return NO_PACKAGE_MUTATION_OUTCOME;
   }
 
+  logPackageUpdate(pi, BULK_UPDATE_LABEL, BULK_UPDATE_LABEL, undefined, true);
   success(ctx, "Packages updated");
   clearUpdatesAvailable(pi, ctx);
 
@@ -145,10 +162,16 @@ function packageIdentity(source: string, fallbackName?: string): string {
     return `npm:${npm.name}`;
   }
 
-  if (getPackageSourceKind(source) === "git") {
+  const sourceKind = getPackageSourceKind(source);
+
+  if (sourceKind === "git") {
     const gitSpec = source.startsWith("git:") ? source.slice(4) : source;
     const { repo } = splitGitRepoAndRef(gitSpec);
     return `git:${repo}`;
+  }
+
+  if (sourceKind === "local") {
+    return `src:${normalizeLocalSourceIdentity(source)}`;
   }
 
   if (fallbackName) {
@@ -238,12 +261,18 @@ function formatRemovalTargets(targets: RemovalTarget[]): string {
   return targets.map((t) => `${t.scope}: ${t.source}`).join("\n");
 }
 
+interface RemovalExecutionResult {
+  target: RemovalTarget;
+  success: boolean;
+  error?: string;
+}
+
 async function executeRemovalTargets(
   targets: RemovalTarget[],
   ctx: ExtensionCommandContext,
   pi: ExtensionAPI
-): Promise<string[]> {
-  const failures: string[] = [];
+): Promise<RemovalExecutionResult[]> {
+  const results: RemovalExecutionResult[] = [];
 
   for (const target of targets) {
     showProgress(ctx, "Removing", `${target.source} (${target.scope})`);
@@ -254,14 +283,15 @@ async function executeRemovalTargets(
     if (res.code !== 0) {
       const errorMsg = `Remove failed (${target.scope}): ${res.stderr || res.stdout || `exit ${res.code}`}`;
       logPackageRemove(pi, target.source, target.name, false, errorMsg);
-      failures.push(errorMsg);
+      results.push({ target, success: false, error: errorMsg });
       continue;
     }
 
     logPackageRemove(pi, target.source, target.name, true);
+    results.push({ target, success: true });
   }
 
-  return failures;
+  return results;
 }
 
 function notifyRemovalSummary(
@@ -326,8 +356,17 @@ async function removePackageInternal(
     return NO_PACKAGE_MUTATION_OUTCOME;
   }
 
-  const failures = await executeRemovalTargets(targets, ctx, pi);
+  const results = await executeRemovalTargets(targets, ctx, pi);
   clearSearchCache();
+
+  const failures = results
+    .filter((result): result is RemovalExecutionResult & { success: false; error: string } =>
+      Boolean(!result.success && result.error)
+    )
+    .map((result) => result.error);
+  const successfulTargets = results
+    .filter((result) => result.success)
+    .map((result) => result.target);
 
   const remaining = (await getInstalledPackagesAllScopes(ctx, pi)).filter(
     (p) => packageIdentity(p.source, p.name) === identity
@@ -338,13 +377,15 @@ async function removePackageInternal(
     clearUpdatesAvailable(pi, ctx);
   }
 
-  // Wait for selected targets to disappear from their target scopes before reloading.
-  if (failures.length === 0 && targets.length > 0) {
+  const successfulRemovalCount = successfulTargets.length;
+
+  // Wait for successfully removed targets to disappear from their target scopes before reloading.
+  if (successfulTargets.length > 0) {
     notify(ctx, "Waiting for removal to complete...", "info");
     const isRemoved = await waitForCondition(
       async () => {
         const installedChecks = await Promise.all(
-          targets.map((target) =>
+          successfulTargets.map((target) =>
             isSourceInstalled(target.source, ctx, pi, {
               scope: target.scope,
             })
@@ -358,6 +399,11 @@ async function removePackageInternal(
     if (!isRemoved) {
       notify(ctx, "Extension may still be active. Restart pi manually if needed.", "warning");
     }
+  }
+
+  if (successfulRemovalCount === 0) {
+    void updateExtmgrStatus(ctx, pi);
+    return NO_PACKAGE_MUTATION_OUTCOME;
   }
 
   const reloaded = await confirmReload(ctx, "Removal complete.");

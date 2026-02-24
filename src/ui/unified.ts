@@ -263,7 +263,11 @@ async function showInteractiveOnce(
 }
 
 function normalizePathForDuplicateCheck(value: string): string {
-  return value.replace(/\\/g, "/").toLowerCase();
+  const normalized = value.replace(/\\/g, "/");
+  const looksWindowsPath =
+    /^[a-zA-Z]:\//.test(normalized) || normalized.startsWith("//") || value.includes("\\");
+
+  return looksWindowsPath ? normalized.toLowerCase() : normalized;
 }
 
 export function buildUnifiedItems(

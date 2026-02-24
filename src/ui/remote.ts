@@ -15,6 +15,7 @@ import {
   isCacheValid,
 } from "../packages/discovery.js";
 import { installPackage, installPackageLocally } from "../packages/install.js";
+import { execNpm } from "../utils/npm-exec.js";
 import { notify } from "../utils/notify.js";
 
 interface PackageInfoCacheEntry {
@@ -143,9 +144,8 @@ async function buildPackageInfoText(
   }
 
   const [infoRes, weeklyDownloads] = await Promise.all([
-    pi.exec("npm", ["view", packageName, "--json"], {
+    execNpm(pi, ["view", packageName, "--json"], ctx, {
       timeout: TIMEOUTS.npmView,
-      cwd: ctx.cwd,
     }),
     fetchWeeklyDownloads(packageName),
   ]);

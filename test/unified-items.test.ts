@@ -89,6 +89,26 @@ void test("buildUnifiedItems omits duplicate package rows with mixed path separa
   assert.equal(items[0]?.type, "local");
 });
 
+void test("buildUnifiedItems keeps case-sensitive POSIX paths distinct", () => {
+  const localEntries = [createLocalEntry("/opt/extensions/Foo/index.ts", "Foo/index.ts")];
+  const installedPackages: InstalledPackage[] = [
+    {
+      source: "npm:foo",
+      name: "foo",
+      scope: "global",
+      resolvedPath: "/opt/extensions/foo",
+    },
+  ];
+
+  const items = buildUnifiedItems(localEntries, installedPackages, new Set());
+
+  assert.equal(items.length, 2);
+  assert.deepEqual(
+    items.map((item) => item.type),
+    ["local", "package"]
+  );
+});
+
 void test("integration: pi list fixture with single-entry npm packages renders package rows once", async () => {
   const cwd = await mkdtemp(join(tmpdir(), "pi-extmgr-unified-"));
 

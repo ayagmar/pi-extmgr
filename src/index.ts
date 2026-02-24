@@ -70,12 +70,17 @@ export default function extensionsManager(pi: ExtensionAPI) {
     // Restore persisted auto-update config into session entries so sync lookups are valid.
     await hydrateAutoUpdateConfig(pi, ctx);
 
-    if (!ctx.hasUI) return;
+    if (!ctx.hasUI) {
+      stopAutoUpdateTimer();
+      return;
+    }
 
     const config = getAutoUpdateConfig(ctx);
     if (config.enabled && config.intervalMs > 0) {
       const getCtx: ContextProvider = () => ctx;
       startAutoUpdateTimer(pi, getCtx, createAutoUpdateNotificationHandler(ctx));
+    } else {
+      stopAutoUpdateTimer();
     }
 
     setImmediate(() => {
