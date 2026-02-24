@@ -13,6 +13,7 @@ import { CACHE_TTL, TIMEOUTS } from "../constants.js";
 import { readSummary } from "../utils/fs.js";
 import { parseNpmSource } from "../utils/format.js";
 import { getPackageSourceKind, splitGitRepoAndRef } from "../utils/package-source.js";
+import { execNpm } from "../utils/npm-exec.js";
 
 let searchCache: SearchCache | null = null;
 
@@ -67,9 +68,8 @@ export async function searchNpmPackages(
     ctx.ui.notify(`Searching npm for "${query}"...`, "info");
   }
 
-  const res = await pi.exec("npm", ["search", "--json", `--searchlimit=${searchLimit}`, query], {
+  const res = await execNpm(pi, ["search", "--json", `--searchlimit=${searchLimit}`, query], ctx, {
     timeout: TIMEOUTS.npmSearch,
-    cwd: ctx.cwd,
   });
 
   if (res.code !== 0) {
@@ -375,9 +375,8 @@ async function fetchPackageSize(
 
   try {
     // Try to get unpacked size from npm view
-    const res = await pi.exec("npm", ["view", pkgName, "dist.unpackedSize", "--json"], {
+    const res = await execNpm(pi, ["view", pkgName, "dist.unpackedSize", "--json"], ctx, {
       timeout: TIMEOUTS.npmView,
-      cwd: ctx.cwd,
     });
     if (res.code === 0) {
       try {
@@ -441,9 +440,8 @@ async function addPackageMetadata(
                 if (cached?.description) {
                   pkg.description = cached.description;
                 } else {
-                  const res = await pi.exec("npm", ["view", pkgName, "description", "--json"], {
+                  const res = await execNpm(pi, ["view", pkgName, "description", "--json"], ctx, {
                     timeout: TIMEOUTS.npmView,
-                    cwd: ctx.cwd,
                   });
                   if (res.code === 0) {
                     try {

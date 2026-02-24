@@ -16,6 +16,7 @@ import { notify, error as notifyError, success } from "../utils/notify.js";
 import { confirmAction, confirmReload, showProgress } from "../utils/ui-helpers.js";
 import { tryOperation } from "../utils/mode.js";
 import { updateExtmgrStatus } from "../utils/status.js";
+import { execNpm } from "../utils/npm-exec.js";
 import { TIMEOUTS } from "../constants.js";
 
 export type InstallScope = "global" | "project";
@@ -291,9 +292,8 @@ export async function installPackageLocally(
       await mkdir(extensionDir, { recursive: true });
       showProgress(ctx, "Fetching", packageName);
 
-      const viewRes = await pi.exec("npm", ["view", packageName, "--json"], {
+      const viewRes = await execNpm(pi, ["view", packageName, "--json"], ctx, {
         timeout: TIMEOUTS.fetchPackageInfo,
-        cwd: ctx.cwd,
       });
 
       if (viewRes.code !== 0) {

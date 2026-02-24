@@ -18,6 +18,7 @@ import {
   type AutoUpdateConfig,
 } from "./settings.js";
 import { parseNpmSource } from "./format.js";
+import { execNpm } from "./npm-exec.js";
 import { TIMEOUTS } from "../constants.js";
 
 import { startTimer, stopTimer, isTimerRunning } from "./timer.js";
@@ -134,9 +135,8 @@ async function checkPackageUpdate(
   if (!pkgName) return false;
 
   try {
-    const res = await pi.exec("npm", ["view", pkgName, "version", "--json"], {
+    const res = await execNpm(pi, ["view", pkgName, "version", "--json"], ctx, {
       timeout: TIMEOUTS.npmView,
-      cwd: ctx.cwd,
     });
 
     if (res.code !== 0) return false;
