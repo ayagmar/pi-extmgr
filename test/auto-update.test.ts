@@ -1,6 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { checkForUpdates } from "../src/utils/auto-update.js";
+import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import extensionsManager from "../src/index.js";
+import {
+  checkForUpdates,
+  isAutoUpdateRunning,
+  stopAutoUpdateTimer,
+} from "../src/utils/auto-update.js";
 import { parseDuration } from "../src/utils/settings.js";
 import { createMockHarness, type ExecResult } from "./helpers/mocks.js";
 
@@ -84,4 +90,84 @@ void test("checkForUpdates handles scoped npm packages", async () => {
   const updates = await checkForUpdates(pi, ctx);
   assert.deepEqual(updates, ["@scope/demo-pkg"]);
   assert.ok(npmViewCalls.includes("@scope/demo-pkg"));
+});
+
+void test("session switch to disabled auto-update stops existing timer", async () => {
+  interface SessionCtx {
+    hasUI: true;
+    cwd: string;
+    ui: {
+      notify: (message: string, level?: string) => void;
+      setStatus: (key: string, value: string | undefined) => void;
+      theme: { fg: (name: string, text: string) => string };
+    };
+    sessionManager: {
+      getEntries: () => { type: "custom"; customType: string; data: unknown }[];
+    };
+  }
+
+  const handlers: Record<string, ((event: unknown, ctx: SessionCtx) => Promise<void>) | undefined> =
+    {};
+
+  const pi = {
+    registerCommand: () => undefined,
+    on: (event: string, handler: (event: unknown, ctx: SessionCtx) => Promise<void>) => {
+      handlers[event] = handler;
+    },
+    exec: (command: string, args: string[]) =>
+      Promise.resolve(
+        command === "pi" && args[0] === "list"
+          ? { code: 0, stdout: "No packages installed", stderr: "", killed: false }
+          : { code: 0, stdout: "", stderr: "", killed: false }
+      ),
+    appendEntry: () => undefined,
+  };
+
+  const ui: SessionCtx["ui"] = {
+    notify: () => undefined,
+    setStatus: () => undefined,
+    theme: { fg: (_name: string, text: string) => text },
+  };
+
+  const enabledCtx: SessionCtx = {
+    hasUI: true,
+    cwd: "/tmp",
+    ui,
+    sessionManager: {
+      getEntries: () => [
+        {
+          type: "custom",
+          customType: "extmgr-auto-update",
+          data: { enabled: true, intervalMs: 60 * 60 * 1000, displayText: "1 hour" },
+        },
+      ],
+    },
+  };
+
+  const disabledCtx: SessionCtx = {
+    hasUI: true,
+    cwd: "/tmp",
+    ui,
+    sessionManager: {
+      getEntries: () => [
+        {
+          type: "custom",
+          customType: "extmgr-auto-update",
+          data: { enabled: false, intervalMs: 0, displayText: "off" },
+        },
+      ],
+    },
+  };
+
+  try {
+    extensionsManager(pi as unknown as ExtensionAPI);
+
+    await handlers["session_start"]?.({}, enabledCtx);
+    assert.equal(isAutoUpdateRunning(), true);
+
+    await handlers["session_switch"]?.({}, disabledCtx);
+    assert.equal(isAutoUpdateRunning(), false);
+  } finally {
+    stopAutoUpdateTimer();
+  }
 });
