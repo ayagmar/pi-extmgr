@@ -33,10 +33,16 @@ const NO_PACKAGE_MUTATION_OUTCOME: PackageMutationOutcome = {
   reloaded: false,
 };
 
+const BULK_UPDATE_LABEL = "all packages";
+
 function packageMutationOutcome(
   overrides: Partial<PackageMutationOutcome>
 ): PackageMutationOutcome {
   return { ...NO_PACKAGE_MUTATION_OUTCOME, ...overrides };
+}
+
+function isUpToDateOutput(stdout: string): boolean {
+  return /already\s+up\s+to\s+date/i.test(stdout) || /\bpinned\b/i.test(stdout);
 }
 
 async function updatePackageInternal(
@@ -60,9 +66,10 @@ async function updatePackageInternal(
   }
 
   const stdout = res.stdout || "";
-  if (stdout.includes("already up to date") || stdout.includes("pinned")) {
+  if (isUpToDateOutput(stdout)) {
     notify(ctx, `${source} is already up to date (or pinned).`, "info");
     logPackageUpdate(pi, source, source, undefined, true);
+    clearUpdatesAvailable(pi, ctx);
     void updateExtmgrStatus(ctx, pi);
     return NO_PACKAGE_MUTATION_OUTCOME;
   }
@@ -87,18 +94,23 @@ async function updatePackagesInternal(
   const res = await pi.exec("pi", ["update"], { timeout: TIMEOUTS.packageUpdateAll, cwd: ctx.cwd });
 
   if (res.code !== 0) {
-    notifyError(ctx, `Update failed: ${res.stderr || res.stdout || `exit ${res.code}`}`);
+    const errorMsg = `Update failed: ${res.stderr || res.stdout || `exit ${res.code}`}`;
+    logPackageUpdate(pi, BULK_UPDATE_LABEL, BULK_UPDATE_LABEL, undefined, false, errorMsg);
+    notifyError(ctx, errorMsg);
     void updateExtmgrStatus(ctx, pi);
     return NO_PACKAGE_MUTATION_OUTCOME;
   }
 
   const stdout = res.stdout || "";
-  if (stdout.includes("already up to date") || stdout.trim() === "") {
+  if (isUpToDateOutput(stdout) || stdout.trim() === "") {
     notify(ctx, "All packages are already up to date.", "info");
+    logPackageUpdate(pi, BULK_UPDATE_LABEL, BULK_UPDATE_LABEL, undefined, true);
+    clearUpdatesAvailable(pi, ctx);
     void updateExtmgrStatus(ctx, pi);
     return NO_PACKAGE_MUTATION_OUTCOME;
   }
 
+  logPackageUpdate(pi, BULK_UPDATE_LABEL, BULK_UPDATE_LABEL, undefined, true);
   success(ctx, "Packages updated");
   clearUpdatesAvailable(pi, ctx);
 
@@ -139,6 +151,14 @@ export async function updatePackagesWithOutcome(
   return updatePackagesInternal(ctx, pi);
 }
 
+function normalizeLocalSourceIdentity(source: string): string {
+  const normalized = source.replace(/\\/g, "/");
+  const looksWindowsPath =
+    /^[a-zA-Z]:\//.test(normalized) || normalized.startsWith("//") || source.includes("\\");
+
+  return looksWindowsPath ? normalized.toLowerCase() : normalized;
+}
+
 function packageIdentity(source: string, fallbackName?: string): string {
   const npm = parseNpmSource(source);
   if (npm?.name) {
@@ -149,6 +169,10 @@ function packageIdentity(source: string, fallbackName?: string): string {
     const gitSpec = source.startsWith("git:") ? source.slice(4) : source;
     const { repo } = splitGitRepoAndRef(gitSpec);
     return `git:${repo}`;
+  }
+
+  if (getPackageSourceKind(source) === "local") {
+    return `src:${normalizeLocalSourceIdentity(source)}`;
   }
 
   if (fallbackName) {
@@ -338,8 +362,10 @@ async function removePackageInternal(
     clearUpdatesAvailable(pi, ctx);
   }
 
+  const successfulRemovalCount = targets.length - failures.length;
+
   // Wait for selected targets to disappear from their target scopes before reloading.
-  if (failures.length === 0 && targets.length > 0) {
+  if (successfulRemovalCount > 0 && failures.length === 0 && targets.length > 0) {
     notify(ctx, "Waiting for removal to complete...", "info");
     const isRemoved = await waitForCondition(
       async () => {
@@ -358,6 +384,11 @@ async function removePackageInternal(
     if (!isRemoved) {
       notify(ctx, "Extension may still be active. Restart pi manually if needed.", "warning");
     }
+  }
+
+  if (successfulRemovalCount === 0) {
+    void updateExtmgrStatus(ctx, pi);
+    return NO_PACKAGE_MUTATION_OUTCOME;
   }
 
   const reloaded = await confirmReload(ctx, "Removal complete.");

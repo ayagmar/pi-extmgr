@@ -120,6 +120,25 @@ void test("isSourceInstalled supports scope-aware checks", async () => {
   );
 });
 
+void test("isSourceInstalled keeps case-sensitive local paths distinct", async () => {
+  const { pi, ctx } = createMockHarness({
+    execImpl: (command, args) => {
+      if (command === "pi" && args[0] === "list") {
+        return {
+          code: 0,
+          stdout: "Global:\n  /opt/extensions/Foo/index.ts\n",
+          stderr: "",
+          killed: false,
+        };
+      }
+      return { code: 1, stdout: "", stderr: "unexpected", killed: false };
+    },
+  });
+
+  assert.equal(await isSourceInstalled("/opt/extensions/Foo/index.ts", ctx, pi), true);
+  assert.equal(await isSourceInstalled("/opt/extensions/foo/index.ts", ctx, pi), false);
+});
+
 void test("parseInstalledPackagesOutput parses ssh git sources", () => {
   const input = `
 Global:
@@ -164,6 +183,17 @@ Global:
   assert.equal(result[0]?.name, "super-ext");
 });
 
+void test("parseInstalledPackagesOutput parses git:// sources", () => {
+  const input = `
+Global:
+  git://github.com/user/super-ext.git
+`;
+
+  const result = parseInstalledPackagesOutput(input);
+  assert.equal(result.length, 1);
+  assert.equal(result[0]?.name, "super-ext");
+});
+
 void test("normalizePackageSource preserves git and local path sources", () => {
   assert.equal(
     normalizePackageSource("git@github.com:user/repo.git"),
@@ -173,14 +203,24 @@ void test("normalizePackageSource preserves git and local path sources", () => {
     normalizePackageSource("ssh://git@github.com/user/repo.git"),
     "ssh://git@github.com/user/repo.git"
   );
+  assert.equal(
+    normalizePackageSource("git+https://github.com/user/repo.git"),
+    "git+https://github.com/user/repo.git"
+  );
   assert.equal(normalizePackageSource("~/dev/ext"), "~/dev/ext");
   assert.equal(normalizePackageSource(".\\extensions\\demo"), ".\\extensions\\demo");
+  assert.equal(
+    normalizePackageSource('"./extensions/My Cool Extension.ts"'),
+    "./extensions/My Cool Extension.ts"
+  );
+  assert.equal(normalizePackageSource("'@scope/pkg'"), "npm:@scope/pkg");
   assert.equal(normalizePackageSource("@scope/pkg"), "npm:@scope/pkg");
 });
 
 void test("isPackageSource recognizes git ssh and local path sources", () => {
   assert.equal(isPackageSource("git@github.com:user/repo.git"), true);
   assert.equal(isPackageSource("ssh://git@github.com/user/repo.git"), true);
+  assert.equal(isPackageSource("git+https://github.com/user/repo.git"), true);
   assert.equal(isPackageSource("~/dev/ext"), true);
   assert.equal(isPackageSource(".\\extensions\\demo"), true);
   assert.equal(isPackageSource("pi-extmgr"), false);
@@ -200,6 +240,8 @@ void test("getPackageSourceKind classifies npm/git/local sources", () => {
   assert.equal(getPackageSourceKind("npm:pi-extmgr"), "npm");
   assert.equal(getPackageSourceKind("git:https://github.com/user/repo.git@main"), "git");
   assert.equal(getPackageSourceKind("https://github.com/user/repo@main"), "git");
+  assert.equal(getPackageSourceKind("git+https://github.com/user/repo.git"), "git");
+  assert.equal(getPackageSourceKind("git://github.com/user/repo.git"), "git");
   assert.equal(getPackageSourceKind("git@github.com:user/repo"), "git");
   assert.equal(getPackageSourceKind("./vendor/demo"), "local");
   assert.equal(getPackageSourceKind(".\\vendor\\demo"), "local");

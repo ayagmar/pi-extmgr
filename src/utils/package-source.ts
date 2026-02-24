@@ -18,6 +18,10 @@ export function getPackageSourceKind(source: string): PackageSourceKind {
 
   if (
     normalized.startsWith("git:") ||
+    normalized.startsWith("git+http://") ||
+    normalized.startsWith("git+https://") ||
+    normalized.startsWith("git+ssh://") ||
+    normalized.startsWith("git+git://") ||
     normalized.startsWith("http://") ||
     normalized.startsWith("https://") ||
     normalized.startsWith("ssh://") ||

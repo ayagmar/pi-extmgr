@@ -59,6 +59,9 @@ export function formatBytes(bytes: number): string {
 
 const GIT_PATTERNS = {
   gitPrefix: /^git:/,
+  gitPlusHttpPrefix: /^git\+https?:\/\//,
+  gitPlusSshPrefix: /^git\+ssh:\/\//,
+  gitPlusGitPrefix: /^git\+git:\/\//,
   httpPrefix: /^https?:\/\//,
   sshPrefix: /^ssh:\/\//,
   gitProtoPrefix: /^git:\/\//,
@@ -78,6 +81,9 @@ const LOCAL_PATH_PATTERNS = {
 function isGitLikeSource(source: string): boolean {
   return (
     GIT_PATTERNS.gitPrefix.test(source) ||
+    GIT_PATTERNS.gitPlusHttpPrefix.test(source) ||
+    GIT_PATTERNS.gitPlusSshPrefix.test(source) ||
+    GIT_PATTERNS.gitPlusGitPrefix.test(source) ||
     GIT_PATTERNS.httpPrefix.test(source) ||
     GIT_PATTERNS.sshPrefix.test(source) ||
     GIT_PATTERNS.gitProtoPrefix.test(source) ||
@@ -97,15 +103,29 @@ function isLocalPathSource(source: string): boolean {
   );
 }
 
+function unwrapQuotedSource(source: string): string {
+  const trimmed = source.trim();
+  if (trimmed.length < 2) return trimmed;
+
+  const first = trimmed[0];
+  const last = trimmed[trimmed.length - 1];
+
+  if ((first === '"' && last === '"') || (first === "'" && last === "'")) {
+    return trimmed.slice(1, -1).trim();
+  }
+
+  return trimmed;
+}
+
 export function isPackageSource(str: string): boolean {
-  const source = str.trim();
+  const source = unwrapQuotedSource(str);
   if (!source) return false;
 
   return source.startsWith("npm:") || isGitLikeSource(source) || isLocalPathSource(source);
 }
 
 export function normalizePackageSource(source: string): string {
-  const trimmed = source.trim();
+  const trimmed = unwrapQuotedSource(source);
   if (!trimmed) return trimmed;
 
   if (GIT_PATTERNS.gitSsh.test(trimmed)) {

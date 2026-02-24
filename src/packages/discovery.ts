@@ -118,7 +118,16 @@ function sanitizeListSourceSuffix(source: string): string {
 }
 
 function normalizeSourceIdentity(source: string): string {
-  return sanitizeListSourceSuffix(source).replace(/\\/g, "/").toLowerCase();
+  const sanitized = sanitizeListSourceSuffix(source).replace(/\\/g, "/");
+  const kind = getPackageSourceKind(sanitized);
+
+  if (kind === "local") {
+    const isWindowsPath =
+      /^[a-zA-Z]:\//.test(sanitized) || sanitized.startsWith("//") || source.includes("\\");
+    return isWindowsPath ? sanitized.toLowerCase() : sanitized;
+  }
+
+  return sanitized.toLowerCase();
 }
 
 function isScopeHeader(lowerTrimmed: string, scope: "global" | "project"): boolean {
