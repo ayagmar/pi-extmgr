@@ -162,13 +162,15 @@ function packageIdentity(source: string, fallbackName?: string): string {
     return `npm:${npm.name}`;
   }
 
-  if (getPackageSourceKind(source) === "git") {
+  const sourceKind = getPackageSourceKind(source);
+
+  if (sourceKind === "git") {
     const gitSpec = source.startsWith("git:") ? source.slice(4) : source;
     const { repo } = splitGitRepoAndRef(gitSpec);
     return `git:${repo}`;
   }
 
-  if (getPackageSourceKind(source) === "local") {
+  if (sourceKind === "local") {
     return `src:${normalizeLocalSourceIdentity(source)}`;
   }
 
