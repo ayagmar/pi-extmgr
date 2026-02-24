@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import type { ExtensionAPI, ExtensionCommandContext } from "@mariozechner/pi-coding-agent";
 import { installPackage } from "../src/packages/install.js";
 import { removePackage, updatePackage, updatePackages } from "../src/packages/management.js";
 import { createMockHarness } from "./helpers/mocks.js";
@@ -77,6 +78,76 @@ void test("removePackage does not request reload when removal fails", async () =
     output.some((line) => line.includes("Reload pi to apply changes. (Removal complete.)")),
     false
   );
+});
+
+void test("removePackage waits for successful removals on partial failures", async () => {
+  const entries: { type: "custom"; customType: string; data: unknown }[] = [];
+  const calls: { command: string; args: string[] }[] = [];
+  let listCalls = 0;
+  let globalInstalled = true;
+  let projectInstalled = true;
+
+  const pi = {
+    exec: (command: string, args: string[]) => {
+      calls.push({ command, args });
+
+      if (command === "pi" && args[0] === "list") {
+        listCalls += 1;
+        const lines: string[] = [];
+        if (globalInstalled) {
+          lines.push("Global:", "  npm:demo@1.0.0");
+        }
+        if (projectInstalled) {
+          lines.push("Project:", "  npm:demo@1.0.0");
+        }
+        if (lines.length === 0) {
+          lines.push("No packages installed");
+        }
+        return Promise.resolve({ code: 0, stdout: lines.join("\n"), stderr: "", killed: false });
+      }
+
+      if (command === "pi" && args[0] === "remove") {
+        if (args.includes("-l")) {
+          return Promise.resolve({
+            code: 1,
+            stdout: "",
+            stderr: "permission denied",
+            killed: false,
+          });
+        }
+
+        globalInstalled = false;
+        return Promise.resolve({ code: 0, stdout: "removed", stderr: "", killed: false });
+      }
+
+      return Promise.resolve({ code: 0, stdout: "", stderr: "", killed: false });
+    },
+    appendEntry: (customType: string, data: unknown) => {
+      entries.push({ type: "custom", customType, data });
+    },
+  } as unknown as ExtensionAPI;
+
+  const ctx = {
+    hasUI: true,
+    cwd: "/tmp",
+    ui: {
+      notify: () => undefined,
+      select: (title: string) =>
+        Promise.resolve(title === "Remove scope" ? "Both global + project" : undefined),
+      confirm: (title: string) => Promise.resolve(title === "Remove Package"),
+      setStatus: () => undefined,
+      theme: { fg: (_name: string, text: string) => text },
+    },
+    sessionManager: {
+      getEntries: () => entries,
+    },
+  } as unknown as ExtensionCommandContext;
+
+  await removePackage("npm:demo@1.0.0", ctx, pi);
+
+  const removeCalls = calls.filter((call) => call.command === "pi" && call.args[0] === "remove");
+  assert.equal(removeCalls.length, 2);
+  assert.ok(listCalls >= 3);
 });
 
 void test("removePackage targets exact local source when names collide", async () => {
@@ -203,6 +274,40 @@ void test("updatePackage treats case-variant already-up-to-date output as no-op"
     | { updatesAvailable?: string[] }
     | undefined;
   assert.deepEqual(latestAutoUpdate?.updatesAvailable ?? [], []);
+});
+
+void test("updatePackage does not treat pinned dependency messages as no-op", async () => {
+  const output: string[] = [];
+  const originalLog = console.log;
+  console.log = (...args: unknown[]) => {
+    output.push(args.map(String).join(" "));
+  };
+
+  try {
+    const { pi, ctx } = createMockHarness({
+      execImpl: (command, args) => {
+        if (command === "pi" && args[0] === "update") {
+          return {
+            code: 0,
+            stdout: "Updated npm:pi-extmgr\npinned dependency foo skipped",
+            stderr: "",
+            killed: false,
+          };
+        }
+
+        return { code: 0, stdout: "", stderr: "", killed: false };
+      },
+    });
+
+    await updatePackage("npm:pi-extmgr", ctx, pi);
+  } finally {
+    console.log = originalLog;
+  }
+
+  assert.equal(
+    output.some((line) => line.includes("Reload pi to apply changes. (Package updated.)")),
+    true
+  );
 });
 
 void test("updatePackages treats case-variant already-up-to-date output as no-op", async () => {

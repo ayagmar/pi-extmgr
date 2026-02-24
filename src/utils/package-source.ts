@@ -47,6 +47,14 @@ export function getPackageSourceKind(source: string): PackageSourceKind {
   return "unknown";
 }
 
+export function normalizeLocalSourceIdentity(source: string): string {
+  const normalized = source.replace(/\\/g, "/");
+  const looksWindowsPath =
+    /^[a-zA-Z]:\//.test(normalized) || normalized.startsWith("//") || source.includes("\\");
+
+  return looksWindowsPath ? normalized.toLowerCase() : normalized;
+}
+
 export function splitGitRepoAndRef(gitSpec: string): { repo: string; ref?: string | undefined } {
   const lastAt = gitSpec.lastIndexOf("@");
   if (lastAt <= 0) {

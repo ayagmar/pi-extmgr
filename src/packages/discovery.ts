@@ -12,7 +12,11 @@ import type { InstalledPackage, NpmPackage, SearchCache } from "../types/index.j
 import { CACHE_TTL, TIMEOUTS } from "../constants.js";
 import { readSummary } from "../utils/fs.js";
 import { parseNpmSource } from "../utils/format.js";
-import { getPackageSourceKind, splitGitRepoAndRef } from "../utils/package-source.js";
+import {
+  getPackageSourceKind,
+  normalizeLocalSourceIdentity,
+  splitGitRepoAndRef,
+} from "../utils/package-source.js";
 import { execNpm } from "../utils/npm-exec.js";
 
 let searchCache: SearchCache | null = null;
@@ -118,16 +122,14 @@ function sanitizeListSourceSuffix(source: string): string {
 }
 
 function normalizeSourceIdentity(source: string): string {
-  const sanitized = sanitizeListSourceSuffix(source).replace(/\\/g, "/");
+  const sanitized = sanitizeListSourceSuffix(source);
   const kind = getPackageSourceKind(sanitized);
 
   if (kind === "local") {
-    const isWindowsPath =
-      /^[a-zA-Z]:\//.test(sanitized) || sanitized.startsWith("//") || source.includes("\\");
-    return isWindowsPath ? sanitized.toLowerCase() : sanitized;
+    return normalizeLocalSourceIdentity(sanitized);
   }
 
-  return sanitized.toLowerCase();
+  return sanitized.replace(/\\/g, "/").toLowerCase();
 }
 
 function isScopeHeader(lowerTrimmed: string, scope: "global" | "project"): boolean {

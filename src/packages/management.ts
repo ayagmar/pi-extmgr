@@ -11,7 +11,11 @@ import {
 } from "./discovery.js";
 import { waitForCondition } from "../utils/retry.js";
 import { formatInstalledPackageLabel, parseNpmSource } from "../utils/format.js";
-import { getPackageSourceKind, splitGitRepoAndRef } from "../utils/package-source.js";
+import {
+  getPackageSourceKind,
+  normalizeLocalSourceIdentity,
+  splitGitRepoAndRef,
+} from "../utils/package-source.js";
 import { logPackageUpdate, logPackageRemove } from "../utils/history.js";
 import { clearUpdatesAvailable } from "../utils/settings.js";
 import { notify, error as notifyError, success } from "../utils/notify.js";
@@ -42,7 +46,8 @@ function packageMutationOutcome(
 }
 
 function isUpToDateOutput(stdout: string): boolean {
-  return /already\s+up\s+to\s+date/i.test(stdout) || /\bpinned\b/i.test(stdout);
+  const pinnedAsStatus = /^\s*pinned\b(?!\s+dependency\b)(?:\s*$|\s*[:(-])/im.test(stdout);
+  return /already\s+up\s+to\s+date/i.test(stdout) || pinnedAsStatus;
 }
 
 async function updatePackageInternal(
@@ -151,14 +156,6 @@ export async function updatePackagesWithOutcome(
   return updatePackagesInternal(ctx, pi);
 }
 
-function normalizeLocalSourceIdentity(source: string): string {
-  const normalized = source.replace(/\\/g, "/");
-  const looksWindowsPath =
-    /^[a-zA-Z]:\//.test(normalized) || normalized.startsWith("//") || source.includes("\\");
-
-  return looksWindowsPath ? normalized.toLowerCase() : normalized;
-}
-
 function packageIdentity(source: string, fallbackName?: string): string {
   const npm = parseNpmSource(source);
   if (npm?.name) {
@@ -262,12 +259,18 @@ function formatRemovalTargets(targets: RemovalTarget[]): string {
   return targets.map((t) => `${t.scope}: ${t.source}`).join("\n");
 }
 
+interface RemovalExecutionResult {
+  target: RemovalTarget;
+  success: boolean;
+  error?: string;
+}
+
 async function executeRemovalTargets(
   targets: RemovalTarget[],
   ctx: ExtensionCommandContext,
   pi: ExtensionAPI
-): Promise<string[]> {
-  const failures: string[] = [];
+): Promise<RemovalExecutionResult[]> {
+  const results: RemovalExecutionResult[] = [];
 
   for (const target of targets) {
     showProgress(ctx, "Removing", `${target.source} (${target.scope})`);
@@ -278,14 +281,15 @@ async function executeRemovalTargets(
     if (res.code !== 0) {
       const errorMsg = `Remove failed (${target.scope}): ${res.stderr || res.stdout || `exit ${res.code}`}`;
       logPackageRemove(pi, target.source, target.name, false, errorMsg);
-      failures.push(errorMsg);
+      results.push({ target, success: false, error: errorMsg });
       continue;
     }
 
     logPackageRemove(pi, target.source, target.name, true);
+    results.push({ target, success: true });
   }
 
-  return failures;
+  return results;
 }
 
 function notifyRemovalSummary(
@@ -350,8 +354,17 @@ async function removePackageInternal(
     return NO_PACKAGE_MUTATION_OUTCOME;
   }
 
-  const failures = await executeRemovalTargets(targets, ctx, pi);
+  const results = await executeRemovalTargets(targets, ctx, pi);
   clearSearchCache();
+
+  const failures = results
+    .filter((result): result is RemovalExecutionResult & { success: false; error: string } =>
+      Boolean(!result.success && result.error)
+    )
+    .map((result) => result.error);
+  const successfulTargets = results
+    .filter((result) => result.success)
+    .map((result) => result.target);
 
   const remaining = (await getInstalledPackagesAllScopes(ctx, pi)).filter(
     (p) => packageIdentity(p.source, p.name) === identity
@@ -362,15 +375,15 @@ async function removePackageInternal(
     clearUpdatesAvailable(pi, ctx);
   }
 
-  const successfulRemovalCount = targets.length - failures.length;
+  const successfulRemovalCount = successfulTargets.length;
 
-  // Wait for selected targets to disappear from their target scopes before reloading.
-  if (successfulRemovalCount > 0 && failures.length === 0 && targets.length > 0) {
+  // Wait for successfully removed targets to disappear from their target scopes before reloading.
+  if (successfulTargets.length > 0) {
     notify(ctx, "Waiting for removal to complete...", "info");
     const isRemoved = await waitForCondition(
       async () => {
         const installedChecks = await Promise.all(
-          targets.map((target) =>
+          successfulTargets.map((target) =>
             isSourceInstalled(target.source, ctx, pi, {
               scope: target.scope,
             })
