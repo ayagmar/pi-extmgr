@@ -44,7 +44,7 @@ Requires Node.js `>=22.5.0`.
   - Background checks + status bar updates for installed npm packages
 - **Operational visibility**
   - Session history (`/extensions history`)
-  - Cache controls (`/extensions clear-cache`)
+  - Cache controls (`/extensions clear-cache` clears persistent + runtime extmgr caches)
   - Status line summary (`pkg count • auto-update • known updates`)
   - History now records local extension deletions and auto-update configuration changes
 - **Interactive + non-interactive support**
@@ -93,9 +93,9 @@ Open the manager:
 /extensions remove [source]      # Remove package
 /extensions uninstall [source]   # Alias: remove
 /extensions update [source]      # Update one package (or all when omitted)
-/extensions auto-update [every]  # No arg opens wizard in UI; accepts 1d, 1w, never, etc.
+/extensions auto-update [every]  # No arg opens wizard in UI; accepts 1d, 1w, 1mo, never, etc.
 /extensions history [options]    # View change history (supports filters)
-/extensions clear-cache          # Clear metadata cache
+/extensions clear-cache          # Clear persistent + runtime extmgr caches
 ```
 
 ### Non-interactive mode
@@ -111,7 +111,16 @@ When Pi is running without UI, extmgr still supports command-driven workflows:
 - `/extensions auto-update <duration>`
   - Use `1mo` for monthly schedules (history keeps `30m`/`24h` style durations for lookback windows)
 
-Remote browsing/search menus require interactive mode.
+Remote browsing/search menus require the full interactive TUI.
+
+### RPC / limited-UI mode
+
+In RPC mode, dialog-based commands still work, but the custom TUI panels do not:
+
+- `/extensions` falls back to read-only local/package lists
+- `/extensions installed` lists packages directly
+- remote browsing/search panels require the full interactive TUI
+- package extension configuration requires the full interactive TUI
 
 History options (works in non-interactive mode too):
 
