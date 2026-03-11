@@ -276,8 +276,15 @@ async function selectBrowseAction(
 
   return ctx.ui.custom<BrowseAction | undefined>((tui, theme, _keybindings, done) => {
     const container = new Container();
+    const title = new Text("", 1, 0);
+    const footer = new Text("", 1, 0);
+    const syncThemedContent = (): void => {
+      title.setText(theme.fg("accent", theme.bold(titleText)));
+      footer.setText(theme.fg("dim", "↑↓ wraps • enter select • esc cancel"));
+    };
+
     container.addChild(new DynamicBorder((s: string) => theme.fg("accent", s)));
-    container.addChild(new Text(theme.fg("accent", theme.bold(titleText)), 1, 0));
+    container.addChild(title);
 
     const selectList = new SelectList(items, Math.min(items.length, 12), {
       selectedPrefix: (t) => theme.fg("accent", t),
@@ -305,13 +312,17 @@ async function selectBrowseAction(
 
     selectList.onCancel = () => done(undefined);
 
+    syncThemedContent();
     container.addChild(selectList);
-    container.addChild(new Text(theme.fg("dim", "↑↓ wraps • enter select • esc cancel"), 1, 0));
+    container.addChild(footer);
     container.addChild(new DynamicBorder((s: string) => theme.fg("accent", s)));
 
     return {
       render: (w: number) => container.render(w),
-      invalidate: () => container.invalidate(),
+      invalidate: () => {
+        container.invalidate();
+        syncThemedContent();
+      },
       handleInput: (data: string) => {
         selectList.handleInput(data);
         tui.requestRender();

@@ -22,14 +22,10 @@ import { notify } from "../utils/notify.js";
 import { logExtensionToggle } from "../utils/history.js";
 import { requireCustomUI } from "../utils/mode.js";
 import { getPackageSourceKind } from "../utils/package-source.js";
+import { getSettingsListSelectedIndex } from "../utils/settings-list.js";
 import { fileExists } from "../utils/fs.js";
 import { UI } from "../constants.js";
 import { getChangeMarker, getPackageIcon, getScopeIcon, getStatusIcon } from "./theme.js";
-
-interface SelectableList {
-  selectedIndex?: number;
-  handleInput?(data: string): void;
-}
 
 export interface PackageConfigRow {
   id: string;
@@ -40,16 +36,6 @@ export interface PackageConfigRow {
 }
 
 type ConfigurePanelAction = { type: "cancel" } | { type: "save" };
-
-function getSelectedIndex(settingsList: unknown): number | undefined {
-  if (settingsList && typeof settingsList === "object") {
-    const selectable = settingsList as SelectableList;
-    if (typeof selectable.selectedIndex === "number") {
-      return selectable.selectedIndex;
-    }
-  }
-  return undefined;
-}
 
 export async function buildPackageConfigRows(
   entries: PackageExtensionEntry[]
@@ -138,25 +124,41 @@ async function showConfigurePanel(
 ): Promise<ConfigurePanelAction> {
   return ctx.ui.custom<ConfigurePanelAction>((tui, theme, _keybindings, done) => {
     const container = new Container();
+    const titleText = new Text("", 2, 0);
+    const subtitleText = new Text("", 2, 0);
+    const footerText = new Text("", 2, 0);
 
     container.addChild(new DynamicBorder((s: string) => theme.fg("accent", s)));
-    container.addChild(
-      new Text(theme.fg("accent", theme.bold(`Configure extensions: ${pkg.name}`)), 2, 0)
-    );
-    container.addChild(
-      new Text(
-        theme.fg(
-          "muted",
-          `${rows.length} extension path${rows.length === 1 ? "" : "s"} • Space/Enter toggle • S save • Esc cancel`
-        ),
-        2,
-        0
-      )
-    );
+    container.addChild(titleText);
+    container.addChild(subtitleText);
     container.addChild(new Spacer(1));
 
     const settingsItems = buildSettingItems(rows, staged, pkg, theme);
     const rowById = new Map(rows.map((row) => [row.id, row]));
+    const syncThemedContent = (): void => {
+      titleText.setText(theme.fg("accent", theme.bold(`Configure extensions: ${pkg.name}`)));
+      subtitleText.setText(
+        theme.fg(
+          "muted",
+          `${rows.length} extension path${rows.length === 1 ? "" : "s"} • Space/Enter toggle • S save • Esc cancel`
+        )
+      );
+      footerText.setText(theme.fg("dim", "↑↓ Navigate | Space/Enter Toggle | S Save | Esc Back"));
+
+      for (const settingsItem of settingsItems) {
+        const row = rowById.get(settingsItem.id);
+        if (!row) continue;
+        const currentState = staged.get(row.id) ?? row.originalState;
+        settingsItem.label = formatConfigRowLabel(
+          row,
+          currentState,
+          pkg,
+          theme,
+          currentState !== row.originalState
+        );
+      }
+    };
+    syncThemedContent();
 
     const settingsList = new SettingsList(
       settingsItems,
@@ -188,9 +190,7 @@ async function showConfigurePanel(
 
     container.addChild(settingsList);
     container.addChild(new Spacer(1));
-    container.addChild(
-      new Text(theme.fg("dim", "↑↓ Navigate | Space/Enter Toggle | S Save | Esc Back"), 2, 0)
-    );
+    container.addChild(footerText);
     container.addChild(new DynamicBorder((s: string) => theme.fg("accent", s)));
 
     return {
@@ -199,6 +199,7 @@ async function showConfigurePanel(
       },
       invalidate() {
         container.invalidate();
+        syncThemedContent();
       },
       handleInput(data: string) {
         if (matchesKey(data, Key.ctrl("s")) || data === "s" || data === "S") {
@@ -206,7 +207,7 @@ async function showConfigurePanel(
           return;
         }
 
-        const selectedIndex = getSelectedIndex(settingsList) ?? 0;
+        const selectedIndex = getSettingsListSelectedIndex(settingsList) ?? 0;
         const selectedId = settingsItems[selectedIndex]?.id ?? settingsItems[0]?.id;
         const selectedRow = selectedId ? rowById.get(selectedId) : undefined;
 

@@ -44,28 +44,9 @@ import { updateExtmgrStatus } from "../utils/status.js";
 import { parseChoiceByLabel } from "../utils/command.js";
 import { getPackageSourceKind, normalizePackageIdentity } from "../utils/package-source.js";
 import { hasCustomUI, requireCustomUI } from "../utils/mode.js";
+import { getSettingsListSelectedIndex } from "../utils/settings-list.js";
 import { UI } from "../constants.js";
 import { configurePackageExtensions } from "./package-config.js";
-
-// Type guard for SettingsList with selectedIndex
-interface SelectableList {
-  selectedIndex?: number;
-  handleInput?(data: string): void;
-}
-
-/**
- * Safely gets the selected index from a SettingsList component
- * Returns undefined if the component doesn't have the expected interface
- */
-function getSelectedIndex(settingsList: unknown): number | undefined {
-  if (settingsList && typeof settingsList === "object") {
-    const selectable = settingsList as SelectableList;
-    if (typeof selectable.selectedIndex === "number") {
-      return selectable.selectedIndex;
-    }
-  }
-  return undefined;
-}
 
 async function showInteractiveFallback(
   ctx: ExtensionCommandContext,
@@ -132,30 +113,48 @@ async function showInteractiveOnce(
   const result = await ctx.ui.custom<UnifiedAction>((tui, theme, _keybindings, done) => {
     const container = new Container();
 
+    const titleText = new Text("", 2, 0);
+    const subtitleText = new Text("", 2, 0);
+    const quickText = new Text("", 2, 0);
+    const footerState = buildFooterState(items);
+    const footerText = new Text("", 2, 0);
+
     // Header
     container.addChild(new DynamicBorder((s: string) => theme.fg("accent", s)));
-    container.addChild(new Text(theme.fg("accent", theme.bold("Extensions Manager")), 2, 0));
-    container.addChild(
-      new Text(
-        theme.fg(
-          "muted",
-          `${items.length} item${items.length === 1 ? "" : "s"} • Space/Enter toggle local • Enter/A actions • c configure pkg extensions • u update pkg • x remove selected`
-        ),
-        2,
-        0
-      )
-    );
-    container.addChild(
-      new Text(
-        theme.fg("dim", "Quick: i Install | f Search | U Update all | t Auto-update | p Palette"),
-        2,
-        0
-      )
-    );
+    container.addChild(titleText);
+    container.addChild(subtitleText);
+    container.addChild(quickText);
     container.addChild(new Spacer(1));
 
     // Build settings items
     const settingsItems = buildSettingsItems(items, staged, theme);
+    const syncThemedContent = (): void => {
+      titleText.setText(theme.fg("accent", theme.bold("Extensions Manager")));
+      subtitleText.setText(
+        theme.fg(
+          "muted",
+          `${items.length} item${items.length === 1 ? "" : "s"} • Space/Enter toggle local • Enter/A actions • c configure pkg extensions • u update pkg • x remove selected`
+        )
+      );
+      quickText.setText(
+        theme.fg("dim", "Quick: i Install | f Search | U Update all | t Auto-update | p Palette")
+      );
+      footerText.setText(theme.fg("dim", buildFooterShortcuts(footerState)));
+
+      for (const settingsItem of settingsItems) {
+        const item = byId.get(settingsItem.id);
+        if (!item) continue;
+
+        if (item.type === "local") {
+          const currentState = staged.get(item.id) ?? item.state!;
+          const changed = staged.has(item.id) && currentState !== item.originalState;
+          settingsItem.label = formatUnifiedItemLabel(item, currentState, theme, changed);
+        } else {
+          settingsItem.label = formatUnifiedItemLabel(item, "enabled", theme, false);
+        }
+      }
+    };
+    syncThemedContent();
 
     const settingsList = new SettingsList(
       settingsItems,
@@ -183,8 +182,7 @@ async function showInteractiveOnce(
     container.addChild(new Spacer(1));
 
     // Footer with keyboard shortcuts
-    const footerState = buildFooterState(items);
-    container.addChild(new Text(theme.fg("dim", buildFooterShortcuts(footerState)), 2, 0));
+    container.addChild(footerText);
     container.addChild(new DynamicBorder((s: string) => theme.fg("accent", s)));
 
     return {
@@ -193,9 +191,10 @@ async function showInteractiveOnce(
       },
       invalidate() {
         container.invalidate();
+        syncThemedContent();
       },
       handleInput(data: string) {
-        const selIdx = getSelectedIndex(settingsList) ?? 0;
+        const selIdx = getSettingsListSelectedIndex(settingsList) ?? 0;
         const selectedId = settingsItems[selIdx]?.id ?? settingsItems[0]?.id;
         const selectedItem = selectedId ? byId.get(selectedId) : undefined;
 
