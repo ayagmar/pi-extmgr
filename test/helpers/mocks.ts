@@ -14,10 +14,20 @@ export interface ExecCall {
 
 export type ExecImpl = (command: string, args: string[]) => ExecResult | Promise<ExecResult>;
 
+export interface NotificationRecord {
+  message: string;
+  level: string | undefined;
+}
+
 export interface MockHarnessOptions {
   cwd?: string;
   hasUI?: boolean;
+  hasCustomUI?: boolean;
   execImpl?: ExecImpl;
+  inputResult?: string;
+  selectResult?: string;
+  confirmResult?: boolean;
+  confirmImpl?: (title: string, message?: string) => boolean | Promise<boolean>;
 }
 
 const OK: ExecResult = { code: 0, stdout: "ok", stderr: "", killed: false };
@@ -28,10 +38,21 @@ export function createMockHarness(options: MockHarnessOptions = {}): {
   calls: ExecCall[];
   entries: { type: "custom"; customType: string; data: unknown }[];
   installedPackages: string[];
+  notifications: NotificationRecord[];
+  inputPrompts: string[];
+  selectPrompts: string[];
+  confirmPrompts: string[];
+  customCallCount: () => number;
 } {
   const calls: ExecCall[] = [];
   const entries: { type: "custom"; customType: string; data: unknown }[] = [];
   const installedPackages: string[] = [];
+  const notifications: NotificationRecord[] = [];
+  const inputPrompts: string[] = [];
+  const selectPrompts: string[] = [];
+  const confirmPrompts: string[] = [];
+  let customCalls = 0;
+
   const installedRecords: { source: string; scope: "global" | "project" }[] = [];
   const customExecImpl = options.execImpl;
 
@@ -100,6 +121,41 @@ export function createMockHarness(options: MockHarnessOptions = {}): {
     return defaultExecImpl(command, args);
   };
 
+  const theme = {
+    fg: (_name: string, text: string) => text,
+    bg: (_name: string, text: string) => text,
+    bold: (text: string) => text,
+  };
+
+  const ui = {
+    notify: (message: string, level?: string) => {
+      notifications.push({ message, level });
+    },
+    select: (title: string) => {
+      selectPrompts.push(title);
+      return Promise.resolve(options.selectResult);
+    },
+    confirm: (title: string, message?: string) => {
+      confirmPrompts.push(title);
+      if (options.confirmImpl) {
+        return Promise.resolve(options.confirmImpl(title, message));
+      }
+      return Promise.resolve(options.confirmResult ?? false);
+    },
+    input: (title: string) => {
+      inputPrompts.push(title);
+      return Promise.resolve(options.inputResult);
+    },
+    theme,
+    custom:
+      options.hasUI && options.hasCustomUI !== false
+        ? (_factory: unknown) => {
+            customCalls += 1;
+            return Promise.resolve(undefined);
+          }
+        : undefined,
+  };
+
   const pi = {
     exec: (command: string, args: string[]) => {
       calls.push({ command, args });
@@ -113,10 +169,22 @@ export function createMockHarness(options: MockHarnessOptions = {}): {
   const ctx = {
     hasUI: options.hasUI ?? false,
     cwd: options.cwd ?? "/tmp",
+    ui,
     sessionManager: {
       getEntries: () => entries,
     },
   } as unknown as ExtensionCommandContext;
 
-  return { pi, ctx, calls, entries, installedPackages };
+  return {
+    pi,
+    ctx,
+    calls,
+    entries,
+    installedPackages,
+    notifications,
+    inputPrompts,
+    selectPrompts,
+    confirmPrompts,
+    customCallCount: () => customCalls,
+  };
 }

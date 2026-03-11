@@ -16,6 +16,7 @@ import type { InstalledPackage, PackageExtensionEntry, State } from "../types/in
 import { discoverPackageExtensions, setPackageExtensionState } from "../packages/extensions.js";
 import { notify } from "../utils/notify.js";
 import { logExtensionToggle } from "../utils/history.js";
+import { requireCustomUI } from "../utils/mode.js";
 import { getPackageSourceKind } from "../utils/package-source.js";
 import { fileExists } from "../utils/fs.js";
 import { UI } from "../constants.js";
@@ -302,6 +303,10 @@ export async function configurePackageExtensions(
   ctx: ExtensionCommandContext,
   pi: ExtensionAPI
 ): Promise<{ changed: number; reloaded: boolean }> {
+  if (!requireCustomUI(ctx, "Package extension configuration")) {
+    return { changed: 0, reloaded: false };
+  }
+
   const discovered = await discoverPackageExtensions([pkg], ctx.cwd);
   const rows = await buildPackageConfigRows(discovered);
 

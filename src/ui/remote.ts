@@ -17,6 +17,7 @@ import {
 import { installPackage, installPackageLocally } from "../packages/install.js";
 import { execNpm } from "../utils/npm-exec.js";
 import { notify } from "../utils/notify.js";
+import { requireCustomUI } from "../utils/mode.js";
 
 interface PackageInfoCacheEntry {
   timestamp: number;
@@ -321,6 +322,16 @@ export async function browseRemotePackages(
   pi: ExtensionAPI,
   offset = 0
 ): Promise<void> {
+  if (
+    !requireCustomUI(
+      ctx,
+      "Remote package browsing",
+      "Use `/extensions install <source>` to install directly outside the full interactive TUI."
+    )
+  ) {
+    return;
+  }
+
   // Check cache first
   let allPackages: NpmPackage[] = [];
 

@@ -25,6 +25,7 @@ import {
   updatePackageWithOutcome,
   removePackageWithOutcome,
   updatePackagesWithOutcome,
+  showInstalledPackagesList,
 } from "../packages/management.js";
 import { showRemote } from "./remote.js";
 import { showHelp } from "./help.js";
@@ -42,6 +43,7 @@ import { getKnownUpdates, promptAutoUpdateWizard } from "../utils/auto-update.js
 import { updateExtmgrStatus } from "../utils/status.js";
 import { parseChoiceByLabel } from "../utils/command.js";
 import { getPackageSourceKind } from "../utils/package-source.js";
+import { hasCustomUI, requireCustomUI } from "../utils/mode.js";
 import { UI } from "../constants.js";
 import { configurePackageExtensions } from "./package-config.js";
 
@@ -65,10 +67,29 @@ function getSelectedIndex(settingsList: unknown): number | undefined {
   return undefined;
 }
 
+async function showInteractiveFallback(
+  ctx: ExtensionCommandContext,
+  pi: ExtensionAPI
+): Promise<void> {
+  await showListOnly(ctx);
+  await showInstalledPackagesList(ctx, pi);
+}
+
 export async function showInteractive(
   ctx: ExtensionCommandContext,
   pi: ExtensionAPI
 ): Promise<void> {
+  if (
+    !requireCustomUI(
+      ctx,
+      "The unified extensions manager",
+      "Showing read-only local and installed package lists instead."
+    )
+  ) {
+    await showInteractiveFallback(ctx, pi);
+    return;
+  }
+
   // Main loop - keeps showing the menu until user explicitly exits
   while (true) {
     const shouldExit = await showInteractiveOnce(ctx, pi);
@@ -825,6 +846,11 @@ export async function showInstalledPackagesLegacy(
   ctx: ExtensionCommandContext,
   pi: ExtensionAPI
 ): Promise<void> {
+  if (!hasCustomUI(ctx)) {
+    await showInstalledPackagesList(ctx, pi);
+    return;
+  }
+
   ctx.ui.notify(
     "📦 Use /extensions for the unified view.\nInstalled packages are now shown alongside local extensions.",
     "info"
