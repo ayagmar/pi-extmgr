@@ -13,7 +13,11 @@ import {
   type SettingItem,
 } from "@mariozechner/pi-tui";
 import type { InstalledPackage, PackageExtensionEntry, State } from "../types/index.js";
-import { discoverPackageExtensions, setPackageExtensionState } from "../packages/extensions.js";
+import {
+  applyPackageExtensionStateChanges,
+  discoverPackageExtensions,
+  validatePackageExtensionSettings,
+} from "../packages/extensions.js";
 import { notify } from "../utils/notify.js";
 import { logExtensionToggle } from "../utils/history.js";
 import { requireCustomUI } from "../utils/mode.js";
@@ -233,40 +237,50 @@ export async function applyPackageExtensionChanges(
   cwd: string,
   pi: ExtensionAPI
 ): Promise<{ changed: number; errors: string[] }> {
-  let changed = 0;
   const errors: string[] = [];
+  const changedRows = [...rows]
+    .sort((a, b) => a.extensionPath.localeCompare(b.extensionPath))
+    .flatMap((row) => {
+      const target = staged.get(row.id) ?? row.originalState;
+      if (target === row.originalState) {
+        return [];
+      }
 
-  const sortedRows = [...rows].sort((a, b) => a.extensionPath.localeCompare(b.extensionPath));
+      if (!row.available) {
+        const error = `${row.extensionPath}: extension entrypoint is missing on disk`;
+        errors.push(error);
+        logExtensionToggle(pi, row.id, row.originalState, target, false, error);
+        return [];
+      }
 
-  for (const row of sortedRows) {
-    const target = staged.get(row.id) ?? row.originalState;
-    if (target === row.originalState) continue;
+      return [{ row, target }];
+    });
 
-    if (!row.available) {
-      const error = `${row.extensionPath}: extension entrypoint is missing on disk`;
-      errors.push(error);
-      logExtensionToggle(pi, row.id, row.originalState, target, false, error);
-      continue;
-    }
-
-    const result = await setPackageExtensionState(
-      pkg.source,
-      row.extensionPath,
-      pkg.scope,
-      target,
-      cwd
-    );
-
-    if (result.ok) {
-      changed += 1;
-      logExtensionToggle(pi, row.id, row.originalState, target, true);
-    } else {
-      errors.push(`${row.extensionPath}: ${result.error}`);
-      logExtensionToggle(pi, row.id, row.originalState, target, false, result.error);
-    }
+  if (changedRows.length === 0) {
+    return { changed: 0, errors };
   }
 
-  return { changed, errors };
+  const result = await applyPackageExtensionStateChanges(
+    pkg.source,
+    pkg.scope,
+    changedRows.map(({ row, target }) => ({ extensionPath: row.extensionPath, target })),
+    cwd
+  );
+
+  if (!result.ok) {
+    for (const { row, target } of changedRows) {
+      const error = `${row.extensionPath}: ${result.error}`;
+      errors.push(error);
+      logExtensionToggle(pi, row.id, row.originalState, target, false, result.error);
+    }
+    return { changed: 0, errors };
+  }
+
+  for (const { row, target } of changedRows) {
+    logExtensionToggle(pi, row.id, row.originalState, target, true);
+  }
+
+  return { changed: changedRows.length, errors };
 }
 
 async function promptRestartForPackageConfig(ctx: ExtensionCommandContext): Promise<boolean> {
@@ -304,6 +318,12 @@ export async function configurePackageExtensions(
   pi: ExtensionAPI
 ): Promise<{ changed: number; reloaded: boolean }> {
   if (!requireCustomUI(ctx, "Package extension configuration")) {
+    return { changed: 0, reloaded: false };
+  }
+
+  const validation = await validatePackageExtensionSettings(pkg.scope, ctx.cwd);
+  if (!validation.ok) {
+    notify(ctx, validation.error, "error");
     return { changed: 0, reloaded: false };
   }
 

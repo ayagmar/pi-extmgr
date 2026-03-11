@@ -214,6 +214,125 @@ async function writeSettingsFile(path: string, settings: SettingsFile): Promise<
   }
 }
 
+function findPackageSettingsIndex(
+  packages: SettingsFile["packages"] extends infer T ? NonNullable<T> : never,
+  normalizedSource: string
+): number {
+  return packages.findIndex((pkg) => {
+    if (typeof pkg === "string") {
+      return normalizeSource(pkg) === normalizedSource;
+    }
+    return normalizeSource(pkg.source) === normalizedSource;
+  });
+}
+
+function toPackageSettingsObject(
+  existing: string | PackageSettingsObject | undefined,
+  packageSource: string
+): PackageSettingsObject {
+  if (typeof existing === "string") {
+    return { source: existing, extensions: [] };
+  }
+
+  if (existing && typeof existing.source === "string") {
+    return {
+      source: existing.source,
+      extensions: Array.isArray(existing.extensions) ? [...existing.extensions] : [],
+    };
+  }
+
+  return { source: packageSource, extensions: [] };
+}
+
+function updateExtensionMarkers(
+  existingTokens: string[] | undefined,
+  changes: ReadonlyMap<string, State>
+): string[] {
+  const nextTokens: string[] = [];
+
+  for (const token of existingTokens ?? []) {
+    if (typeof token !== "string") {
+      continue;
+    }
+
+    if (token[0] !== "+" && token[0] !== "-") {
+      nextTokens.push(token);
+      continue;
+    }
+
+    const tokenPath = normalizeRelativePath(token.slice(1));
+    if (!changes.has(tokenPath)) {
+      nextTokens.push(token);
+    }
+  }
+
+  for (const [extensionPath, target] of Array.from(changes.entries()).sort((a, b) =>
+    a[0].localeCompare(b[0])
+  )) {
+    nextTokens.push(`${target === "enabled" ? "+" : "-"}${extensionPath}`);
+  }
+
+  return nextTokens;
+}
+
+export async function validatePackageExtensionSettings(
+  scope: Scope,
+  cwd: string
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await readSettingsFile(getSettingsPath(scope, cwd), { strict: true });
+    return { ok: true };
+  } catch (error) {
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
+export async function applyPackageExtensionStateChanges(
+  packageSource: string,
+  scope: Scope,
+  changes: readonly { extensionPath: string; target: State }[],
+  cwd: string
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    if (changes.length === 0) {
+      return { ok: true };
+    }
+
+    const settingsPath = getSettingsPath(scope, cwd);
+    const settings = await readSettingsFile(settingsPath, { strict: true });
+    const normalizedSource = normalizeSource(packageSource);
+    const packages = [...(settings.packages ?? [])];
+    const index = findPackageSettingsIndex(packages, normalizedSource);
+    const packageEntry = toPackageSettingsObject(packages[index], packageSource);
+
+    const normalizedChanges = new Map<string, State>();
+    for (const change of changes) {
+      normalizedChanges.set(normalizeRelativePath(change.extensionPath), change.target);
+    }
+
+    packageEntry.extensions = updateExtensionMarkers(packageEntry.extensions, normalizedChanges);
+
+    if (index === -1) {
+      packages.push(packageEntry);
+    } else {
+      packages[index] = packageEntry;
+    }
+
+    settings.packages = packages;
+    await writeSettingsFile(settingsPath, settings);
+
+    return { ok: true };
+  } catch (error) {
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
 function safeMatchesGlob(targetPath: string, pattern: string): boolean {
   try {
     return matchesGlob(targetPath, pattern);
@@ -530,58 +649,5 @@ export async function setPackageExtensionState(
   target: State,
   cwd: string
 ): Promise<{ ok: true } | { ok: false; error: string }> {
-  try {
-    const settingsPath = getSettingsPath(scope, cwd);
-    const settings = await readSettingsFile(settingsPath, { strict: true });
-
-    const normalizedSource = normalizeSource(packageSource);
-    const normalizedPath = normalizeRelativePath(extensionPath);
-    const marker = `${target === "enabled" ? "+" : "-"}${normalizedPath}`;
-
-    const packages = [...(settings.packages ?? [])];
-    let index = packages.findIndex((pkg) => {
-      if (typeof pkg === "string") {
-        return normalizeSource(pkg) === normalizedSource;
-      }
-      return normalizeSource(pkg.source) === normalizedSource;
-    });
-
-    let packageEntry: PackageSettingsObject;
-    if (index === -1) {
-      packageEntry = { source: packageSource, extensions: [marker] };
-      packages.push(packageEntry);
-      index = packages.length - 1;
-    } else {
-      const existing = packages[index];
-      if (typeof existing === "string") {
-        packageEntry = { source: existing, extensions: [] };
-      } else if (existing && typeof existing.source === "string") {
-        packageEntry = {
-          source: existing.source,
-          extensions: Array.isArray(existing.extensions) ? [...existing.extensions] : [],
-        };
-      } else {
-        packageEntry = { source: packageSource, extensions: [] };
-      }
-
-      packageEntry.extensions = (packageEntry.extensions ?? []).filter((token) => {
-        if (typeof token !== "string") return false;
-        if (token[0] !== "+" && token[0] !== "-") return true;
-        return normalizeRelativePath(token.slice(1)) !== normalizedPath;
-      });
-      packageEntry.extensions.push(marker);
-      packages[index] = packageEntry;
-    }
-
-    settings.packages = packages;
-
-    await writeSettingsFile(settingsPath, settings);
-
-    return { ok: true };
-  } catch (error) {
-    return {
-      ok: false,
-      error: error instanceof Error ? error.message : String(error),
-    };
-  }
+  return applyPackageExtensionStateChanges(packageSource, scope, [{ extensionPath, target }], cwd);
 }
