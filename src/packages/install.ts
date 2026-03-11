@@ -149,7 +149,7 @@ async function getStandaloneDependencyError(packageRoot: string): Promise<string
 async function cleanupStandaloneTempArtifacts(tempDir: string, extractDir?: string): Promise<void> {
   const paths = [extractDir, tempDir].filter((path): path is string => Boolean(path));
 
-  await Promise.all(
+  await Promise.allSettled(
     paths.map(async (path) => {
       try {
         await rm(path, { recursive: true, force: true });
