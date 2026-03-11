@@ -34,7 +34,7 @@ function showNonInteractiveHelp(ctx: ExtensionCommandContext): void {
     "  /extensions remove <source>  - Remove a package",
     "  /extensions update [source]  - Update one package or all packages",
     "  /extensions history [opts]   - Show history (supports filters)",
-    "  /extensions auto-update <d>  - Configure auto-update (e.g. 1d, 1w, never)",
+    "  /extensions auto-update <d>  - Configure auto-update (e.g. 1d, 1w, 1mo, never)",
     "",
     "History examples:",
     "  /extensions history --failed --limit 50",

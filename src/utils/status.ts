@@ -8,14 +8,22 @@ import type {
 } from "@mariozechner/pi-coding-agent";
 import { getInstalledPackages } from "../packages/discovery.js";
 import { getAutoUpdateStatus } from "./auto-update.js";
+import { normalizePackageIdentity } from "./package-source.js";
 import { getAutoUpdateConfigAsync, saveAutoUpdateConfig } from "./settings.js";
 
 function filterStaleUpdates(
   knownUpdates: string[],
   installedPackages: Awaited<ReturnType<typeof getInstalledPackages>>
 ): string[] {
-  const installedNames = new Set(installedPackages.map((p) => p.name));
-  return knownUpdates.filter((name) => installedNames.has(name));
+  const installedIdentities = new Set(
+    installedPackages.map((pkg) =>
+      normalizePackageIdentity(
+        pkg.source,
+        pkg.resolvedPath ? { resolvedPath: pkg.resolvedPath } : undefined
+      )
+    )
+  );
+  return knownUpdates.filter((identity) => installedIdentities.has(identity));
 }
 
 export async function updateExtmgrStatus(

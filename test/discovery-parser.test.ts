@@ -10,7 +10,7 @@ import {
   parseInstalledPackagesOutputAllScopes,
 } from "../src/packages/discovery.js";
 import { isPackageSource, normalizePackageSource, parseNpmSource } from "../src/utils/format.js";
-import { getPackageSourceKind } from "../src/utils/package-source.js";
+import { getPackageSourceKind, normalizePackageIdentity } from "../src/utils/package-source.js";
 import { createMockHarness } from "./helpers/mocks.js";
 
 void test("parseInstalledPackagesOutput parses scopes, names, versions, and resolved path lines", () => {
@@ -60,6 +60,38 @@ Global:
   const result = parseInstalledPackagesOutput(input);
   assert.equal(result.length, 1);
   assert.equal(result[0]?.source, "npm:dup-pkg@1.0.0");
+});
+
+void test("parseInstalledPackagesOutput gives project scope precedence for duplicate npm packages", () => {
+  const input = `
+Global:
+  npm:dup-pkg@1.0.0
+Project:
+  npm:dup-pkg@2.0.0
+`;
+
+  const result = parseInstalledPackagesOutput(input);
+  assert.equal(result.length, 1);
+  assert.deepEqual(result[0], {
+    source: "npm:dup-pkg@2.0.0",
+    name: "dup-pkg",
+    version: "2.0.0",
+    scope: "project",
+  });
+});
+
+void test("parseInstalledPackagesOutput deduplicates git packages by repo identity without ref", () => {
+  const input = `
+Global:
+  git:https://github.com/user/repo.git@v1
+Project:
+  git:https://github.com/user/repo.git@v2
+`;
+
+  const result = parseInstalledPackagesOutput(input);
+  assert.equal(result.length, 1);
+  assert.equal(result[0]?.scope, "project");
+  assert.equal(result[0]?.source, "git:https://github.com/user/repo.git@v2");
 });
 
 void test("parseInstalledPackagesOutputAllScopes keeps duplicates across scopes", () => {
@@ -250,6 +282,17 @@ void test("getPackageSourceKind classifies npm/git/local sources", () => {
   assert.equal(getPackageSourceKind(".\\vendor\\demo"), "local");
   assert.equal(getPackageSourceKind("file:///opt/pi/pkg"), "local");
   assert.equal(getPackageSourceKind("/opt/pi/pkg"), "local");
+});
+
+void test("normalizePackageIdentity strips git+ prefixes before matching", () => {
+  assert.equal(
+    normalizePackageIdentity("git+https://github.com/User/Repo.git@main"),
+    "git:https://github.com/user/repo.git"
+  );
+  assert.equal(
+    normalizePackageIdentity("git:https://github.com/User/Repo.git@main"),
+    "git:https://github.com/user/repo.git"
+  );
 });
 
 void test("getInstalledPackages hydrates version from resolved package.json when source has no inline version", async () => {

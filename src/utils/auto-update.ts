@@ -19,12 +19,18 @@ import {
 } from "./settings.js";
 import { parseNpmSource } from "./format.js";
 import { execNpm } from "./npm-exec.js";
+import { normalizePackageIdentity } from "./package-source.js";
+import { logAutoUpdateConfig } from "./history.js";
 import { TIMEOUTS } from "../constants.js";
 
 import { startTimer, stopTimer, isTimerRunning } from "./timer.js";
 
 // Context provider for safe session handling
 export type ContextProvider = () => (ExtensionCommandContext | ExtensionContext) | undefined;
+
+function getUpdateIdentity(pkg: InstalledPackage): string {
+  return normalizePackageIdentity(pkg.source);
+}
 
 /**
  * Start auto-update background checker
@@ -48,27 +54,23 @@ export function startAutoUpdateTimer(
   const interval = getScheduleInterval(config);
   if (!interval) return;
 
-  // Run an initial check immediately.
-  const initialCtx = getCtx();
-  if (initialCtx) {
-    void checkForUpdates(pi, initialCtx, onUpdateAvailable);
-  }
+  const now = Date.now();
+  const nextCheck = config.nextCheck;
+  const initialDelayMs =
+    typeof nextCheck === "number" && nextCheck > now ? Math.max(0, nextCheck - now) : 0;
 
-  // Set up recurring checks
-  startTimer(interval, () => {
-    const checkCtx = getCtx();
-    if (!checkCtx) {
-      stopAutoUpdateTimer();
-      return;
-    }
-    void checkForUpdates(pi, checkCtx, onUpdateAvailable);
-  });
-
-  // Persist that timer is running
-  saveAutoUpdateConfig(pi, {
-    ...config,
-    nextCheck: calculateNextCheck(config.intervalMs),
-  });
+  startTimer(
+    interval,
+    () => {
+      const checkCtx = getCtx();
+      if (!checkCtx) {
+        stopAutoUpdateTimer();
+        return;
+      }
+      void checkForUpdates(pi, checkCtx, onUpdateAvailable);
+    },
+    { initialDelayMs }
+  );
 }
 
 /**
@@ -98,28 +100,30 @@ export async function checkForUpdates(
   const npmPackages = packages.filter((p) => p.source.startsWith("npm:"));
 
   const updatesAvailable: string[] = [];
+  const updatedPackageNames: string[] = [];
 
   for (const pkg of npmPackages) {
     const hasUpdate = await checkPackageUpdate(pkg, ctx, pi);
     if (hasUpdate) {
-      updatesAvailable.push(pkg.name);
+      updatesAvailable.push(getUpdateIdentity(pkg));
+      updatedPackageNames.push(pkg.name);
     }
   }
 
-  // Update last check time
+  const checkedAt = Date.now();
   const config = getAutoUpdateConfig(ctx);
   saveAutoUpdateConfig(pi, {
     ...config,
-    lastCheck: Date.now(),
+    lastCheck: checkedAt,
     nextCheck: calculateNextCheck(config.intervalMs),
     updatesAvailable,
   });
 
-  if (updatesAvailable.length > 0 && onUpdateAvailable) {
-    onUpdateAvailable(updatesAvailable);
+  if (updatedPackageNames.length > 0 && onUpdateAvailable) {
+    onUpdateAvailable(updatedPackageNames);
   }
 
-  return updatesAvailable;
+  return updatedPackageNames;
 }
 
 /**
@@ -168,7 +172,7 @@ export function getAutoUpdateStatus(ctx: ExtensionCommandContext | ExtensionCont
 }
 
 /**
- * Return package names currently known to have updates available
+ * Return normalized package identities currently known to have updates available
  * (from the latest background check).
  */
 export function getKnownUpdates(ctx: ExtensionCommandContext | ExtensionContext): Set<string> {
@@ -251,12 +255,12 @@ export function enableAutoUpdate(
     intervalMs,
     enabled: true,
     displayText,
-    lastCheck: Date.now(),
     nextCheck: calculateNextCheck(intervalMs),
     updatesAvailable: [],
   };
 
   saveAutoUpdateConfig(pi, config);
+  logAutoUpdateConfig(pi, `set to ${displayText}`, true);
 
   const getCtx: ContextProvider = () => ctx;
 
@@ -280,6 +284,7 @@ export function disableAutoUpdate(
     displayText: "off",
     updatesAvailable: [],
   });
+  logAutoUpdateConfig(pi, "disabled", true);
 
   notify(ctx, "Auto-update disabled", "info");
 }

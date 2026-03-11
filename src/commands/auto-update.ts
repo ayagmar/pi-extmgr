@@ -54,7 +54,7 @@ export async function handleAutoUpdateSubcommand(
       "  3d      - Check every 3 days",
       "  1w      - Check weekly",
       "  2w      - Check every 2 weeks",
-      "  1m      - Check monthly",
+      "  1mo     - Check monthly (1m also works)",
       "  daily   - Check daily (alias)",
       "  weekly  - Check weekly (alias)",
     ];

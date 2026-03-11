@@ -13,18 +13,19 @@ import {
   type SettingItem,
 } from "@mariozechner/pi-tui";
 import type { InstalledPackage, PackageExtensionEntry, State } from "../types/index.js";
-import { discoverPackageExtensions, setPackageExtensionState } from "../packages/extensions.js";
+import {
+  applyPackageExtensionStateChanges,
+  discoverPackageExtensions,
+  validatePackageExtensionSettings,
+} from "../packages/extensions.js";
 import { notify } from "../utils/notify.js";
 import { logExtensionToggle } from "../utils/history.js";
+import { requireCustomUI, runCustomUI } from "../utils/mode.js";
 import { getPackageSourceKind } from "../utils/package-source.js";
+import { getSettingsListSelectedIndex } from "../utils/settings-list.js";
 import { fileExists } from "../utils/fs.js";
 import { UI } from "../constants.js";
 import { getChangeMarker, getPackageIcon, getScopeIcon, getStatusIcon } from "./theme.js";
-
-interface SelectableList {
-  selectedIndex?: number;
-  handleInput?(data: string): void;
-}
 
 export interface PackageConfigRow {
   id: string;
@@ -35,16 +36,6 @@ export interface PackageConfigRow {
 }
 
 type ConfigurePanelAction = { type: "cancel" } | { type: "save" };
-
-function getSelectedIndex(settingsList: unknown): number | undefined {
-  if (settingsList && typeof settingsList === "object") {
-    const selectable = settingsList as SelectableList;
-    if (typeof selectable.selectedIndex === "number") {
-      return selectable.selectedIndex;
-    }
-  }
-  return undefined;
-}
 
 export async function buildPackageConfigRows(
   entries: PackageExtensionEntry[]
@@ -130,99 +121,116 @@ async function showConfigurePanel(
   rows: PackageConfigRow[],
   staged: Map<string, State>,
   ctx: ExtensionCommandContext
-): Promise<ConfigurePanelAction> {
-  return ctx.ui.custom<ConfigurePanelAction>((tui, theme, _keybindings, done) => {
-    const container = new Container();
+): Promise<ConfigurePanelAction | undefined> {
+  return runCustomUI(ctx, "Package extension configuration", () =>
+    ctx.ui.custom<ConfigurePanelAction>((tui, theme, _keybindings, done) => {
+      const container = new Container();
+      const titleText = new Text("", 2, 0);
+      const subtitleText = new Text("", 2, 0);
+      const footerText = new Text("", 2, 0);
 
-    container.addChild(new DynamicBorder((s: string) => theme.fg("accent", s)));
-    container.addChild(
-      new Text(theme.fg("accent", theme.bold(`Configure extensions: ${pkg.name}`)), 2, 0)
-    );
-    container.addChild(
-      new Text(
-        theme.fg(
-          "muted",
-          `${rows.length} extension path${rows.length === 1 ? "" : "s"} • Space/Enter toggle • S save • Esc cancel`
-        ),
-        2,
-        0
-      )
-    );
-    container.addChild(new Spacer(1));
+      container.addChild(new DynamicBorder((s: string) => theme.fg("accent", s)));
+      container.addChild(titleText);
+      container.addChild(subtitleText);
+      container.addChild(new Spacer(1));
 
-    const settingsItems = buildSettingItems(rows, staged, pkg, theme);
-    const rowById = new Map(rows.map((row) => [row.id, row]));
+      const settingsItems = buildSettingItems(rows, staged, pkg, theme);
+      const rowById = new Map(rows.map((row) => [row.id, row]));
+      const syncThemedContent = (): void => {
+        titleText.setText(theme.fg("accent", theme.bold(`Configure extensions: ${pkg.name}`)));
+        subtitleText.setText(
+          theme.fg(
+            "muted",
+            `${rows.length} extension path${rows.length === 1 ? "" : "s"} • Space/Enter toggle • S save • Esc cancel`
+          )
+        );
+        footerText.setText(theme.fg("dim", "↑↓ Navigate | Space/Enter Toggle | S Save | Esc Back"));
 
-    const settingsList = new SettingsList(
-      settingsItems,
-      Math.min(rows.length + 2, UI.maxListHeight),
-      getSettingsListTheme(),
-      (id: string, newValue: string) => {
-        const row = rowById.get(id);
-        if (!row || !row.available) return;
-
-        const state = newValue as State;
-        staged.set(id, state);
-
-        const settingsItem = settingsItems.find((item) => item.id === id);
-        if (settingsItem) {
+        for (const settingsItem of settingsItems) {
+          const row = rowById.get(settingsItem.id);
+          if (!row) continue;
+          const currentState = staged.get(row.id) ?? row.originalState;
           settingsItem.label = formatConfigRowLabel(
             row,
-            state,
+            currentState,
             pkg,
             theme,
-            state !== row.originalState
+            currentState !== row.originalState
           );
         }
+      };
+      syncThemedContent();
 
-        tui.requestRender();
-      },
-      () => done({ type: "cancel" }),
-      { enableSearch: rows.length > UI.searchThreshold }
-    );
+      const settingsList = new SettingsList(
+        settingsItems,
+        Math.min(rows.length + 2, UI.maxListHeight),
+        getSettingsListTheme(),
+        (id: string, newValue: string) => {
+          const row = rowById.get(id);
+          if (!row || !row.available) return;
 
-    container.addChild(settingsList);
-    container.addChild(new Spacer(1));
-    container.addChild(
-      new Text(theme.fg("dim", "↑↓ Navigate | Space/Enter Toggle | S Save | Esc Back"), 2, 0)
-    );
-    container.addChild(new DynamicBorder((s: string) => theme.fg("accent", s)));
+          const state = newValue as State;
+          staged.set(id, state);
 
-    return {
-      render(width: number) {
-        return container.render(width);
-      },
-      invalidate() {
-        container.invalidate();
-      },
-      handleInput(data: string) {
-        if (matchesKey(data, Key.ctrl("s")) || data === "s" || data === "S") {
-          done({ type: "save" });
-          return;
-        }
+          const settingsItem = settingsItems.find((item) => item.id === id);
+          if (settingsItem) {
+            settingsItem.label = formatConfigRowLabel(
+              row,
+              state,
+              pkg,
+              theme,
+              state !== row.originalState
+            );
+          }
 
-        const selectedIndex = getSelectedIndex(settingsList) ?? 0;
-        const selectedId = settingsItems[selectedIndex]?.id ?? settingsItems[0]?.id;
-        const selectedRow = selectedId ? rowById.get(selectedId) : undefined;
+          tui.requestRender();
+        },
+        () => done({ type: "cancel" }),
+        { enableSearch: rows.length > UI.searchThreshold }
+      );
 
-        if (
-          selectedRow &&
-          !selectedRow.available &&
-          (data === " " || data === "\r" || data === "\n")
-        ) {
-          notify(
-            ctx,
-            `${selectedRow.extensionPath} is missing on disk and cannot be toggled.`,
-            "warning"
-          );
-          return;
-        }
+      container.addChild(settingsList);
+      container.addChild(new Spacer(1));
+      container.addChild(footerText);
+      container.addChild(new DynamicBorder((s: string) => theme.fg("accent", s)));
 
-        settingsList.handleInput?.(data);
-        tui.requestRender();
-      },
-    };
-  });
+      return {
+        render(width: number) {
+          return container.render(width);
+        },
+        invalidate() {
+          container.invalidate();
+          syncThemedContent();
+        },
+        handleInput(data: string) {
+          if (matchesKey(data, Key.ctrl("s")) || data === "s" || data === "S") {
+            done({ type: "save" });
+            return;
+          }
+
+          const selectedIndex = getSettingsListSelectedIndex(settingsList) ?? 0;
+          const selectedId = settingsItems[selectedIndex]?.id ?? settingsItems[0]?.id;
+          const selectedRow = selectedId ? rowById.get(selectedId) : undefined;
+
+          if (
+            selectedRow &&
+            !selectedRow.available &&
+            (data === " " || data === "\r" || data === "\n")
+          ) {
+            notify(
+              ctx,
+              `${selectedRow.extensionPath} is missing on disk and cannot be toggled.`,
+              "warning"
+            );
+            return;
+          }
+
+          settingsList.handleInput?.(data);
+          tui.requestRender();
+        },
+      };
+    })
+  );
 }
 
 export async function applyPackageExtensionChanges(
@@ -232,40 +240,50 @@ export async function applyPackageExtensionChanges(
   cwd: string,
   pi: ExtensionAPI
 ): Promise<{ changed: number; errors: string[] }> {
-  let changed = 0;
   const errors: string[] = [];
+  const changedRows = [...rows]
+    .sort((a, b) => a.extensionPath.localeCompare(b.extensionPath))
+    .flatMap((row) => {
+      const target = staged.get(row.id) ?? row.originalState;
+      if (target === row.originalState) {
+        return [];
+      }
 
-  const sortedRows = [...rows].sort((a, b) => a.extensionPath.localeCompare(b.extensionPath));
+      if (!row.available) {
+        const error = `${row.extensionPath}: extension entrypoint is missing on disk`;
+        errors.push(error);
+        logExtensionToggle(pi, row.id, row.originalState, target, false, error);
+        return [];
+      }
 
-  for (const row of sortedRows) {
-    const target = staged.get(row.id) ?? row.originalState;
-    if (target === row.originalState) continue;
+      return [{ row, target }];
+    });
 
-    if (!row.available) {
-      const error = `${row.extensionPath}: extension entrypoint is missing on disk`;
-      errors.push(error);
-      logExtensionToggle(pi, row.id, row.originalState, target, false, error);
-      continue;
-    }
-
-    const result = await setPackageExtensionState(
-      pkg.source,
-      row.extensionPath,
-      pkg.scope,
-      target,
-      cwd
-    );
-
-    if (result.ok) {
-      changed += 1;
-      logExtensionToggle(pi, row.id, row.originalState, target, true);
-    } else {
-      errors.push(`${row.extensionPath}: ${result.error}`);
-      logExtensionToggle(pi, row.id, row.originalState, target, false, result.error);
-    }
+  if (changedRows.length === 0) {
+    return { changed: 0, errors };
   }
 
-  return { changed, errors };
+  const result = await applyPackageExtensionStateChanges(
+    pkg.source,
+    pkg.scope,
+    changedRows.map(({ row, target }) => ({ extensionPath: row.extensionPath, target })),
+    cwd
+  );
+
+  if (!result.ok) {
+    for (const { row, target } of changedRows) {
+      const error = `${row.extensionPath}: ${result.error}`;
+      errors.push(error);
+      logExtensionToggle(pi, row.id, row.originalState, target, false, result.error);
+    }
+    return { changed: 0, errors };
+  }
+
+  for (const { row, target } of changedRows) {
+    logExtensionToggle(pi, row.id, row.originalState, target, true);
+  }
+
+  return { changed: changedRows.length, errors };
 }
 
 async function promptRestartForPackageConfig(ctx: ExtensionCommandContext): Promise<boolean> {
@@ -302,6 +320,16 @@ export async function configurePackageExtensions(
   ctx: ExtensionCommandContext,
   pi: ExtensionAPI
 ): Promise<{ changed: number; reloaded: boolean }> {
+  if (!requireCustomUI(ctx, "Package extension configuration")) {
+    return { changed: 0, reloaded: false };
+  }
+
+  const validation = await validatePackageExtensionSettings(pkg.scope, ctx.cwd);
+  if (!validation.ok) {
+    notify(ctx, validation.error, "error");
+    return { changed: 0, reloaded: false };
+  }
+
   const discovered = await discoverPackageExtensions([pkg], ctx.cwd);
   const rows = await buildPackageConfigRows(discovered);
 
@@ -314,6 +342,9 @@ export async function configurePackageExtensions(
 
   while (true) {
     const action = await showConfigurePanel(pkg, rows, staged, ctx);
+    if (!action) {
+      return { changed: 0, reloaded: false };
+    }
 
     if (action.type === "cancel") {
       const pending = getPendingChangeCount(rows, staged);

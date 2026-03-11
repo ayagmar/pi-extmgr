@@ -4,7 +4,10 @@ import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import extensionsManager from "../src/index.js";
 import {
   checkForUpdates,
+  enableAutoUpdate,
+  getKnownUpdates,
   isAutoUpdateRunning,
+  startAutoUpdateTimer,
   stopAutoUpdateTimer,
 } from "../src/utils/auto-update.js";
 import { parseDuration } from "../src/utils/settings.js";
@@ -170,4 +173,191 @@ void test("session switch to disabled auto-update stops existing timer", async (
   } finally {
     stopAutoUpdateTimer();
   }
+});
+
+void test("startAutoUpdateTimer waits until persisted nextCheck when not yet due", async () => {
+  const entries = [
+    {
+      type: "custom" as const,
+      customType: "extmgr-auto-update",
+      data: {
+        enabled: true,
+        intervalMs: 1000,
+        displayText: "1 second",
+        nextCheck: Date.now() + 120,
+      },
+    },
+  ];
+
+  let listCalls = 0;
+  const pi = {
+    appendEntry: () => undefined,
+    exec: (command: string, args: string[]) => {
+      if (command === "pi" && args[0] === "list") {
+        listCalls += 1;
+      }
+      return Promise.resolve({
+        code: 0,
+        stdout: "No packages installed",
+        stderr: "",
+        killed: false,
+      });
+    },
+  } as unknown as ExtensionAPI;
+
+  const ctx = {
+    hasUI: true,
+    cwd: "/tmp",
+    ui: {
+      notify: () => undefined,
+      setStatus: () => undefined,
+      theme: { fg: (_name: string, text: string) => text },
+    },
+    sessionManager: {
+      getEntries: () => entries,
+    },
+  } as unknown as ReturnType<typeof createMockHarness>["ctx"];
+
+  try {
+    startAutoUpdateTimer(pi, () => ctx);
+    await new Promise((resolve) => setTimeout(resolve, 40));
+    assert.equal(listCalls, 0);
+  } finally {
+    stopAutoUpdateTimer();
+  }
+});
+
+void test("startAutoUpdateTimer checks immediately when persisted nextCheck is due", async () => {
+  const entries = [
+    {
+      type: "custom" as const,
+      customType: "extmgr-auto-update",
+      data: {
+        enabled: true,
+        intervalMs: 1000,
+        displayText: "1 second",
+        nextCheck: Date.now() - 1,
+      },
+    },
+  ];
+
+  let listCalls = 0;
+  const pi = {
+    appendEntry: () => undefined,
+    exec: (command: string, args: string[]) => {
+      if (command === "pi" && args[0] === "list") {
+        listCalls += 1;
+      }
+      return Promise.resolve({
+        code: 0,
+        stdout: "No packages installed",
+        stderr: "",
+        killed: false,
+      });
+    },
+  } as unknown as ExtensionAPI;
+
+  const ctx = {
+    hasUI: true,
+    cwd: "/tmp",
+    ui: {
+      notify: () => undefined,
+      setStatus: () => undefined,
+      theme: { fg: (_name: string, text: string) => text },
+    },
+    sessionManager: {
+      getEntries: () => entries,
+    },
+  } as unknown as ReturnType<typeof createMockHarness>["ctx"];
+
+  try {
+    startAutoUpdateTimer(pi, () => ctx);
+    await new Promise((resolve) => setTimeout(resolve, 40));
+    assert.equal(listCalls, 1);
+  } finally {
+    stopAutoUpdateTimer();
+  }
+});
+
+void test("enableAutoUpdate records the next scheduled check without faking a completed run", () => {
+  const entries: { type: "custom"; customType: string; data: unknown }[] = [];
+  const pi = {
+    appendEntry: (customType: string, data: unknown) => {
+      entries.push({ type: "custom", customType, data });
+    },
+  } as unknown as ExtensionAPI;
+
+  const ctx = {
+    hasUI: false,
+    cwd: "/tmp",
+    sessionManager: {
+      getEntries: () => entries,
+    },
+  } as unknown as ReturnType<typeof createMockHarness>["ctx"];
+
+  try {
+    enableAutoUpdate(pi, ctx, 60 * 60 * 1000, "1 hour");
+
+    const latestConfig = entries.filter((entry) => entry.customType === "extmgr-auto-update").at(-1)
+      ?.data as { lastCheck?: number; nextCheck?: number; enabled?: boolean } | undefined;
+
+    assert.equal(latestConfig?.enabled, true);
+    assert.equal(latestConfig?.lastCheck, undefined);
+    assert.ok(typeof latestConfig?.nextCheck === "number");
+  } finally {
+    stopAutoUpdateTimer();
+  }
+});
+
+void test("getKnownUpdates ignores legacy name-only update markers", () => {
+  const ctx = {
+    hasUI: false,
+    cwd: "/tmp",
+    sessionManager: {
+      getEntries: () => [
+        {
+          type: "custom",
+          customType: "extmgr-auto-update",
+          data: {
+            enabled: true,
+            intervalMs: 60 * 60 * 1000,
+            displayText: "1 hour",
+            updatesAvailable: ["demo-pkg"],
+          },
+        },
+      ],
+    },
+  } as unknown as ReturnType<typeof createMockHarness>["ctx"];
+
+  assert.deepEqual(Array.from(getKnownUpdates(ctx)), []);
+});
+
+void test("getKnownUpdates normalizes stored update identities", () => {
+  const ctx = {
+    hasUI: false,
+    cwd: "/tmp",
+    sessionManager: {
+      getEntries: () => [
+        {
+          type: "custom",
+          customType: "extmgr-auto-update",
+          data: {
+            enabled: true,
+            intervalMs: 60 * 60 * 1000,
+            displayText: "1 hour",
+            updatesAvailable: [
+              "npm:Demo-Pkg",
+              "git:HTTPS://GitHub.com/User/Repo.git@main",
+              "not-an-identity",
+            ],
+          },
+        },
+      ],
+    },
+  } as unknown as ReturnType<typeof createMockHarness>["ctx"];
+
+  assert.deepEqual(Array.from(getKnownUpdates(ctx)).sort(), [
+    "git:https://github.com/user/repo.git",
+    "npm:demo-pkg",
+  ]);
 });

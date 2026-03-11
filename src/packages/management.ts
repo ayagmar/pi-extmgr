@@ -10,12 +10,8 @@ import {
   isSourceInstalled,
 } from "./discovery.js";
 import { waitForCondition } from "../utils/retry.js";
-import { formatInstalledPackageLabel, parseNpmSource } from "../utils/format.js";
-import {
-  getPackageSourceKind,
-  normalizeLocalSourceIdentity,
-  splitGitRepoAndRef,
-} from "../utils/package-source.js";
+import { formatInstalledPackageLabel } from "../utils/format.js";
+import { normalizePackageIdentity } from "../utils/package-source.js";
 import { logPackageUpdate, logPackageRemove } from "../utils/history.js";
 import { clearUpdatesAvailable } from "../utils/settings.js";
 import { notify, error as notifyError, success } from "../utils/notify.js";
@@ -70,18 +66,19 @@ async function updatePackageInternal(
     return NO_PACKAGE_MUTATION_OUTCOME;
   }
 
+  const updateIdentity = normalizePackageIdentity(source);
   const stdout = res.stdout || "";
   if (isUpToDateOutput(stdout)) {
     notify(ctx, `${source} is already up to date (or pinned).`, "info");
     logPackageUpdate(pi, source, source, undefined, true);
-    clearUpdatesAvailable(pi, ctx);
+    clearUpdatesAvailable(pi, ctx, [updateIdentity]);
     void updateExtmgrStatus(ctx, pi);
     return NO_PACKAGE_MUTATION_OUTCOME;
   }
 
   logPackageUpdate(pi, source, source, undefined, true);
   success(ctx, `Updated ${source}`);
-  clearUpdatesAvailable(pi, ctx);
+  clearUpdatesAvailable(pi, ctx, [updateIdentity]);
 
   const reloaded = await confirmReload(ctx, "Package updated.");
   if (!reloaded) {
@@ -156,29 +153,8 @@ export async function updatePackagesWithOutcome(
   return updatePackagesInternal(ctx, pi);
 }
 
-function packageIdentity(source: string, fallbackName?: string): string {
-  const npm = parseNpmSource(source);
-  if (npm?.name) {
-    return `npm:${npm.name}`;
-  }
-
-  const sourceKind = getPackageSourceKind(source);
-
-  if (sourceKind === "git") {
-    const gitSpec = source.startsWith("git:") ? source.slice(4) : source;
-    const { repo } = splitGitRepoAndRef(gitSpec);
-    return `git:${repo}`;
-  }
-
-  if (sourceKind === "local") {
-    return `src:${normalizeLocalSourceIdentity(source)}`;
-  }
-
-  if (fallbackName) {
-    return `name:${fallbackName}`;
-  }
-
-  return `src:${source}`;
+function packageIdentity(source: string): string {
+  return normalizePackageIdentity(source);
 }
 
 async function getInstalledPackagesAllScopes(
@@ -325,9 +301,8 @@ async function removePackageInternal(
   pi: ExtensionAPI
 ): Promise<PackageMutationOutcome> {
   const installed = await getInstalledPackagesAllScopes(ctx, pi);
-  const direct = installed.find((p) => p.source === source);
-  const identity = packageIdentity(source, direct?.name);
-  const matching = installed.filter((p) => packageIdentity(p.source, p.name) === identity);
+  const identity = packageIdentity(source);
+  const matching = installed.filter((p) => packageIdentity(p.source) === identity);
 
   const hasBothScopes =
     matching.some((pkg) => pkg.scope === "global") &&
@@ -369,12 +344,12 @@ async function removePackageInternal(
     .map((result) => result.target);
 
   const remaining = (await getInstalledPackagesAllScopes(ctx, pi)).filter(
-    (p) => packageIdentity(p.source, p.name) === identity
+    (p) => packageIdentity(p.source) === identity
   );
   notifyRemovalSummary(source, remaining, failures, ctx);
 
-  if (failures.length === 0) {
-    clearUpdatesAvailable(pi, ctx);
+  if (failures.length === 0 && remaining.length === 0) {
+    clearUpdatesAvailable(pi, ctx, [identity]);
   }
 
   const successfulRemovalCount = successfulTargets.length;

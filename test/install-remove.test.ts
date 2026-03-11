@@ -1,7 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { access, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { ExtensionAPI, ExtensionCommandContext } from "@mariozechner/pi-coding-agent";
-import { installPackage } from "../src/packages/install.js";
+import { installFromUrl, installPackage, installPackageLocally } from "../src/packages/install.js";
 import { removePackage, updatePackage, updatePackages } from "../src/packages/management.js";
 import { createMockHarness } from "./helpers/mocks.js";
 
@@ -252,7 +255,7 @@ void test("updatePackage treats case-variant already-up-to-date output as no-op"
         enabled: true,
         intervalMs: 60 * 60 * 1000,
         displayText: "1 hour",
-        updatesAvailable: ["pi-extmgr"],
+        updatesAvailable: ["npm:pi-extmgr"],
       },
     });
 
@@ -347,7 +350,7 @@ void test("updatePackages treats case-variant already-up-to-date output as no-op
         enabled: true,
         intervalMs: 60 * 60 * 1000,
         displayText: "1 hour",
-        updatesAvailable: ["pi-extmgr"],
+        updatesAvailable: ["npm:pi-extmgr"],
       },
     });
 
@@ -406,4 +409,252 @@ void test("updatePackages logs failure in history", async () => {
   assert.equal(latestHistory?.success, false);
   assert.equal(latestHistory?.packageName, "all packages");
   assert.match(latestHistory?.error ?? "", /network timeout/i);
+});
+
+void test("installPackageLocally removes temporary extraction artifacts after success", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "pi-extmgr-standalone-success-"));
+  const originalFetch = globalThis.fetch;
+
+  try {
+    globalThis.fetch = ((input: string | URL) => {
+      const url = String(input);
+      if (url !== "https://example.com/demo-pkg.tgz") {
+        return Promise.reject(new Error(`Unexpected fetch URL: ${url}`));
+      }
+
+      return Promise.resolve({
+        ok: true,
+        arrayBuffer: () => Promise.resolve(new Uint8Array([1, 2, 3]).buffer),
+      } as Response);
+    }) as typeof fetch;
+
+    const { pi, ctx, entries } = createMockHarness({
+      cwd,
+      execImpl: async (command, args) => {
+        if (command === "npm" && args[0] === "view") {
+          return {
+            code: 0,
+            stdout: JSON.stringify({
+              version: "1.0.0",
+              dist: { tarball: "https://example.com/demo-pkg.tgz" },
+            }),
+            stderr: "",
+            killed: false,
+          };
+        }
+
+        if (command === "tar" && args[0] === "--version") {
+          return { code: 0, stdout: "tar 1.0.0", stderr: "", killed: false };
+        }
+
+        if (command === "tar" && args.includes("-C")) {
+          const extractDir = args[args.indexOf("-C") + 1];
+          assert.ok(extractDir);
+
+          await mkdir(extractDir, { recursive: true });
+          await writeFile(
+            join(extractDir, "package.json"),
+            JSON.stringify({ name: "demo-pkg" }, null, 2),
+            "utf8"
+          );
+          await writeFile(join(extractDir, "index.ts"), "// demo\n", "utf8");
+
+          return { code: 0, stdout: "", stderr: "", killed: false };
+        }
+
+        return { code: 0, stdout: "", stderr: "", killed: false };
+      },
+    });
+
+    await installPackageLocally("demo-pkg", ctx, pi, { scope: "project" });
+
+    await access(join(cwd, ".pi", "extensions", "demo-pkg", "index.ts"));
+    await assert.rejects(access(join(cwd, ".pi", "extensions", ".temp")));
+
+    const historyEntries = entries
+      .filter((entry) => entry.customType === "extmgr-change")
+      .map((entry) => entry.data);
+    const latestHistory = historyEntries[historyEntries.length - 1] as
+      | { action?: string; success?: boolean }
+      | undefined;
+
+    assert.equal(latestHistory?.action, "package_install");
+    assert.equal(latestHistory?.success, true);
+  } finally {
+    globalThis.fetch = originalFetch;
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
+
+void test("installPackageLocally rejects standalone packages with unresolved runtime dependencies", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "pi-extmgr-standalone-"));
+  const originalFetch = globalThis.fetch;
+
+  try {
+    globalThis.fetch = ((input: string | URL) => {
+      const url = String(input);
+      if (url !== "https://example.com/demo-pkg.tgz") {
+        return Promise.reject(new Error(`Unexpected fetch URL: ${url}`));
+      }
+
+      return Promise.resolve({
+        ok: true,
+        arrayBuffer: () => Promise.resolve(new Uint8Array([1, 2, 3]).buffer),
+      } as Response);
+    }) as typeof fetch;
+
+    const { pi, ctx, entries } = createMockHarness({
+      cwd,
+      execImpl: async (command, args) => {
+        if (command === "npm" && args[0] === "view") {
+          return {
+            code: 0,
+            stdout: JSON.stringify({
+              version: "1.0.0",
+              dist: { tarball: "https://example.com/demo-pkg.tgz" },
+            }),
+            stderr: "",
+            killed: false,
+          };
+        }
+
+        if (command === "tar" && args[0] === "--version") {
+          return { code: 0, stdout: "tar 1.0.0", stderr: "", killed: false };
+        }
+
+        if (command === "tar" && args.includes("-C")) {
+          const extractDir = args[args.indexOf("-C") + 1];
+          assert.ok(extractDir);
+
+          await mkdir(extractDir, { recursive: true });
+          await writeFile(
+            join(extractDir, "package.json"),
+            JSON.stringify(
+              {
+                name: "demo-pkg",
+                dependencies: { "left-pad": "1.3.0" },
+              },
+              null,
+              2
+            ),
+            "utf8"
+          );
+          await writeFile(join(extractDir, "index.ts"), "// demo\n", "utf8");
+
+          return { code: 0, stdout: "", stderr: "", killed: false };
+        }
+
+        return { code: 0, stdout: "", stderr: "", killed: false };
+      },
+    });
+
+    await installPackageLocally("demo-pkg", ctx, pi, { scope: "project" });
+
+    await assert.rejects(access(join(cwd, ".pi", "extensions", "demo-pkg")));
+
+    const historyEntries = entries
+      .filter((entry) => entry.customType === "extmgr-change")
+      .map((entry) => entry.data);
+    const latestHistory = historyEntries[historyEntries.length - 1] as
+      | { action?: string; success?: boolean }
+      | undefined;
+
+    assert.equal(latestHistory?.action, "package_install");
+    assert.equal(latestHistory?.success, false);
+  } finally {
+    globalThis.fetch = originalFetch;
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
+
+void test("installPackageLocally fails fast with an actionable error when tar is unavailable", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "pi-extmgr-standalone-"));
+  const output: string[] = [];
+  const originalLog = console.log;
+  console.log = (...args: unknown[]) => {
+    output.push(args.map(String).join(" "));
+  };
+
+  try {
+    const { pi, ctx } = createMockHarness({
+      cwd,
+      execImpl: (command, args) => {
+        if (command === "npm" && args[0] === "view") {
+          return {
+            code: 0,
+            stdout: JSON.stringify({
+              version: "1.0.0",
+              dist: { tarball: "https://example.com/demo-pkg.tgz" },
+            }),
+            stderr: "",
+            killed: false,
+          };
+        }
+
+        if (command === "tar" && args[0] === "--version") {
+          return { code: 127, stdout: "", stderr: "tar: not found", killed: false };
+        }
+
+        return { code: 0, stdout: "", stderr: "", killed: false };
+      },
+    });
+
+    await installPackageLocally("demo-pkg", ctx, pi, { scope: "project" });
+
+    assert.ok(output.some((line) => /tar/.test(line) && /standalone/i.test(line)));
+    await assert.rejects(access(join(cwd, ".pi", "extensions", "demo-pkg")));
+  } finally {
+    console.log = originalLog;
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
+
+void test("installFromUrl aborts stalled downloads instead of hanging forever", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "pi-extmgr-url-install-"));
+  const originalFetch = globalThis.fetch;
+  const originalSetTimeout = globalThis.setTimeout;
+
+  try {
+    globalThis.setTimeout = ((callback: (...args: unknown[]) => void, _delay?: number) =>
+      originalSetTimeout(callback, 1)) as typeof setTimeout;
+
+    globalThis.fetch = ((_input: string | URL | Request, init?: RequestInit) => {
+      assert.ok(init?.signal);
+      return new Promise<Response>((_resolve, reject) => {
+        let settled = false;
+        const fallbackTimer = originalSetTimeout(() => {
+          if (settled) return;
+          settled = true;
+          reject(Object.assign(new Error("fetch mock timeout"), { name: "TimeoutError" }));
+        }, 50);
+
+        init.signal?.addEventListener("abort", () => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(fallbackTimer);
+          reject(Object.assign(new Error("aborted"), { name: "AbortError" }));
+        });
+      });
+    }) as typeof fetch;
+
+    const { pi, ctx, entries } = createMockHarness({ cwd });
+
+    await installFromUrl("https://example.com/demo.ts", "demo.ts", ctx, pi, { scope: "project" });
+
+    await assert.rejects(access(join(cwd, ".pi", "extensions", "demo.ts")));
+
+    const historyEntries = entries
+      .filter((entry) => entry.customType === "extmgr-change")
+      .map((entry) => entry.data);
+    const latestHistory = historyEntries[historyEntries.length - 1] as
+      | { action?: string; success?: boolean }
+      | undefined;
+
+    assert.equal(latestHistory?.action, "package_install");
+    assert.equal(latestHistory?.success, false);
+  } finally {
+    globalThis.fetch = originalFetch;
+    globalThis.setTimeout = originalSetTimeout;
+    await rm(cwd, { recursive: true, force: true });
+  }
 });

@@ -67,9 +67,10 @@ export function formatListOutput(
   }
 
   const output = items.join("\n");
+  const titledOutput = `${title}:\n${output}`;
 
   if (ctx.hasUI) {
-    ctx.ui.notify(output, "info");
+    ctx.ui.notify(titledOutput, "info");
   } else {
     console.log(`${title}:`);
     console.log(output);

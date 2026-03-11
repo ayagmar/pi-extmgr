@@ -8,7 +8,7 @@ import type { ExtensionAPI, ExtensionCommandContext } from "@mariozechner/pi-cod
 import { normalizePackageSource } from "../utils/format.js";
 import { fileExists } from "../utils/fs.js";
 import { clearSearchCache, isSourceInstalled } from "./discovery.js";
-import { resolveManifestExtensionEntrypoints } from "./extensions.js";
+import { discoverPackageExtensionEntrypoints, readPackageManifest } from "./extensions.js";
 import { waitForCondition } from "../utils/retry.js";
 import { logPackageInstall } from "../utils/history.js";
 import { clearUpdatesAvailable } from "../utils/settings.js";
@@ -17,6 +17,7 @@ import { confirmAction, confirmReload, showProgress } from "../utils/ui-helpers.
 import { tryOperation } from "../utils/mode.js";
 import { updateExtmgrStatus } from "../utils/status.js";
 import { execNpm } from "../utils/npm-exec.js";
+import { normalizePackageIdentity } from "../utils/package-source.js";
 import { TIMEOUTS } from "../constants.js";
 
 export type InstallScope = "global" | "project";
@@ -72,20 +73,93 @@ function safeExtractGithubMatch(match: RegExpMatchArray | null): GithubUrlInfo |
   return { owner, repo, branch, filePath };
 }
 
-async function hasStandaloneEntrypoint(packageRoot: string): Promise<boolean> {
-  const declared = await resolveManifestExtensionEntrypoints(packageRoot);
-  if (declared !== undefined) {
-    for (const path of declared) {
-      if (await fileExists(join(packageRoot, path))) {
-        return true;
-      }
+async function fetchWithTimeout(url: string, timeoutMs: number): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    return await fetch(url, { signal: controller.signal });
+  } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") {
+      throw new Error(`Download timed out after ${Math.ceil(timeoutMs / 1000)}s`);
     }
-    return false;
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function ensureTarAvailable(
+  pi: ExtensionAPI,
+  ctx: ExtensionCommandContext
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const result = await pi.exec("tar", ["--version"], {
+    timeout: 5_000,
+    cwd: ctx.cwd,
+  });
+
+  if (result.code === 0) {
+    return { ok: true };
   }
 
-  return (
-    (await fileExists(join(packageRoot, "index.ts"))) ||
-    (await fileExists(join(packageRoot, "index.js")))
+  return {
+    ok: false,
+    error:
+      "Standalone local installs require the `tar` command on PATH. Install tar or use managed package install instead.",
+  };
+}
+
+async function hasStandaloneEntrypoint(packageRoot: string): Promise<boolean> {
+  const entrypoints = await discoverPackageExtensionEntrypoints(packageRoot, {
+    allowConventionDirectory: false,
+  });
+
+  for (const path of entrypoints) {
+    if (await fileExists(join(packageRoot, path))) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+async function getStandaloneDependencyError(packageRoot: string): Promise<string | undefined> {
+  const manifest = await readPackageManifest(packageRoot);
+  const dependencies = manifest?.dependencies;
+  if (!dependencies || typeof dependencies !== "object") {
+    return undefined;
+  }
+
+  const missingDependencies: string[] = [];
+  for (const dependencyName of Object.keys(dependencies)) {
+    const dependencyPath = join(packageRoot, "node_modules", dependencyName);
+    if (!(await fileExists(dependencyPath))) {
+      missingDependencies.push(dependencyName);
+    }
+  }
+
+  if (missingDependencies.length === 0) {
+    return undefined;
+  }
+
+  const packageName = manifest?.name ?? "This package";
+  return `${packageName} declares runtime dependencies that are not bundled for standalone install: ${missingDependencies.join(", ")}. Use managed install instead, or bundle dependencies in the package tarball.`;
+}
+
+async function cleanupStandaloneTempArtifacts(tempDir: string, extractDir?: string): Promise<void> {
+  const paths = [extractDir, tempDir].filter((path): path is string => Boolean(path));
+
+  await Promise.allSettled(
+    paths.map(async (path) => {
+      try {
+        await rm(path, { recursive: true, force: true });
+      } catch (error) {
+        console.warn(
+          `[extmgr] Failed to remove temporary standalone install artifact at ${path}:`,
+          error
+        );
+      }
+    })
   );
 }
 
@@ -150,7 +224,7 @@ export async function installPackage(
   clearSearchCache();
   logPackageInstall(pi, normalized, normalized, undefined, scope, true);
   success(ctx, `Installed ${normalized} (${scope})`);
-  clearUpdatesAvailable(pi, ctx);
+  clearUpdatesAvailable(pi, ctx, [normalizePackageIdentity(normalized)]);
 
   // Wait for the extension to be discoverable before reloading.
   // This prevents a race condition where ctx.reload() runs before
@@ -208,7 +282,7 @@ export async function installFromUrl(
       await mkdir(extensionDir, { recursive: true });
       notify(ctx, `Downloading ${fileName}...`, "info");
 
-      const response = await fetch(url);
+      const response = await fetchWithTimeout(url, TIMEOUTS.packageInstall);
       if (!response.ok) {
         throw new Error(`Download failed: ${response.status} ${response.statusText}`);
       }
@@ -231,7 +305,6 @@ export async function installFromUrl(
   const { fileName: name, destPath } = result;
   logPackageInstall(pi, url, name, undefined, scope, true);
   success(ctx, `Installed ${name} to:\n${destPath}`);
-  clearUpdatesAvailable(pi, ctx);
 
   const reloaded = await confirmReload(ctx, "Extension installed.");
   if (!reloaded) {
@@ -325,17 +398,33 @@ export async function installPackageLocally(
   }
   const { version, tarballUrl } = result;
 
+  const tarAvailability = await ensureTarAvailable(pi, ctx);
+  if (!tarAvailability.ok) {
+    notifyError(ctx, tarAvailability.error);
+    logPackageInstall(
+      pi,
+      `npm:${packageName}`,
+      packageName,
+      version,
+      scope,
+      false,
+      tarAvailability.error
+    );
+    void updateExtmgrStatus(ctx, pi);
+    return;
+  }
+
   // Download and extract
+  const tempDir = join(extensionDir, ".temp");
   const extractResult = await tryOperation(
     ctx,
     async () => {
-      const tempDir = join(extensionDir, ".temp");
       await mkdir(tempDir, { recursive: true });
       const tarballPath = join(tempDir, `${packageName.replace(/[@/]/g, "-")}-${version}.tgz`);
 
       showProgress(ctx, "Downloading", `${packageName}@${version}`);
 
-      const response = await fetch(tarballUrl);
+      const response = await fetchWithTimeout(tarballUrl, TIMEOUTS.packageInstall);
       if (!response.ok) {
         throw new Error(`Download failed: ${response.status} ${response.statusText}`);
       }
@@ -343,12 +432,13 @@ export async function installPackageLocally(
       const buffer = await response.arrayBuffer();
       await writeFile(tarballPath, new Uint8Array(buffer));
 
-      return { tarballPath, tempDir };
+      return { tarballPath };
     },
     "Download failed"
   );
 
   if (!extractResult) {
+    await cleanupStandaloneTempArtifacts(tempDir);
     logPackageInstall(
       pi,
       `npm:${packageName}`,
@@ -361,7 +451,7 @@ export async function installPackageLocally(
     void updateExtmgrStatus(ctx, pi);
     return;
   }
-  const { tarballPath, tempDir } = extractResult;
+  const { tarballPath } = extractResult;
 
   // Extract
   const extractDir = join(
@@ -390,8 +480,13 @@ export async function installPackageLocally(
       const hasEntrypoint = await hasStandaloneEntrypoint(extractDir);
       if (!hasEntrypoint) {
         throw new Error(
-          `Package ${packageName} does not contain a runnable extension entrypoint (pi.extensions, index.ts, or index.js)`
+          `Package ${packageName} does not contain a runnable standalone extension entrypoint (manifest-declared entrypoint, index.ts, or index.js)`
         );
+      }
+
+      const dependencyError = await getStandaloneDependencyError(extractDir);
+      if (dependencyError) {
+        throw new Error(dependencyError);
       }
 
       return true;
@@ -400,7 +495,7 @@ export async function installPackageLocally(
   );
 
   if (!extractSuccess) {
-    await rm(extractDir, { recursive: true, force: true });
+    await cleanupStandaloneTempArtifacts(tempDir, extractDir);
     logPackageInstall(
       pi,
       `npm:${packageName}`,
@@ -429,7 +524,7 @@ export async function installPackageLocally(
     "Failed to copy extension"
   );
 
-  await rm(extractDir, { recursive: true, force: true });
+  await cleanupStandaloneTempArtifacts(tempDir, extractDir);
 
   if (!destResult) {
     logPackageInstall(
@@ -448,7 +543,6 @@ export async function installPackageLocally(
   clearSearchCache();
   logPackageInstall(pi, `npm:${packageName}`, packageName, version, scope, true);
   success(ctx, `Installed ${packageName}@${version} locally to:\n${destResult}`);
-  clearUpdatesAvailable(pi, ctx);
 
   const reloaded = await confirmReload(ctx, "Extension installed.");
   if (!reloaded) {
