@@ -411,6 +411,81 @@ void test("updatePackages logs failure in history", async () => {
   assert.match(latestHistory?.error ?? "", /network timeout/i);
 });
 
+void test("installPackageLocally removes temporary extraction artifacts after success", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "pi-extmgr-standalone-success-"));
+  const originalFetch = globalThis.fetch;
+
+  try {
+    globalThis.fetch = ((input: string | URL) => {
+      const url = String(input);
+      if (url !== "https://example.com/demo-pkg.tgz") {
+        return Promise.reject(new Error(`Unexpected fetch URL: ${url}`));
+      }
+
+      return Promise.resolve({
+        ok: true,
+        arrayBuffer: () => Promise.resolve(new Uint8Array([1, 2, 3]).buffer),
+      } as Response);
+    }) as typeof fetch;
+
+    const { pi, ctx, entries } = createMockHarness({
+      cwd,
+      execImpl: async (command, args) => {
+        if (command === "npm" && args[0] === "view") {
+          return {
+            code: 0,
+            stdout: JSON.stringify({
+              version: "1.0.0",
+              dist: { tarball: "https://example.com/demo-pkg.tgz" },
+            }),
+            stderr: "",
+            killed: false,
+          };
+        }
+
+        if (command === "tar" && args[0] === "--version") {
+          return { code: 0, stdout: "tar 1.0.0", stderr: "", killed: false };
+        }
+
+        if (command === "tar" && args.includes("-C")) {
+          const extractDir = args[args.indexOf("-C") + 1];
+          assert.ok(extractDir);
+
+          await mkdir(extractDir, { recursive: true });
+          await writeFile(
+            join(extractDir, "package.json"),
+            JSON.stringify({ name: "demo-pkg" }, null, 2),
+            "utf8"
+          );
+          await writeFile(join(extractDir, "index.ts"), "// demo\n", "utf8");
+
+          return { code: 0, stdout: "", stderr: "", killed: false };
+        }
+
+        return { code: 0, stdout: "", stderr: "", killed: false };
+      },
+    });
+
+    await installPackageLocally("demo-pkg", ctx, pi, { scope: "project" });
+
+    await access(join(cwd, ".pi", "extensions", "demo-pkg", "index.ts"));
+    await assert.rejects(access(join(cwd, ".pi", "extensions", ".temp")));
+
+    const historyEntries = entries
+      .filter((entry) => entry.customType === "extmgr-change")
+      .map((entry) => entry.data);
+    const latestHistory = historyEntries[historyEntries.length - 1] as
+      | { action?: string; success?: boolean }
+      | undefined;
+
+    assert.equal(latestHistory?.action, "package_install");
+    assert.equal(latestHistory?.success, true);
+  } finally {
+    globalThis.fetch = originalFetch;
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
+
 void test("installPackageLocally rejects standalone packages with unresolved runtime dependencies", async () => {
   const cwd = await mkdtemp(join(tmpdir(), "pi-extmgr-standalone-"));
   const originalFetch = globalThis.fetch;

@@ -146,6 +146,14 @@ async function getStandaloneDependencyError(packageRoot: string): Promise<string
   return `${packageName} declares runtime dependencies that are not bundled for standalone install: ${missingDependencies.join(", ")}. Use managed install instead, or bundle dependencies in the package tarball.`;
 }
 
+async function cleanupStandaloneTempArtifacts(tempDir: string, extractDir?: string): Promise<void> {
+  if (extractDir) {
+    await rm(extractDir, { recursive: true, force: true });
+  }
+
+  await rm(tempDir, { recursive: true, force: true });
+}
+
 export async function installPackage(
   source: string,
   ctx: ExtensionCommandContext,
@@ -398,10 +406,10 @@ export async function installPackageLocally(
   }
 
   // Download and extract
+  const tempDir = join(extensionDir, ".temp");
   const extractResult = await tryOperation(
     ctx,
     async () => {
-      const tempDir = join(extensionDir, ".temp");
       await mkdir(tempDir, { recursive: true });
       const tarballPath = join(tempDir, `${packageName.replace(/[@/]/g, "-")}-${version}.tgz`);
 
@@ -415,12 +423,13 @@ export async function installPackageLocally(
       const buffer = await response.arrayBuffer();
       await writeFile(tarballPath, new Uint8Array(buffer));
 
-      return { tarballPath, tempDir };
+      return { tarballPath };
     },
     "Download failed"
   );
 
   if (!extractResult) {
+    await cleanupStandaloneTempArtifacts(tempDir);
     logPackageInstall(
       pi,
       `npm:${packageName}`,
@@ -433,7 +442,7 @@ export async function installPackageLocally(
     void updateExtmgrStatus(ctx, pi);
     return;
   }
-  const { tarballPath, tempDir } = extractResult;
+  const { tarballPath } = extractResult;
 
   // Extract
   const extractDir = join(
@@ -477,7 +486,7 @@ export async function installPackageLocally(
   );
 
   if (!extractSuccess) {
-    await rm(extractDir, { recursive: true, force: true });
+    await cleanupStandaloneTempArtifacts(tempDir, extractDir);
     logPackageInstall(
       pi,
       `npm:${packageName}`,
@@ -506,7 +515,7 @@ export async function installPackageLocally(
     "Failed to copy extension"
   );
 
-  await rm(extractDir, { recursive: true, force: true });
+  await cleanupStandaloneTempArtifacts(tempDir, extractDir);
 
   if (!destResult) {
     logPackageInstall(

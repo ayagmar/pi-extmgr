@@ -43,7 +43,7 @@ import { getKnownUpdates, promptAutoUpdateWizard } from "../utils/auto-update.js
 import { updateExtmgrStatus } from "../utils/status.js";
 import { parseChoiceByLabel } from "../utils/command.js";
 import { getPackageSourceKind, normalizePackageIdentity } from "../utils/package-source.js";
-import { hasCustomUI, requireCustomUI } from "../utils/mode.js";
+import { hasCustomUI, runCustomUI } from "../utils/mode.js";
 import { getSettingsListSelectedIndex } from "../utils/settings-list.js";
 import { UI } from "../constants.js";
 import { configurePackageExtensions } from "./package-config.js";
@@ -60,13 +60,11 @@ export async function showInteractive(
   ctx: ExtensionCommandContext,
   pi: ExtensionAPI
 ): Promise<void> {
-  if (
-    !requireCustomUI(
-      ctx,
-      "The unified extensions manager",
-      "Showing read-only local and installed package lists instead."
-    )
-  ) {
+  if (!hasCustomUI(ctx)) {
+    ctx.ui.notify(
+      "The unified extensions manager requires the full interactive TUI. Showing read-only local and installed package lists instead.",
+      "warning"
+    );
     await showInteractiveFallback(ctx, pi);
     return;
   }
@@ -110,174 +108,192 @@ async function showInteractiveOnce(
   const staged = new Map<string, State>();
   const byId = new Map(items.map((item) => [item.id, item]));
 
-  const result = await ctx.ui.custom<UnifiedAction>((tui, theme, _keybindings, done) => {
-    const container = new Container();
+  const result = await runCustomUI(
+    ctx,
+    "The unified extensions manager",
+    () =>
+      ctx.ui.custom<UnifiedAction>((tui, theme, _keybindings, done) => {
+        const container = new Container();
 
-    const titleText = new Text("", 2, 0);
-    const subtitleText = new Text("", 2, 0);
-    const quickText = new Text("", 2, 0);
-    const footerState = buildFooterState(items);
-    const footerText = new Text("", 2, 0);
+        const titleText = new Text("", 2, 0);
+        const subtitleText = new Text("", 2, 0);
+        const quickText = new Text("", 2, 0);
+        const footerState = buildFooterState(items);
+        const footerText = new Text("", 2, 0);
 
-    // Header
-    container.addChild(new DynamicBorder((s: string) => theme.fg("accent", s)));
-    container.addChild(titleText);
-    container.addChild(subtitleText);
-    container.addChild(quickText);
-    container.addChild(new Spacer(1));
+        // Header
+        container.addChild(new DynamicBorder((s: string) => theme.fg("accent", s)));
+        container.addChild(titleText);
+        container.addChild(subtitleText);
+        container.addChild(quickText);
+        container.addChild(new Spacer(1));
 
-    // Build settings items
-    const settingsItems = buildSettingsItems(items, staged, theme);
-    const syncThemedContent = (): void => {
-      titleText.setText(theme.fg("accent", theme.bold("Extensions Manager")));
-      subtitleText.setText(
-        theme.fg(
-          "muted",
-          `${items.length} item${items.length === 1 ? "" : "s"} • Space/Enter toggle local • Enter/A actions • c configure pkg extensions • u update pkg • x remove selected`
-        )
-      );
-      quickText.setText(
-        theme.fg("dim", "Quick: i Install | f Search | U Update all | t Auto-update | p Palette")
-      );
-      footerText.setText(theme.fg("dim", buildFooterShortcuts(footerState)));
+        // Build settings items
+        const settingsItems = buildSettingsItems(items, staged, theme);
+        const syncThemedContent = (): void => {
+          titleText.setText(theme.fg("accent", theme.bold("Extensions Manager")));
+          subtitleText.setText(
+            theme.fg(
+              "muted",
+              `${items.length} item${items.length === 1 ? "" : "s"} • Space/Enter toggle local • Enter/A actions • c configure pkg extensions • u update pkg • x remove selected`
+            )
+          );
+          quickText.setText(
+            theme.fg(
+              "dim",
+              "Quick: i Install | f Search | U Update all | t Auto-update | p Palette"
+            )
+          );
+          footerText.setText(theme.fg("dim", buildFooterShortcuts(footerState)));
 
-      for (const settingsItem of settingsItems) {
-        const item = byId.get(settingsItem.id);
-        if (!item) continue;
+          for (const settingsItem of settingsItems) {
+            const item = byId.get(settingsItem.id);
+            if (!item) continue;
 
-        if (item.type === "local") {
-          const currentState = staged.get(item.id) ?? item.state!;
-          const changed = staged.has(item.id) && currentState !== item.originalState;
-          settingsItem.label = formatUnifiedItemLabel(item, currentState, theme, changed);
-        } else {
-          settingsItem.label = formatUnifiedItemLabel(item, "enabled", theme, false);
-        }
-      }
-    };
-    syncThemedContent();
-
-    const settingsList = new SettingsList(
-      settingsItems,
-      Math.min(items.length + 2, UI.maxListHeight),
-      getSettingsListTheme(),
-      (id: string, newValue: string) => {
-        const item = byId.get(id);
-        if (!item || item.type !== "local") return;
-
-        const state = newValue as State;
-        staged.set(id, state);
-
-        const settingsItem = settingsItems.find((x) => x.id === id);
-        if (settingsItem) {
-          const changed = state !== item.originalState;
-          settingsItem.label = formatUnifiedItemLabel(item, state, theme, changed);
-        }
-        tui.requestRender();
-      },
-      () => done({ type: "cancel" }),
-      { enableSearch: items.length > UI.searchThreshold }
-    );
-
-    container.addChild(settingsList);
-    container.addChild(new Spacer(1));
-
-    // Footer with keyboard shortcuts
-    container.addChild(footerText);
-    container.addChild(new DynamicBorder((s: string) => theme.fg("accent", s)));
-
-    return {
-      render(width: number) {
-        return container.render(width);
-      },
-      invalidate() {
-        container.invalidate();
+            if (item.type === "local") {
+              const currentState = staged.get(item.id) ?? item.state!;
+              const changed = staged.has(item.id) && currentState !== item.originalState;
+              settingsItem.label = formatUnifiedItemLabel(item, currentState, theme, changed);
+            } else {
+              settingsItem.label = formatUnifiedItemLabel(item, "enabled", theme, false);
+            }
+          }
+        };
         syncThemedContent();
-      },
-      handleInput(data: string) {
-        const selIdx = getSettingsListSelectedIndex(settingsList) ?? 0;
-        const selectedId = settingsItems[selIdx]?.id ?? settingsItems[0]?.id;
-        const selectedItem = selectedId ? byId.get(selectedId) : undefined;
 
-        if (matchesKey(data, Key.ctrl("s")) || data === "s" || data === "S") {
-          done({ type: "apply" });
-          return;
-        }
+        const settingsList = new SettingsList(
+          settingsItems,
+          Math.min(items.length + 2, UI.maxListHeight),
+          getSettingsListTheme(),
+          (id: string, newValue: string) => {
+            const item = byId.get(id);
+            if (!item || item.type !== "local") return;
 
-        // Enter on a package opens its action menu (fewer clicks)
-        if ((data === "\r" || data === "\n") && selectedId && selectedItem?.type === "package") {
-          done({ type: "action", itemId: selectedId, action: "menu" });
-          return;
-        }
+            const state = newValue as State;
+            staged.set(id, state);
 
-        if (data === "a" || data === "A") {
-          if (selectedId) {
-            done({ type: "action", itemId: selectedId, action: "menu" });
-          }
-          return;
-        }
+            const settingsItem = settingsItems.find((x) => x.id === id);
+            if (settingsItem) {
+              const changed = state !== item.originalState;
+              settingsItem.label = formatUnifiedItemLabel(item, state, theme, changed);
+            }
+            tui.requestRender();
+          },
+          () => done({ type: "cancel" }),
+          { enableSearch: items.length > UI.searchThreshold }
+        );
 
-        // Quick actions (global)
-        if (data === "i") {
-          done({ type: "quick", action: "install" });
-          return;
-        }
-        if (data === "f") {
-          done({ type: "quick", action: "search" });
-          return;
-        }
-        if (data === "U") {
-          done({ type: "quick", action: "update-all" });
-          return;
-        }
-        if (data === "t" || data === "T") {
-          done({ type: "quick", action: "auto-update" });
-          return;
-        }
+        container.addChild(settingsList);
+        container.addChild(new Spacer(1));
 
-        // Fast actions on selected row
-        if (selectedId && selectedItem?.type === "package") {
-          if (data === "u") {
-            done({ type: "action", itemId: selectedId, action: "update" });
-            return;
-          }
-          if (data === "x" || data === "X") {
-            done({ type: "action", itemId: selectedId, action: "remove" });
-            return;
-          }
-          if (data === "v" || data === "V") {
-            done({ type: "action", itemId: selectedId, action: "details" });
-            return;
-          }
-          if (data === "c" || data === "C") {
-            done({ type: "action", itemId: selectedId, action: "configure" });
-            return;
-          }
-        }
+        // Footer with keyboard shortcuts
+        container.addChild(footerText);
+        container.addChild(new DynamicBorder((s: string) => theme.fg("accent", s)));
 
-        if (selectedId && selectedItem?.type === "local") {
-          if (data === "x" || data === "X") {
-            done({ type: "action", itemId: selectedId, action: "remove" });
-            return;
-          }
-        }
+        return {
+          render(width: number) {
+            return container.render(width);
+          },
+          invalidate() {
+            container.invalidate();
+            syncThemedContent();
+          },
+          handleInput(data: string) {
+            const selIdx = getSettingsListSelectedIndex(settingsList) ?? 0;
+            const selectedId = settingsItems[selIdx]?.id ?? settingsItems[0]?.id;
+            const selectedItem = selectedId ? byId.get(selectedId) : undefined;
 
-        if (data === "r" || data === "R") {
-          done({ type: "remote" });
-          return;
-        }
-        if (data === "?" || data === "h" || data === "H") {
-          done({ type: "help" });
-          return;
-        }
-        if (data === "m" || data === "M" || data === "p" || data === "P") {
-          done({ type: "menu" });
-          return;
-        }
-        settingsList.handleInput?.(data);
-        tui.requestRender();
-      },
-    };
-  });
+            if (matchesKey(data, Key.ctrl("s")) || data === "s" || data === "S") {
+              done({ type: "apply" });
+              return;
+            }
+
+            // Enter on a package opens its action menu (fewer clicks)
+            if (
+              (data === "\r" || data === "\n") &&
+              selectedId &&
+              selectedItem?.type === "package"
+            ) {
+              done({ type: "action", itemId: selectedId, action: "menu" });
+              return;
+            }
+
+            if (data === "a" || data === "A") {
+              if (selectedId) {
+                done({ type: "action", itemId: selectedId, action: "menu" });
+              }
+              return;
+            }
+
+            // Quick actions (global)
+            if (data === "i") {
+              done({ type: "quick", action: "install" });
+              return;
+            }
+            if (data === "f") {
+              done({ type: "quick", action: "search" });
+              return;
+            }
+            if (data === "U") {
+              done({ type: "quick", action: "update-all" });
+              return;
+            }
+            if (data === "t" || data === "T") {
+              done({ type: "quick", action: "auto-update" });
+              return;
+            }
+
+            // Fast actions on selected row
+            if (selectedId && selectedItem?.type === "package") {
+              if (data === "u") {
+                done({ type: "action", itemId: selectedId, action: "update" });
+                return;
+              }
+              if (data === "x" || data === "X") {
+                done({ type: "action", itemId: selectedId, action: "remove" });
+                return;
+              }
+              if (data === "v" || data === "V") {
+                done({ type: "action", itemId: selectedId, action: "details" });
+                return;
+              }
+              if (data === "c" || data === "C") {
+                done({ type: "action", itemId: selectedId, action: "configure" });
+                return;
+              }
+            }
+
+            if (selectedId && selectedItem?.type === "local") {
+              if (data === "x" || data === "X") {
+                done({ type: "action", itemId: selectedId, action: "remove" });
+                return;
+              }
+            }
+
+            if (data === "r" || data === "R") {
+              done({ type: "remote" });
+              return;
+            }
+            if (data === "?" || data === "h" || data === "H") {
+              done({ type: "help" });
+              return;
+            }
+            if (data === "m" || data === "M" || data === "p" || data === "P") {
+              done({ type: "menu" });
+              return;
+            }
+            settingsList.handleInput?.(data);
+            tui.requestRender();
+          },
+        };
+      }),
+    "Showing read-only local and installed package lists instead."
+  );
+
+  if (!result) {
+    await showInteractiveFallback(ctx, pi);
+    return true;
+  }
 
   return await handleUnifiedAction(result, items, staged, byId, ctx, pi);
 }

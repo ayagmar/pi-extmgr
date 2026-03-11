@@ -20,7 +20,7 @@ import {
 } from "../packages/extensions.js";
 import { notify } from "../utils/notify.js";
 import { logExtensionToggle } from "../utils/history.js";
-import { requireCustomUI } from "../utils/mode.js";
+import { requireCustomUI, runCustomUI } from "../utils/mode.js";
 import { getPackageSourceKind } from "../utils/package-source.js";
 import { getSettingsListSelectedIndex } from "../utils/settings-list.js";
 import { fileExists } from "../utils/fs.js";
@@ -121,114 +121,116 @@ async function showConfigurePanel(
   rows: PackageConfigRow[],
   staged: Map<string, State>,
   ctx: ExtensionCommandContext
-): Promise<ConfigurePanelAction> {
-  return ctx.ui.custom<ConfigurePanelAction>((tui, theme, _keybindings, done) => {
-    const container = new Container();
-    const titleText = new Text("", 2, 0);
-    const subtitleText = new Text("", 2, 0);
-    const footerText = new Text("", 2, 0);
+): Promise<ConfigurePanelAction | undefined> {
+  return runCustomUI(ctx, "Package extension configuration", () =>
+    ctx.ui.custom<ConfigurePanelAction>((tui, theme, _keybindings, done) => {
+      const container = new Container();
+      const titleText = new Text("", 2, 0);
+      const subtitleText = new Text("", 2, 0);
+      const footerText = new Text("", 2, 0);
 
-    container.addChild(new DynamicBorder((s: string) => theme.fg("accent", s)));
-    container.addChild(titleText);
-    container.addChild(subtitleText);
-    container.addChild(new Spacer(1));
+      container.addChild(new DynamicBorder((s: string) => theme.fg("accent", s)));
+      container.addChild(titleText);
+      container.addChild(subtitleText);
+      container.addChild(new Spacer(1));
 
-    const settingsItems = buildSettingItems(rows, staged, pkg, theme);
-    const rowById = new Map(rows.map((row) => [row.id, row]));
-    const syncThemedContent = (): void => {
-      titleText.setText(theme.fg("accent", theme.bold(`Configure extensions: ${pkg.name}`)));
-      subtitleText.setText(
-        theme.fg(
-          "muted",
-          `${rows.length} extension path${rows.length === 1 ? "" : "s"} • Space/Enter toggle • S save • Esc cancel`
-        )
-      );
-      footerText.setText(theme.fg("dim", "↑↓ Navigate | Space/Enter Toggle | S Save | Esc Back"));
-
-      for (const settingsItem of settingsItems) {
-        const row = rowById.get(settingsItem.id);
-        if (!row) continue;
-        const currentState = staged.get(row.id) ?? row.originalState;
-        settingsItem.label = formatConfigRowLabel(
-          row,
-          currentState,
-          pkg,
-          theme,
-          currentState !== row.originalState
+      const settingsItems = buildSettingItems(rows, staged, pkg, theme);
+      const rowById = new Map(rows.map((row) => [row.id, row]));
+      const syncThemedContent = (): void => {
+        titleText.setText(theme.fg("accent", theme.bold(`Configure extensions: ${pkg.name}`)));
+        subtitleText.setText(
+          theme.fg(
+            "muted",
+            `${rows.length} extension path${rows.length === 1 ? "" : "s"} • Space/Enter toggle • S save • Esc cancel`
+          )
         );
-      }
-    };
-    syncThemedContent();
+        footerText.setText(theme.fg("dim", "↑↓ Navigate | Space/Enter Toggle | S Save | Esc Back"));
 
-    const settingsList = new SettingsList(
-      settingsItems,
-      Math.min(rows.length + 2, UI.maxListHeight),
-      getSettingsListTheme(),
-      (id: string, newValue: string) => {
-        const row = rowById.get(id);
-        if (!row || !row.available) return;
-
-        const state = newValue as State;
-        staged.set(id, state);
-
-        const settingsItem = settingsItems.find((item) => item.id === id);
-        if (settingsItem) {
+        for (const settingsItem of settingsItems) {
+          const row = rowById.get(settingsItem.id);
+          if (!row) continue;
+          const currentState = staged.get(row.id) ?? row.originalState;
           settingsItem.label = formatConfigRowLabel(
             row,
-            state,
+            currentState,
             pkg,
             theme,
-            state !== row.originalState
+            currentState !== row.originalState
           );
         }
+      };
+      syncThemedContent();
 
-        tui.requestRender();
-      },
-      () => done({ type: "cancel" }),
-      { enableSearch: rows.length > UI.searchThreshold }
-    );
+      const settingsList = new SettingsList(
+        settingsItems,
+        Math.min(rows.length + 2, UI.maxListHeight),
+        getSettingsListTheme(),
+        (id: string, newValue: string) => {
+          const row = rowById.get(id);
+          if (!row || !row.available) return;
 
-    container.addChild(settingsList);
-    container.addChild(new Spacer(1));
-    container.addChild(footerText);
-    container.addChild(new DynamicBorder((s: string) => theme.fg("accent", s)));
+          const state = newValue as State;
+          staged.set(id, state);
 
-    return {
-      render(width: number) {
-        return container.render(width);
-      },
-      invalidate() {
-        container.invalidate();
-        syncThemedContent();
-      },
-      handleInput(data: string) {
-        if (matchesKey(data, Key.ctrl("s")) || data === "s" || data === "S") {
-          done({ type: "save" });
-          return;
-        }
+          const settingsItem = settingsItems.find((item) => item.id === id);
+          if (settingsItem) {
+            settingsItem.label = formatConfigRowLabel(
+              row,
+              state,
+              pkg,
+              theme,
+              state !== row.originalState
+            );
+          }
 
-        const selectedIndex = getSettingsListSelectedIndex(settingsList) ?? 0;
-        const selectedId = settingsItems[selectedIndex]?.id ?? settingsItems[0]?.id;
-        const selectedRow = selectedId ? rowById.get(selectedId) : undefined;
+          tui.requestRender();
+        },
+        () => done({ type: "cancel" }),
+        { enableSearch: rows.length > UI.searchThreshold }
+      );
 
-        if (
-          selectedRow &&
-          !selectedRow.available &&
-          (data === " " || data === "\r" || data === "\n")
-        ) {
-          notify(
-            ctx,
-            `${selectedRow.extensionPath} is missing on disk and cannot be toggled.`,
-            "warning"
-          );
-          return;
-        }
+      container.addChild(settingsList);
+      container.addChild(new Spacer(1));
+      container.addChild(footerText);
+      container.addChild(new DynamicBorder((s: string) => theme.fg("accent", s)));
 
-        settingsList.handleInput?.(data);
-        tui.requestRender();
-      },
-    };
-  });
+      return {
+        render(width: number) {
+          return container.render(width);
+        },
+        invalidate() {
+          container.invalidate();
+          syncThemedContent();
+        },
+        handleInput(data: string) {
+          if (matchesKey(data, Key.ctrl("s")) || data === "s" || data === "S") {
+            done({ type: "save" });
+            return;
+          }
+
+          const selectedIndex = getSettingsListSelectedIndex(settingsList) ?? 0;
+          const selectedId = settingsItems[selectedIndex]?.id ?? settingsItems[0]?.id;
+          const selectedRow = selectedId ? rowById.get(selectedId) : undefined;
+
+          if (
+            selectedRow &&
+            !selectedRow.available &&
+            (data === " " || data === "\r" || data === "\n")
+          ) {
+            notify(
+              ctx,
+              `${selectedRow.extensionPath} is missing on disk and cannot be toggled.`,
+              "warning"
+            );
+            return;
+          }
+
+          settingsList.handleInput?.(data);
+          tui.requestRender();
+        },
+      };
+    })
+  );
 }
 
 export async function applyPackageExtensionChanges(
@@ -340,6 +342,9 @@ export async function configurePackageExtensions(
 
   while (true) {
     const action = await showConfigurePanel(pkg, rows, staged, ctx);
+    if (!action) {
+      return { changed: 0, reloaded: false };
+    }
 
     if (action.type === "cancel") {
       const pending = getPendingChangeCount(rows, staged);

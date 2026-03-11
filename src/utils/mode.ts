@@ -50,6 +50,26 @@ export function requireCustomUI(
   return false;
 }
 
+export async function runCustomUI<T>(
+  ctx: AnyContext,
+  featureName: string,
+  open: () => Promise<T | undefined>,
+  fallbackMessage?: string
+): Promise<T | undefined> {
+  if (!requireCustomUI(ctx, featureName, fallbackMessage)) {
+    return undefined;
+  }
+
+  const result = await open();
+  if (result !== undefined) {
+    return result;
+  }
+
+  const suffix = fallbackMessage ? ` ${fallbackMessage}` : "";
+  notify(ctx, `${featureName} requires the full interactive TUI.${suffix}`, "warning");
+  return undefined;
+}
+
 /**
  * Execute operation with automatic error handling
  */

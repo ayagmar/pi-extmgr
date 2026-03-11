@@ -17,7 +17,7 @@ import {
 import { installPackage, installPackageLocally } from "../packages/install.js";
 import { execNpm } from "../utils/npm-exec.js";
 import { notify } from "../utils/notify.js";
-import { requireCustomUI } from "../utils/mode.js";
+import { requireCustomUI, runCustomUI } from "../utils/mode.js";
 
 interface PackageInfoCacheEntry {
   timestamp: number;
@@ -66,8 +66,9 @@ class PackageInfoCache {
   }
 
   set(name: string, entry: Omit<PackageInfoCacheEntry, "timestamp">): void {
-    // Evict oldest if at capacity
-    if (this.cache.size >= this.maxSize) {
+    if (this.cache.has(name)) {
+      this.cache.delete(name);
+    } else if (this.cache.size >= this.maxSize) {
       const firstKey = this.cache.keys().next().value;
       if (firstKey) {
         this.cache.delete(firstKey);
@@ -82,10 +83,6 @@ class PackageInfoCache {
 
   clear(): void {
     this.cache.clear();
-  }
-
-  get size(): number {
-    return this.cache.size;
   }
 }
 
@@ -274,61 +271,63 @@ async function selectBrowseAction(
   items.push({ value: "nav:refresh", label: "🔄 Refresh search" });
   items.push({ value: "nav:menu", label: "← Back to menu" });
 
-  return ctx.ui.custom<BrowseAction | undefined>((tui, theme, _keybindings, done) => {
-    const container = new Container();
-    const title = new Text("", 1, 0);
-    const footer = new Text("", 1, 0);
-    const syncThemedContent = (): void => {
-      title.setText(theme.fg("accent", theme.bold(titleText)));
-      footer.setText(theme.fg("dim", "↑↓ wraps • enter select • esc cancel"));
-    };
+  return runCustomUI(ctx, "Remote package browsing", () =>
+    ctx.ui.custom<BrowseAction>((tui, theme, _keybindings, done) => {
+      const container = new Container();
+      const title = new Text("", 1, 0);
+      const footer = new Text("", 1, 0);
+      const syncThemedContent = (): void => {
+        title.setText(theme.fg("accent", theme.bold(titleText)));
+        footer.setText(theme.fg("dim", "↑↓ wraps • enter select • esc cancel"));
+      };
 
-    container.addChild(new DynamicBorder((s: string) => theme.fg("accent", s)));
-    container.addChild(title);
+      container.addChild(new DynamicBorder((s: string) => theme.fg("accent", s)));
+      container.addChild(title);
 
-    const selectList = new SelectList(items, Math.min(items.length, 12), {
-      selectedPrefix: (t) => theme.fg("accent", t),
-      selectedText: (t) => theme.fg("accent", t),
-      description: (t) => theme.fg("muted", t),
-      scrollInfo: (t) => theme.fg("dim", t),
-      noMatch: (t) => theme.fg("warning", t),
-    });
+      const selectList = new SelectList(items, Math.min(items.length, 12), {
+        selectedPrefix: (t) => theme.fg("accent", t),
+        selectedText: (t) => theme.fg("accent", t),
+        description: (t) => theme.fg("muted", t),
+        scrollInfo: (t) => theme.fg("dim", t),
+        noMatch: (t) => theme.fg("warning", t),
+      });
 
-    selectList.onSelect = (item) => {
-      if (item.value === "nav:prev") {
-        done({ type: "prev" });
-      } else if (item.value === "nav:next") {
-        done({ type: "next" });
-      } else if (item.value === "nav:refresh") {
-        done({ type: "refresh" });
-      } else if (item.value === "nav:menu") {
-        done({ type: "menu" });
-      } else if (item.value.startsWith("pkg:")) {
-        done({ type: "package", name: item.value.slice(4) });
-      } else {
-        done(undefined);
-      }
-    };
+      selectList.onSelect = (item) => {
+        if (item.value === "nav:prev") {
+          done({ type: "prev" });
+        } else if (item.value === "nav:next") {
+          done({ type: "next" });
+        } else if (item.value === "nav:refresh") {
+          done({ type: "refresh" });
+        } else if (item.value === "nav:menu") {
+          done({ type: "menu" });
+        } else if (item.value.startsWith("pkg:")) {
+          done({ type: "package", name: item.value.slice(4) });
+        } else {
+          done({ type: "cancel" });
+        }
+      };
 
-    selectList.onCancel = () => done(undefined);
+      selectList.onCancel = () => done({ type: "cancel" });
 
-    syncThemedContent();
-    container.addChild(selectList);
-    container.addChild(footer);
-    container.addChild(new DynamicBorder((s: string) => theme.fg("accent", s)));
+      syncThemedContent();
+      container.addChild(selectList);
+      container.addChild(footer);
+      container.addChild(new DynamicBorder((s: string) => theme.fg("accent", s)));
 
-    return {
-      render: (w: number) => container.render(w),
-      invalidate: () => {
-        container.invalidate();
-        syncThemedContent();
-      },
-      handleInput: (data: string) => {
-        selectList.handleInput(data);
-        tui.requestRender();
-      },
-    };
-  });
+      return {
+        render: (w: number) => container.render(w),
+        invalidate: () => {
+          container.invalidate();
+          syncThemedContent();
+        },
+        handleInput: (data: string) => {
+          selectList.handleInput(data);
+          tui.requestRender();
+        },
+      };
+    })
+  );
 }
 
 export async function browseRemotePackages(
@@ -401,8 +400,8 @@ export async function browseRemotePackages(
     showLoadMore
   );
 
-  if (!result) {
-    return; // User cancelled
+  if (!result || result.type === "cancel") {
+    return;
   }
 
   // Handle result
