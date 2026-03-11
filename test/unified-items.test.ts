@@ -45,7 +45,7 @@ void test("buildUnifiedItems includes local + package rows only", () => {
 void test("buildUnifiedItems marks package update availability from knownUpdates", () => {
   const installedPackages = [createPackage("npm:pi-extmgr", "pi-extmgr")];
 
-  const items = buildUnifiedItems([], installedPackages, new Set(["pi-extmgr"]));
+  const items = buildUnifiedItems([], installedPackages, new Set(["npm:pi-extmgr"]));
 
   assert.equal(items.length, 1);
   assert.equal(items[0]?.type, "package");
@@ -121,6 +121,21 @@ void test("buildUnifiedItems uses the project-winning package metadata for dupli
   assert.equal(packageRow?.scope, "project");
   assert.equal(packageRow?.version, "2.0.0");
   assert.equal(packageRow?.displayName, "demo");
+});
+
+void test("buildUnifiedItems matches known updates by package identity instead of shared names", () => {
+  const installedPackages: InstalledPackage[] = [
+    { source: "npm:demo@1.0.0", name: "demo", scope: "global" },
+    { source: "git:https://github.com/user/demo.git@main", name: "demo", scope: "global" },
+  ];
+
+  const items = buildUnifiedItems([], installedPackages, new Set(["npm:demo"]));
+  const packageRows = items.filter((item) => item.type === "package");
+  const bySource = new Map(packageRows.map((item) => [item.source, item.updateAvailable]));
+
+  assert.equal(packageRows.length, 2);
+  assert.equal(bySource.get("git:https://github.com/user/demo.git@main"), false);
+  assert.equal(bySource.get("npm:demo@1.0.0"), true);
 });
 
 void test("integration: pi list fixture with single-entry npm packages renders package rows once", async () => {

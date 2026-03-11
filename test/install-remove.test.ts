@@ -255,7 +255,7 @@ void test("updatePackage treats case-variant already-up-to-date output as no-op"
         enabled: true,
         intervalMs: 60 * 60 * 1000,
         displayText: "1 hour",
-        updatesAvailable: ["pi-extmgr"],
+        updatesAvailable: ["npm:pi-extmgr"],
       },
     });
 
@@ -350,7 +350,7 @@ void test("updatePackages treats case-variant already-up-to-date output as no-op
         enabled: true,
         intervalMs: 60 * 60 * 1000,
         displayText: "1 hour",
-        updatesAvailable: ["pi-extmgr"],
+        updatesAvailable: ["npm:pi-extmgr"],
       },
     });
 

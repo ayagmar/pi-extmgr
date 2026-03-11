@@ -17,6 +17,7 @@ import { confirmAction, confirmReload, showProgress } from "../utils/ui-helpers.
 import { tryOperation } from "../utils/mode.js";
 import { updateExtmgrStatus } from "../utils/status.js";
 import { execNpm } from "../utils/npm-exec.js";
+import { normalizePackageIdentity } from "../utils/package-source.js";
 import { TIMEOUTS } from "../constants.js";
 
 export type InstallScope = "global" | "project";
@@ -170,7 +171,7 @@ export async function installPackage(
   clearSearchCache();
   logPackageInstall(pi, normalized, normalized, undefined, scope, true);
   success(ctx, `Installed ${normalized} (${scope})`);
-  clearUpdatesAvailable(pi, ctx);
+  clearUpdatesAvailable(pi, ctx, [normalizePackageIdentity(normalized)]);
 
   // Wait for the extension to be discoverable before reloading.
   // This prevents a race condition where ctx.reload() runs before
@@ -251,7 +252,6 @@ export async function installFromUrl(
   const { fileName: name, destPath } = result;
   logPackageInstall(pi, url, name, undefined, scope, true);
   success(ctx, `Installed ${name} to:\n${destPath}`);
-  clearUpdatesAvailable(pi, ctx);
 
   const reloaded = await confirmReload(ctx, "Extension installed.");
   if (!reloaded) {
@@ -473,7 +473,6 @@ export async function installPackageLocally(
   clearSearchCache();
   logPackageInstall(pi, `npm:${packageName}`, packageName, version, scope, true);
   success(ctx, `Installed ${packageName}@${version} locally to:\n${destResult}`);
-  clearUpdatesAvailable(pi, ctx);
 
   const reloaded = await confirmReload(ctx, "Extension installed.");
   if (!reloaded) {

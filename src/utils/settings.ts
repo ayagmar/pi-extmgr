@@ -49,6 +49,18 @@ function sanitizeStringArray(value: unknown): string[] | undefined {
   return sanitized.length > 0 ? sanitized : undefined;
 }
 
+function isUpdateIdentity(value: string): boolean {
+  return /^(npm|git|local|raw):/i.test(value);
+}
+
+function sanitizeUpdateIdentities(value: unknown): string[] | undefined {
+  const updates = sanitizeStringArray(value);
+  if (!updates) return undefined;
+
+  const sanitized = updates.filter(isUpdateIdentity);
+  return sanitized.length > 0 ? sanitized : undefined;
+}
+
 function sanitizeAutoUpdateConfig(input: unknown): AutoUpdateConfig {
   if (!isRecord(input)) {
     return { ...DEFAULT_CONFIG };
@@ -85,7 +97,7 @@ function sanitizeAutoUpdateConfig(input: unknown): AutoUpdateConfig {
     config.nextCheck = input.nextCheck;
   }
 
-  const updates = sanitizeStringArray(input.updatesAvailable);
+  const updates = sanitizeUpdateIdentities(input.updatesAvailable);
   if (updates) {
     config.updatesAvailable = updates;
   }
@@ -263,15 +275,28 @@ export function saveAutoUpdateConfig(pi: ExtensionAPI, config: Partial<AutoUpdat
  */
 export function clearUpdatesAvailable(
   pi: ExtensionAPI,
-  ctx: ExtensionCommandContext | ExtensionContext
+  ctx: ExtensionCommandContext | ExtensionContext,
+  identities?: Iterable<string>
 ): void {
   const config = getAutoUpdateConfig(ctx);
-  if (config.updatesAvailable && config.updatesAvailable.length > 0) {
-    saveAutoUpdateConfig(pi, {
-      ...config,
-      updatesAvailable: [],
-    });
+  const currentUpdates = config.updatesAvailable ?? [];
+  if (currentUpdates.length === 0) {
+    return;
   }
+
+  const clearedIdentities = identities ? new Set(identities) : undefined;
+  const updatesAvailable = clearedIdentities
+    ? currentUpdates.filter((identity) => !clearedIdentities.has(identity))
+    : [];
+
+  if (updatesAvailable.length === currentUpdates.length) {
+    return;
+  }
+
+  saveAutoUpdateConfig(pi, {
+    ...config,
+    updatesAvailable,
+  });
 }
 
 /**

@@ -42,7 +42,7 @@ import { logExtensionToggle } from "../utils/history.js";
 import { getKnownUpdates, promptAutoUpdateWizard } from "../utils/auto-update.js";
 import { updateExtmgrStatus } from "../utils/status.js";
 import { parseChoiceByLabel } from "../utils/command.js";
-import { getPackageSourceKind } from "../utils/package-source.js";
+import { getPackageSourceKind, normalizePackageIdentity } from "../utils/package-source.js";
 import { hasCustomUI, requireCustomUI } from "../utils/mode.js";
 import { UI } from "../constants.js";
 import { configurePackageExtensions } from "./package-config.js";
@@ -353,7 +353,7 @@ export function buildUnifiedItems(
       version: pkg.version,
       description: pkg.description,
       size: pkg.size,
-      updateAvailable: knownUpdates.has(pkg.name),
+      updateAvailable: knownUpdates.has(normalizePackageIdentity(pkg.source)),
     });
   }
 
