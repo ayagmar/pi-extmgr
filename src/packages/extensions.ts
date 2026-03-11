@@ -9,6 +9,7 @@ import { getAgentDir } from "@mariozechner/pi-coding-agent";
 import type { InstalledPackage, PackageExtensionEntry, Scope, State } from "../types/index.js";
 import { parseNpmSource } from "../utils/format.js";
 import { fileExists, readSummary } from "../utils/fs.js";
+import { resolveNpmCommand } from "../utils/npm-exec.js";
 
 interface PackageSettingsObject {
   source: string;
@@ -58,7 +59,8 @@ async function getGlobalNpmRoot(): Promise<string | undefined> {
   }
 
   try {
-    const { stdout } = await execFileAsync("npm", ["root", "-g"], {
+    const npmCommand = resolveNpmCommand(["root", "-g"]);
+    const { stdout } = await execFileAsync(npmCommand.command, npmCommand.args, {
       timeout: 2_000,
       windowsHide: true,
     });

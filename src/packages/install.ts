@@ -73,6 +73,42 @@ function safeExtractGithubMatch(match: RegExpMatchArray | null): GithubUrlInfo |
   return { owner, repo, branch, filePath };
 }
 
+async function fetchWithTimeout(url: string, timeoutMs: number): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    return await fetch(url, { signal: controller.signal });
+  } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") {
+      throw new Error(`Download timed out after ${Math.ceil(timeoutMs / 1000)}s`);
+    }
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function ensureTarAvailable(
+  pi: ExtensionAPI,
+  ctx: ExtensionCommandContext
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const result = await pi.exec("tar", ["--version"], {
+    timeout: 5_000,
+    cwd: ctx.cwd,
+  });
+
+  if (result.code === 0) {
+    return { ok: true };
+  }
+
+  return {
+    ok: false,
+    error:
+      "Standalone local installs require the `tar` command on PATH. Install tar or use managed package install instead.",
+  };
+}
+
 async function hasStandaloneEntrypoint(packageRoot: string): Promise<boolean> {
   const entrypoints = await discoverPackageExtensionEntrypoints(packageRoot, {
     allowConventionDirectory: false,
@@ -229,7 +265,7 @@ export async function installFromUrl(
       await mkdir(extensionDir, { recursive: true });
       notify(ctx, `Downloading ${fileName}...`, "info");
 
-      const response = await fetch(url);
+      const response = await fetchWithTimeout(url, TIMEOUTS.fetchPackageInfo);
       if (!response.ok) {
         throw new Error(`Download failed: ${response.status} ${response.statusText}`);
       }
@@ -345,6 +381,22 @@ export async function installPackageLocally(
   }
   const { version, tarballUrl } = result;
 
+  const tarAvailability = await ensureTarAvailable(pi, ctx);
+  if (!tarAvailability.ok) {
+    notifyError(ctx, tarAvailability.error);
+    logPackageInstall(
+      pi,
+      `npm:${packageName}`,
+      packageName,
+      version,
+      scope,
+      false,
+      tarAvailability.error
+    );
+    void updateExtmgrStatus(ctx, pi);
+    return;
+  }
+
   // Download and extract
   const extractResult = await tryOperation(
     ctx,
@@ -355,7 +407,7 @@ export async function installPackageLocally(
 
       showProgress(ctx, "Downloading", `${packageName}@${version}`);
 
-      const response = await fetch(tarballUrl);
+      const response = await fetchWithTimeout(tarballUrl, TIMEOUTS.packageInstall);
       if (!response.ok) {
         throw new Error(`Download failed: ${response.status} ${response.statusText}`);
       }
