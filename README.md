@@ -26,6 +26,7 @@ Requires Node.js `>=22.5.0`.
   - Scope indicators (global/project), status indicators, update badges
 - **Package extension configuration panel**
   - Configure individual extension entrypoints inside an installed package (`c` on package row)
+  - Works with manifest-declared entrypoints and conventional `extensions/` package layouts
   - Persists to package filters in `settings.json` (no manual JSON editing)
 - **Safe staged local extension toggles**
   - Toggle with `Space/Enter`, apply with `S`
@@ -36,7 +37,7 @@ Requires Node.js `>=22.5.0`.
 - **Remote discovery and install**
   - npm search/browse with pagination
   - Install by source (`npm:`, `git:`, `https://`, `ssh://`, `git@...`, local path)
-  - Supports direct GitHub `.ts` installs and local standalone install mode
+  - Supports direct GitHub `.ts` installs and standalone local install for self-contained packages
 - **Auto-update**
   - Interactive wizard (`t` in manager, or `/extensions auto-update`)
   - Persistent schedule restored on startup and session switch
@@ -144,8 +145,8 @@ Examples:
 - **Package extension config**: Select a package and press `c` (or Enter/A → Configure) to enable/disable individual package entrypoints.
   - After saving package extension config, restart pi to fully apply changes.
 - **Two install modes**:
-  - **Managed** (npm): Auto-updates with `pi update`, stored in pi's package cache
-  - **Local** (standalone): Copies to `~/.pi/agent/extensions/{package}/`, supports multi-file extensions
+  - **Managed** (npm): Auto-updates with `pi update`, stored in pi's package cache, supports Pi package manifest/convention loading
+  - **Local** (standalone): Copies to `~/.pi/agent/extensions/{package}/`, so it only accepts runnable standalone layouts (manifest-declared/root entrypoints) and rejects packages whose runtime `dependencies` are not already bundled in the tarball
 - **Auto-update schedule is persistent**: `/extensions auto-update 1d` stays active across future Pi sessions and is restored when switching sessions.
 - **Settings/cache writes are hardened**: extmgr serializes writes and uses safe file replacement to reduce JSON corruption issues.
 - **Invalid JSON is handled safely**: malformed `auto-update.json` / metadata cache files are backed up and reset; invalid `.pi/settings.json` is not overwritten during package-extension toggles.

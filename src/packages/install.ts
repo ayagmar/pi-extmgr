@@ -8,7 +8,7 @@ import type { ExtensionAPI, ExtensionCommandContext } from "@mariozechner/pi-cod
 import { normalizePackageSource } from "../utils/format.js";
 import { fileExists } from "../utils/fs.js";
 import { clearSearchCache, isSourceInstalled } from "./discovery.js";
-import { resolveManifestExtensionEntrypoints } from "./extensions.js";
+import { discoverPackageExtensionEntrypoints, readPackageManifest } from "./extensions.js";
 import { waitForCondition } from "../utils/retry.js";
 import { logPackageInstall } from "../utils/history.js";
 import { clearUpdatesAvailable } from "../utils/settings.js";
@@ -73,20 +73,40 @@ function safeExtractGithubMatch(match: RegExpMatchArray | null): GithubUrlInfo |
 }
 
 async function hasStandaloneEntrypoint(packageRoot: string): Promise<boolean> {
-  const declared = await resolveManifestExtensionEntrypoints(packageRoot);
-  if (declared !== undefined) {
-    for (const path of declared) {
-      if (await fileExists(join(packageRoot, path))) {
-        return true;
-      }
+  const entrypoints = await discoverPackageExtensionEntrypoints(packageRoot, {
+    allowConventionDirectory: false,
+  });
+
+  for (const path of entrypoints) {
+    if (await fileExists(join(packageRoot, path))) {
+      return true;
     }
-    return false;
   }
 
-  return (
-    (await fileExists(join(packageRoot, "index.ts"))) ||
-    (await fileExists(join(packageRoot, "index.js")))
-  );
+  return false;
+}
+
+async function getStandaloneDependencyError(packageRoot: string): Promise<string | undefined> {
+  const manifest = await readPackageManifest(packageRoot);
+  const dependencies = manifest?.dependencies;
+  if (!dependencies || typeof dependencies !== "object") {
+    return undefined;
+  }
+
+  const missingDependencies: string[] = [];
+  for (const dependencyName of Object.keys(dependencies)) {
+    const dependencyPath = join(packageRoot, "node_modules", dependencyName);
+    if (!(await fileExists(dependencyPath))) {
+      missingDependencies.push(dependencyName);
+    }
+  }
+
+  if (missingDependencies.length === 0) {
+    return undefined;
+  }
+
+  const packageName = manifest?.name ?? "This package";
+  return `${packageName} declares runtime dependencies that are not bundled for standalone install: ${missingDependencies.join(", ")}. Use managed install instead, or bundle dependencies in the package tarball.`;
 }
 
 export async function installPackage(
@@ -390,8 +410,13 @@ export async function installPackageLocally(
       const hasEntrypoint = await hasStandaloneEntrypoint(extractDir);
       if (!hasEntrypoint) {
         throw new Error(
-          `Package ${packageName} does not contain a runnable extension entrypoint (pi.extensions, index.ts, or index.js)`
+          `Package ${packageName} does not contain a runnable standalone extension entrypoint (manifest-declared entrypoint, index.ts, or index.js)`
         );
+      }
+
+      const dependencyError = await getStandaloneDependencyError(extractDir);
+      if (dependencyError) {
+        throw new Error(dependencyError);
       }
 
       return true;

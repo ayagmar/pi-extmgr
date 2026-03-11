@@ -110,6 +110,39 @@ void test("discoverPackageExtensions resolves directory tokens with trailing sla
   }
 });
 
+void test("discoverPackageExtensions falls back to convention extensions directory", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "pi-extmgr-cwd-"));
+  const pkgRoot = join(cwd, "vendor", "convention-package");
+
+  try {
+    await mkdir(join(pkgRoot, "extensions", "nested"), { recursive: true });
+    await writeFile(
+      join(pkgRoot, "package.json"),
+      JSON.stringify({ name: "convention-package" }, null, 2),
+      "utf8"
+    );
+    await writeFile(join(pkgRoot, "extensions", "index.ts"), "// index\n", "utf8");
+    await writeFile(join(pkgRoot, "extensions", "nested", "feature.js"), "// feature\n", "utf8");
+
+    const installed: InstalledPackage[] = [
+      {
+        source: "./vendor/convention-package",
+        name: "convention-package",
+        scope: "project",
+        resolvedPath: pkgRoot,
+      },
+    ];
+
+    const discovered = await discoverPackageExtensions(installed, cwd);
+    assert.deepEqual(
+      discovered.map((entry) => entry.extensionPath),
+      ["extensions/index.ts", "extensions/nested/feature.js"]
+    );
+  } finally {
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
+
 void test("discoverPackageExtensions reads manifest entrypoints and project filter state", async () => {
   const cwd = await mkdtemp(join(tmpdir(), "pi-extmgr-cwd-"));
   const pkgRoot = join(cwd, "vendor", "demo");

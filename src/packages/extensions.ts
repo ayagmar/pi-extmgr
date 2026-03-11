@@ -19,6 +19,14 @@ interface SettingsFile {
   packages?: (string | PackageSettingsObject)[];
 }
 
+export interface PackageManifest {
+  name?: string;
+  dependencies?: Record<string, string>;
+  pi?: {
+    extensions?: unknown;
+  };
+}
+
 const execFileAsync = promisify(execFile);
 let globalNpmRootCache: string | null | undefined;
 
@@ -405,20 +413,29 @@ async function resolveManifestExtensionEntries(
   return Array.from(selected).sort((a, b) => a.localeCompare(b));
 }
 
-export async function resolveManifestExtensionEntrypoints(
+export async function readPackageManifest(
   packageRoot: string
-): Promise<string[] | undefined> {
+): Promise<PackageManifest | undefined> {
   const packageJsonPath = join(packageRoot, "package.json");
 
-  let parsed: { pi?: { extensions?: unknown } };
   try {
     const raw = await readFile(packageJsonPath, "utf8");
-    parsed = JSON.parse(raw) as { pi?: { extensions?: unknown } };
+    const parsed = JSON.parse(raw) as unknown;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return undefined;
+    }
+    return parsed as PackageManifest;
   } catch {
     return undefined;
   }
+}
 
-  const extensions = parsed.pi?.extensions;
+export async function resolveManifestExtensionEntrypoints(
+  packageRoot: string,
+  manifest?: PackageManifest
+): Promise<string[] | undefined> {
+  const parsed = manifest ?? (await readPackageManifest(packageRoot));
+  const extensions = parsed?.pi?.extensions;
   if (!Array.isArray(extensions)) {
     return undefined;
   }
@@ -427,10 +444,33 @@ export async function resolveManifestExtensionEntrypoints(
   return resolveManifestExtensionEntries(packageRoot, entries);
 }
 
-async function discoverEntrypoints(packageRoot: string): Promise<string[]> {
-  const manifestEntrypoints = await resolveManifestExtensionEntrypoints(packageRoot);
+async function resolveConventionExtensionEntrypoints(packageRoot: string): Promise<string[]> {
+  const extensionsDir = join(packageRoot, "extensions");
+  return collectExtensionFilesFromDir(packageRoot, extensionsDir);
+}
+
+export async function discoverPackageExtensionEntrypoints(
+  packageRoot: string,
+  options?: {
+    allowConventionDirectory?: boolean;
+    allowRootIndexFallback?: boolean;
+  }
+): Promise<string[]> {
+  const manifest = await readPackageManifest(packageRoot);
+  const manifestEntrypoints = await resolveManifestExtensionEntrypoints(packageRoot, manifest);
   if (manifestEntrypoints !== undefined) {
     return manifestEntrypoints;
+  }
+
+  if (options?.allowConventionDirectory !== false) {
+    const conventionEntrypoints = await resolveConventionExtensionEntrypoints(packageRoot);
+    if (conventionEntrypoints.length > 0) {
+      return conventionEntrypoints.sort((a, b) => a.localeCompare(b));
+    }
+  }
+
+  if (options?.allowRootIndexFallback === false) {
+    return [];
   }
 
   const indexTs = join(packageRoot, "index.ts");
@@ -456,7 +496,7 @@ export async function discoverPackageExtensions(
     const packageRoot = await toPackageRoot(pkg, cwd);
     if (!packageRoot) continue;
 
-    const extensionPaths = await discoverEntrypoints(packageRoot);
+    const extensionPaths = await discoverPackageExtensionEntrypoints(packageRoot);
     for (const extensionPath of extensionPaths) {
       const normalizedPath = normalizeRelativePath(extensionPath);
       const absolutePath = resolve(packageRoot, extensionPath);
