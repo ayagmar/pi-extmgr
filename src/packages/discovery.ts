@@ -19,6 +19,25 @@ import {
   stripGitSourcePrefix,
 } from "../utils/package-source.js";
 import { execNpm } from "../utils/npm-exec.js";
+import { fetchWithTimeout } from "../utils/network.js";
+
+const NPM_SEARCH_API = "https://registry.npmjs.org/-/v1/search";
+const NPM_SEARCH_PAGE_SIZE = 250;
+
+interface NpmSearchResultObject {
+  package?: {
+    name?: string;
+    version?: string;
+    description?: string;
+    keywords?: string[];
+    date?: string;
+  };
+}
+
+interface NpmSearchResponse {
+  total?: number;
+  objects?: NpmSearchResultObject[];
+}
 
 let searchCache: SearchCache | null = null;
 
@@ -51,15 +70,86 @@ import {
   setCachedPackageSize,
 } from "../utils/cache.js";
 
+function toNpmPackage(entry: NpmSearchResultObject): NpmPackage | undefined {
+  const pkg = entry.package;
+  if (!pkg) return undefined;
+
+  const name = pkg.name?.trim();
+  if (!name) return undefined;
+
+  return {
+    name,
+    version: pkg.version,
+    description: pkg.description,
+    keywords: Array.isArray(pkg.keywords) ? pkg.keywords : undefined,
+    date: pkg.date,
+  };
+}
+
+async function fetchNpmSearchPage(
+  query: string,
+  from: number
+): Promise<{
+  total: number;
+  resultCount: number;
+  packages: NpmPackage[];
+}> {
+  const params = new URLSearchParams({
+    text: query,
+    size: String(NPM_SEARCH_PAGE_SIZE),
+    from: String(from),
+  });
+  const response = await fetchWithTimeout(
+    `${NPM_SEARCH_API}?${params.toString()}`,
+    TIMEOUTS.npmSearch
+  );
+
+  if (!response.ok) {
+    throw new Error(`npm registry search failed: HTTP ${response.status}`);
+  }
+
+  const data = (await response.json()) as NpmSearchResponse;
+  const objects = data.objects ?? [];
+  const packages = objects.map(toNpmPackage).filter((pkg): pkg is NpmPackage => !!pkg);
+
+  return {
+    total:
+      typeof data.total === "number" && Number.isFinite(data.total) ? data.total : packages.length,
+    resultCount: objects.length,
+    packages,
+  };
+}
+
+export async function fetchNpmRegistrySearchResults(query: string): Promise<NpmPackage[]> {
+  const packagesByName = new Map<string, NpmPackage>();
+  let from = 0;
+  let total = Infinity;
+
+  while (from < total) {
+    const page = await fetchNpmSearchPage(query, from);
+    total = page.total;
+
+    if (page.resultCount === 0) {
+      break;
+    }
+
+    for (const pkg of page.packages) {
+      if (!packagesByName.has(pkg.name)) {
+        packagesByName.set(pkg.name, pkg);
+      }
+    }
+
+    from += page.resultCount;
+  }
+
+  return [...packagesByName.values()];
+}
+
 export async function searchNpmPackages(
   query: string,
   ctx: ExtensionCommandContext,
-  pi: ExtensionAPI
+  _pi: ExtensionAPI
 ): Promise<NpmPackage[]> {
-  // Pull more results so browse mode has meaningful pagination.
-  // npm search can still cap server-side, but this improves coverage.
-  const searchLimit = 250;
-
   // Check persistent cache first
   const cached = await getCachedSearch(query);
   if (cached && cached.length > 0) {
@@ -73,25 +163,12 @@ export async function searchNpmPackages(
     ctx.ui.notify(`Searching npm for "${query}"...`, "info");
   }
 
-  const res = await execNpm(pi, ["search", "--json", `--searchlimit=${searchLimit}`, query], ctx, {
-    timeout: TIMEOUTS.npmSearch,
-  });
+  const packages = await fetchNpmRegistrySearchResults(query);
 
-  if (res.code !== 0) {
-    throw new Error(`npm search failed: ${res.stderr || res.stdout || `exit ${res.code}`}`);
-  }
+  // Cache the results
+  await setCachedSearch(query, packages);
 
-  try {
-    const parsed = JSON.parse(res.stdout || "[]") as NpmPackage[];
-    const filtered = parsed.filter((p) => !!p?.name);
-
-    // Cache the results
-    await setCachedSearch(query, filtered);
-
-    return filtered;
-  } catch {
-    throw new Error("Failed to parse npm search output");
-  }
+  return packages;
 }
 
 export async function getInstalledPackages(

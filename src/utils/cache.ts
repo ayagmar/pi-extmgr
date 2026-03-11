@@ -12,6 +12,7 @@ const CACHE_DIR = process.env.PI_EXTMGR_CACHE_DIR
   ? process.env.PI_EXTMGR_CACHE_DIR
   : join(homedir(), ".pi", "agent", ".extmgr-cache");
 const CACHE_FILE = join(CACHE_DIR, "metadata.json");
+const CURRENT_SEARCH_CACHE_STRATEGY = "npm-registry-v1-paginated";
 
 interface CachedPackageData {
   name: string;
@@ -29,6 +30,7 @@ interface CacheData {
         query: string;
         results: string[];
         timestamp: number;
+        strategy: string;
       }
     | undefined;
 }
@@ -92,12 +94,15 @@ function normalizeCacheFromDisk(input: unknown): CacheData {
     const query = input.lastSearch.query;
     const timestamp = input.lastSearch.timestamp;
     const results = input.lastSearch.results;
+    const strategy = input.lastSearch.strategy;
 
     if (
       typeof query === "string" &&
       typeof timestamp === "number" &&
       Number.isFinite(timestamp) &&
-      Array.isArray(results)
+      Array.isArray(results) &&
+      typeof strategy === "string" &&
+      strategy.trim()
     ) {
       const normalizedResults = results.filter(
         (value): value is string => typeof value === "string"
@@ -106,6 +111,7 @@ function normalizeCacheFromDisk(input: unknown): CacheData {
         query,
         timestamp,
         results: normalizedResults,
+        strategy: strategy.trim(),
       };
     }
   }
@@ -194,7 +200,9 @@ async function saveCache(): Promise<void> {
   const data: {
     version: number;
     packages: Record<string, CachedPackageData>;
-    lastSearch?: { query: string; results: string[]; timestamp: number } | undefined;
+    lastSearch?:
+      | { query: string; results: string[]; timestamp: number; strategy: string }
+      | undefined;
   } = {
     version: memoryCache.version,
     packages: Object.fromEntries(memoryCache.packages),
@@ -276,6 +284,10 @@ export async function getCachedSearch(query: string): Promise<NpmPackage[] | nul
     return null;
   }
 
+  if (cache.lastSearch.strategy !== CURRENT_SEARCH_CACHE_STRATEGY) {
+    return null;
+  }
+
   // Reconstruct packages from cached names
   const packages: NpmPackage[] = [];
   for (const name of cache.lastSearch.results) {
@@ -313,6 +325,7 @@ export async function setCachedSearch(query: string, packages: NpmPackage[]): Pr
     query,
     results: packages.map((p) => p.name),
     timestamp: Date.now(),
+    strategy: CURRENT_SEARCH_CACHE_STRATEGY,
   };
 
   await enqueueCacheSave();

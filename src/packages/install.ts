@@ -18,6 +18,7 @@ import { tryOperation } from "../utils/mode.js";
 import { updateExtmgrStatus } from "../utils/status.js";
 import { execNpm } from "../utils/npm-exec.js";
 import { normalizePackageIdentity } from "../utils/package-source.js";
+import { fetchWithTimeout } from "../utils/network.js";
 import { TIMEOUTS } from "../constants.js";
 
 export type InstallScope = "global" | "project";
@@ -71,22 +72,6 @@ function safeExtractGithubMatch(match: RegExpMatchArray | null): GithubUrlInfo |
   }
 
   return { owner, repo, branch, filePath };
-}
-
-async function fetchWithTimeout(url: string, timeoutMs: number): Promise<Response> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-
-  try {
-    return await fetch(url, { signal: controller.signal });
-  } catch (error) {
-    if (error instanceof Error && error.name === "AbortError") {
-      throw new Error(`Download timed out after ${Math.ceil(timeoutMs / 1000)}s`);
-    }
-    throw error;
-  } finally {
-    clearTimeout(timer);
-  }
 }
 
 async function ensureTarAvailable(
