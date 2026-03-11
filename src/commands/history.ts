@@ -11,10 +11,12 @@ import { formatListOutput } from "../utils/ui-helpers.js";
 
 const HISTORY_ACTIONS: ChangeAction[] = [
   "extension_toggle",
+  "extension_delete",
   "package_install",
   "package_update",
   "package_remove",
   "cache_clear",
+  "auto_update_config",
 ];
 
 interface ParsedHistoryArgs {
@@ -187,12 +189,12 @@ function showHistoryHelp(ctx: ExtensionCommandContext): void {
     "Options:",
     "  --limit <n>      Maximum entries to show (default: 20)",
     "  --action <type>  Filter by action",
-    "                   extension_toggle | package_install | package_update | package_remove | cache_clear",
+    "                   extension_toggle | extension_delete | package_install | package_update | package_remove | cache_clear | auto_update_config",
     "  --success        Show only successful entries",
     "  --failed         Show only failed entries",
     "  --package <q>    Filter by package/source/extension id",
     "  --since <d>      Show only entries newer than duration (e.g. 30m, 24h, 7d, 1mo)",
-    "  --global         Read all persisted sessions (non-interactive mode only)",
+    "  --global         Read all persisted sessions from ~/.pi/agent/sessions (non-interactive mode only)",
     "",
     "Examples:",
     "  /extensions history --failed --limit 50",

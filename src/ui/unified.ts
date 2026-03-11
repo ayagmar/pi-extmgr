@@ -38,7 +38,7 @@ import {
   formatSize,
 } from "./theme.js";
 import { buildFooterState, buildFooterShortcuts, getPendingToggleChangeCount } from "./footer.js";
-import { logExtensionToggle } from "../utils/history.js";
+import { logExtensionDelete, logExtensionToggle } from "../utils/history.js";
 import { getKnownUpdates, promptAutoUpdateWizard } from "../utils/auto-update.js";
 import { updateExtmgrStatus } from "../utils/status.js";
 import { parseChoiceByLabel } from "../utils/command.js";
@@ -741,10 +741,12 @@ async function handleUnifiedAction(
         ctx.cwd
       );
       if (!removal.ok) {
+        logExtensionDelete(pi, item.id, false, removal.error);
         ctx.ui.notify(`Failed to remove extension: ${removal.error}`, "error");
         return false;
       }
 
+      logExtensionDelete(pi, item.id, true);
       ctx.ui.notify(
         `Removed ${item.displayName}${removal.removedDirectory ? " (directory)" : ""}.`,
         "info"
@@ -855,8 +857,6 @@ export async function showInstalledPackagesLegacy(
     "📦 Use /extensions for the unified view.\nInstalled packages are now shown alongside local extensions.",
     "info"
   );
-  // Small delay then open the main manager
-  await new Promise((r) => setTimeout(r, 1500));
   await showInteractive(ctx, pi);
 }
 
@@ -875,10 +875,12 @@ export async function showListOnly(ctx: ExtensionCommandContext): Promise<void> 
 
   const lines = entries.map(formatExtEntry);
   const output = lines.join("\n");
+  const titledOutput = `Local extensions:\n${output}`;
 
   if (ctx.hasUI) {
-    ctx.ui.notify(output, "info");
+    ctx.ui.notify(titledOutput, "info");
   } else {
+    console.log("Local extensions:");
     console.log(output);
   }
 }

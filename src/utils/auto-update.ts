@@ -20,6 +20,7 @@ import {
 import { parseNpmSource } from "./format.js";
 import { execNpm } from "./npm-exec.js";
 import { normalizePackageIdentity } from "./package-source.js";
+import { logAutoUpdateConfig } from "./history.js";
 import { TIMEOUTS } from "../constants.js";
 
 import { startTimer, stopTimer, isTimerRunning } from "./timer.js";
@@ -266,6 +267,7 @@ export function enableAutoUpdate(
   };
 
   saveAutoUpdateConfig(pi, config);
+  logAutoUpdateConfig(pi, `set to ${displayText}`, true);
 
   const getCtx: ContextProvider = () => ctx;
 
@@ -289,6 +291,7 @@ export function disableAutoUpdate(
     displayText: "off",
     updatesAvailable: [],
   });
+  logAutoUpdateConfig(pi, "disabled", true);
 
   notify(ctx, "Auto-update disabled", "info");
 }

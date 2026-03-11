@@ -9,10 +9,12 @@ import { join } from "node:path";
 
 export type ChangeAction =
   | "extension_toggle"
+  | "extension_delete"
   | "package_install"
   | "package_update"
   | "package_remove"
-  | "cache_clear";
+  | "cache_clear"
+  | "auto_update_config";
 
 export interface ExtensionChangeEntry {
   action: ChangeAction;
@@ -26,6 +28,7 @@ export interface ExtensionChangeEntry {
   packageName?: string | undefined;
   version?: string | undefined;
   scope?: "global" | "project" | undefined;
+  detail?: string | undefined;
   // Result
   success: boolean;
   error?: string | undefined;
@@ -75,6 +78,34 @@ export function logExtensionToggle(
     extensionId,
     fromState,
     toState,
+    success,
+    error,
+  });
+}
+
+export function logExtensionDelete(
+  pi: ExtensionAPI,
+  extensionId: string,
+  success: boolean,
+  error?: string
+): void {
+  logChange(pi, {
+    action: "extension_delete",
+    extensionId,
+    success,
+    error,
+  });
+}
+
+export function logAutoUpdateConfig(
+  pi: ExtensionAPI,
+  detail: string,
+  success: boolean,
+  error?: string
+): void {
+  logChange(pi, {
+    action: "auto_update_config",
+    detail,
     success,
     error,
   });
@@ -180,10 +211,12 @@ function matchesHistoryFilters(change: ExtensionChangeEntry, filters: HistoryFil
     const packageName = change.packageName?.toLowerCase() ?? "";
     const packageSource = change.packageSource?.toLowerCase() ?? "";
     const extensionId = change.extensionId?.toLowerCase() ?? "";
+    const detail = change.detail?.toLowerCase() ?? "";
     if (
       !packageName.includes(packageQuery) &&
       !packageSource.includes(packageQuery) &&
-      !extensionId.includes(packageQuery)
+      !extensionId.includes(packageQuery) &&
+      !detail.includes(packageQuery)
     ) {
       return false;
     }
@@ -330,6 +363,9 @@ export function formatChangeEntry(entry: ExtensionChangeEntry): string {
     case "extension_toggle":
       return `[${time}] ${icon} ${entry.extensionId}: ${entry.fromState} → ${entry.toState}`;
 
+    case "extension_delete":
+      return `[${time}] ${icon} Deleted ${entry.extensionId ?? "extension"}`;
+
     case "package_install":
       return `[${time}] ${icon} Installed ${packageLabel}${entry.version ? `@${entry.version}` : ""}${sourceSuffix}`;
 
@@ -341,6 +377,9 @@ export function formatChangeEntry(entry: ExtensionChangeEntry): string {
 
     case "cache_clear":
       return `[${time}] ${icon} Cache cleared`;
+
+    case "auto_update_config":
+      return `[${time}] ${icon} Auto-update ${entry.detail ?? "configuration changed"}`;
 
     default:
       return `[${time}] ${icon} Unknown action`;

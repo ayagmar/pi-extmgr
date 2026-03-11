@@ -95,6 +95,10 @@ const packageInfoCache = new PackageInfoCache(
   CACHE_LIMITS.packageInfoTTL
 );
 
+export function clearRemotePackageInfoCache(): void {
+  packageInfoCache.clear();
+}
+
 const REMOTE_MENU_CHOICES = {
   browse: "🔍 Browse pi packages",
   search: "🔎 Search packages",

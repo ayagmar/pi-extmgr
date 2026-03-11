@@ -46,6 +46,7 @@ Requires Node.js `>=22.5.0`.
   - Session history (`/extensions history`)
   - Cache controls (`/extensions clear-cache`)
   - Status line summary (`pkg count • auto-update • known updates`)
+  - History now records local extension deletions and auto-update configuration changes
 - **Interactive + non-interactive support**
   - Works in TUI and non-UI modes
   - Non-interactive commands for list/install/remove/update/auto-update
@@ -108,17 +109,18 @@ When Pi is running without UI, extmgr still supports command-driven workflows:
 - `/extensions update [source]`
 - `/extensions history [options]`
 - `/extensions auto-update <duration>`
+  - Use `1mo` for monthly schedules (history keeps `30m`/`24h` style durations for lookback windows)
 
 Remote browsing/search menus require interactive mode.
 
 History options (works in non-interactive mode too):
 
 - `--limit <n>`
-- `--action <extension_toggle|package_install|package_update|package_remove|cache_clear>`
+- `--action <extension_toggle|extension_delete|package_install|package_update|package_remove|cache_clear|auto_update_config>`
 - `--success` / `--failed`
 - `--package <query>`
 - `--since <duration>` (e.g. `30m`, `24h`, `7d`, `1mo`)
-- `--global` (non-interactive mode only; reads all persisted sessions)
+- `--global` (non-interactive mode only; reads all persisted sessions under `~/.pi/agent/sessions`)
 
 Examples:
 
