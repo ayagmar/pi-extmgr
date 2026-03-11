@@ -1,6 +1,7 @@
 /**
  * Package source parsing helpers shared across discovery/management flows.
  */
+import { parseNpmSource } from "./format.js";
 
 export type PackageSourceKind = "npm" | "git" | "local" | "unknown";
 
@@ -53,6 +54,31 @@ export function normalizeLocalSourceIdentity(source: string): string {
     /^[a-zA-Z]:\//.test(normalized) || normalized.startsWith("//") || source.includes("\\");
 
   return looksWindowsPath ? normalized.toLowerCase() : normalized;
+}
+
+export function normalizePackageIdentity(
+  source: string,
+  options?: { resolvedPath?: string }
+): string {
+  const normalized = sanitizeSource(source);
+  const kind = getPackageSourceKind(normalized);
+
+  if (kind === "npm") {
+    const npm = parseNpmSource(normalized);
+    return `npm:${(npm?.name ?? normalized).toLowerCase()}`;
+  }
+
+  if (kind === "git") {
+    const gitSpec = normalized.startsWith("git:") ? normalized.slice(4) : normalized;
+    const { repo } = splitGitRepoAndRef(gitSpec);
+    return `git:${repo.replace(/\\/g, "/").toLowerCase()}`;
+  }
+
+  if (kind === "local") {
+    return `local:${normalizeLocalSourceIdentity(options?.resolvedPath ?? normalized)}`;
+  }
+
+  return `raw:${normalized.replace(/\\/g, "/").toLowerCase()}`;
 }
 
 export function splitGitRepoAndRef(gitSpec: string): { repo: string; ref?: string | undefined } {

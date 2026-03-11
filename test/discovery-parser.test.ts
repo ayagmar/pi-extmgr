@@ -62,6 +62,38 @@ Global:
   assert.equal(result[0]?.source, "npm:dup-pkg@1.0.0");
 });
 
+void test("parseInstalledPackagesOutput gives project scope precedence for duplicate npm packages", () => {
+  const input = `
+Global:
+  npm:dup-pkg@1.0.0
+Project:
+  npm:dup-pkg@2.0.0
+`;
+
+  const result = parseInstalledPackagesOutput(input);
+  assert.equal(result.length, 1);
+  assert.deepEqual(result[0], {
+    source: "npm:dup-pkg@2.0.0",
+    name: "dup-pkg",
+    version: "2.0.0",
+    scope: "project",
+  });
+});
+
+void test("parseInstalledPackagesOutput deduplicates git packages by repo identity without ref", () => {
+  const input = `
+Global:
+  git:https://github.com/user/repo.git@v1
+Project:
+  git:https://github.com/user/repo.git@v2
+`;
+
+  const result = parseInstalledPackagesOutput(input);
+  assert.equal(result.length, 1);
+  assert.equal(result[0]?.scope, "project");
+  assert.equal(result[0]?.source, "git:https://github.com/user/repo.git@v2");
+});
+
 void test("parseInstalledPackagesOutputAllScopes keeps duplicates across scopes", () => {
   const input = `
 Global:

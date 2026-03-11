@@ -14,7 +14,7 @@ import { readSummary } from "../utils/fs.js";
 import { parseNpmSource } from "../utils/format.js";
 import {
   getPackageSourceKind,
-  normalizeLocalSourceIdentity,
+  normalizePackageIdentity,
   splitGitRepoAndRef,
 } from "../utils/package-source.js";
 import { execNpm } from "../utils/npm-exec.js";
@@ -121,15 +121,11 @@ function sanitizeListSourceSuffix(source: string): string {
     .trim();
 }
 
-function normalizeSourceIdentity(source: string): string {
-  const sanitized = sanitizeListSourceSuffix(source);
-  const kind = getPackageSourceKind(sanitized);
-
-  if (kind === "local") {
-    return normalizeLocalSourceIdentity(sanitized);
-  }
-
-  return sanitized.replace(/\\/g, "/").toLowerCase();
+function getInstalledPackageIdentity(pkg: InstalledPackage): string {
+  return normalizePackageIdentity(
+    pkg.source,
+    pkg.resolvedPath ? { resolvedPath: pkg.resolvedPath } : undefined
+  );
 }
 
 function isScopeHeader(lowerTrimmed: string, scope: "global" | "project"): boolean {
@@ -181,12 +177,8 @@ function parseResolvedPathLine(line: string): string | undefined {
   return undefined;
 }
 
-function parseInstalledPackagesOutputInternal(
-  text: string,
-  options?: { dedupeBySource?: boolean }
-): InstalledPackage[] {
+function parseInstalledPackagesOutputInternal(text: string): InstalledPackage[] {
   const packages: InstalledPackage[] = [];
-  const seenSources = new Set<string>();
 
   const lines = text.split("\n");
   let currentScope: "global" | "project" = "global";
@@ -222,15 +214,6 @@ function parseInstalledPackagesOutputInternal(
     if (!looksLikePackageSource(candidate)) continue;
 
     const source = sanitizeListSourceSuffix(candidate);
-    if (options?.dedupeBySource !== false) {
-      const sourceIdentity = normalizeSourceIdentity(source);
-      if (seenSources.has(sourceIdentity)) {
-        currentPackage = undefined;
-        continue;
-      }
-      seenSources.add(sourceIdentity);
-    }
-
     const { name, version } = parsePackageNameAndVersion(source);
 
     const pkg: InstalledPackage = { source, name, scope: currentScope };
@@ -244,8 +227,34 @@ function parseInstalledPackagesOutputInternal(
   return packages;
 }
 
+function shouldReplaceInstalledPackage(
+  current: InstalledPackage | undefined,
+  candidate: InstalledPackage
+): boolean {
+  if (!current) {
+    return true;
+  }
+
+  if (current.scope !== candidate.scope) {
+    return candidate.scope === "project";
+  }
+
+  return false;
+}
+
 export function parseInstalledPackagesOutput(text: string): InstalledPackage[] {
-  return parseInstalledPackagesOutputInternal(text, { dedupeBySource: true });
+  const parsed = parseInstalledPackagesOutputInternal(text);
+  const deduped = new Map<string, InstalledPackage>();
+
+  for (const pkg of parsed) {
+    const identity = getInstalledPackageIdentity(pkg);
+    const current = deduped.get(identity);
+    if (shouldReplaceInstalledPackage(current, pkg)) {
+      deduped.set(identity, pkg);
+    }
+  }
+
+  return Array.from(deduped.values());
 }
 
 /**
@@ -263,10 +272,10 @@ export async function isSourceInstalled(
     if (res.code !== 0) return false;
 
     const installed = parseInstalledPackagesOutputAllScopes(res.stdout || "");
-    const expected = normalizeSourceIdentity(source);
+    const expected = normalizePackageIdentity(source);
 
     return installed.some((pkg) => {
-      if (normalizeSourceIdentity(pkg.source) !== expected) {
+      if (getInstalledPackageIdentity(pkg) !== expected) {
         return false;
       }
       return options?.scope ? pkg.scope === options.scope : true;
@@ -277,7 +286,7 @@ export async function isSourceInstalled(
 }
 
 export function parseInstalledPackagesOutputAllScopes(text: string): InstalledPackage[] {
-  return parseInstalledPackagesOutputInternal(text, { dedupeBySource: false });
+  return parseInstalledPackagesOutputInternal(text);
 }
 
 function extractGitPackageName(repoSpec: string): string {

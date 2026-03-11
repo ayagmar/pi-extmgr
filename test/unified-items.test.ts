@@ -109,6 +109,20 @@ void test("buildUnifiedItems keeps case-sensitive POSIX paths distinct", () => {
   );
 });
 
+void test("buildUnifiedItems uses the project-winning package metadata for duplicates", () => {
+  const installed = parseInstalledPackagesOutput(
+    ["Global:", "  npm:demo@1.0.0", "Project:", "  npm:demo@2.0.0", ""].join("\n")
+  );
+
+  const items = buildUnifiedItems([], installed, new Set());
+  const packageRow = items.find((item) => item.type === "package");
+
+  assert.equal(items.length, 1);
+  assert.equal(packageRow?.scope, "project");
+  assert.equal(packageRow?.version, "2.0.0");
+  assert.equal(packageRow?.displayName, "demo");
+});
+
 void test("integration: pi list fixture with single-entry npm packages renders package rows once", async () => {
   const cwd = await mkdtemp(join(tmpdir(), "pi-extmgr-unified-"));
 
