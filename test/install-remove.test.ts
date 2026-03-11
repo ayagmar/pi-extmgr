@@ -621,7 +621,17 @@ void test("installFromUrl aborts stalled downloads instead of hanging forever", 
     globalThis.fetch = ((_input: string | URL | Request, init?: RequestInit) => {
       assert.ok(init?.signal);
       return new Promise<Response>((_resolve, reject) => {
+        let settled = false;
+        const fallbackTimer = originalSetTimeout(() => {
+          if (settled) return;
+          settled = true;
+          reject(Object.assign(new Error("fetch mock timeout"), { name: "TimeoutError" }));
+        }, 50);
+
         init.signal?.addEventListener("abort", () => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(fallbackTimer);
           reject(Object.assign(new Error("aborted"), { name: "AbortError" }));
         });
       });

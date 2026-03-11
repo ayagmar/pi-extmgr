@@ -71,13 +71,6 @@ export function startAutoUpdateTimer(
     },
     { initialDelayMs }
   );
-
-  if (initialDelayMs > 0 && nextCheck !== undefined) {
-    saveAutoUpdateConfig(pi, {
-      ...config,
-      nextCheck,
-    });
-  }
 }
 
 /**
@@ -179,7 +172,7 @@ export function getAutoUpdateStatus(ctx: ExtensionCommandContext | ExtensionCont
 }
 
 /**
- * Return package names currently known to have updates available
+ * Return normalized package identities currently known to have updates available
  * (from the latest background check).
  */
 export function getKnownUpdates(ctx: ExtensionCommandContext | ExtensionContext): Set<string> {

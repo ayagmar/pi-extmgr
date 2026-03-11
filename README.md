@@ -109,7 +109,7 @@ When Pi is running without UI, extmgr still supports command-driven workflows:
 - `/extensions update [source]`
 - `/extensions history [options]`
 - `/extensions auto-update <duration>`
-  - Use `1mo` for monthly schedules (history keeps `30m`/`24h` style durations for lookback windows)
+  - Use `1mo` for monthly schedules (`/extensions history --since <duration>` also accepts `1mo`; `30m`/`24h` are just lookback examples)
 
 Remote browsing/search menus require the full interactive TUI.
 
@@ -128,14 +128,14 @@ History options (works in non-interactive mode too):
 - `--action <extension_toggle|extension_delete|package_install|package_update|package_remove|cache_clear|auto_update_config>`
 - `--success` / `--failed`
 - `--package <query>`
-- `--since <duration>` (e.g. `30m`, `24h`, `7d`, `1mo`)
+- `--since <duration>` (e.g. `30m`, `24h`, `7d`, `1mo`; `1mo` is supported for monthly lookbacks)
 - `--global` (non-interactive mode only; reads all persisted sessions under `~/.pi/agent/sessions`)
 
 Examples:
 
 - `/extensions history --failed --limit 50`
 - `/extensions history --action package_update --since 7d`
-- `/extensions history --global --package extmgr --since 24h`
+- `/extensions history --global --package extmgr --since 1mo`
 
 ### Install sources
 
@@ -157,7 +157,7 @@ Examples:
   - After saving package extension config, restart pi to fully apply changes.
 - **Two install modes**:
   - **Managed** (npm): Auto-updates with `pi update`, stored in pi's package cache, supports Pi package manifest/convention loading
-  - **Local** (standalone): Copies to `~/.pi/agent/extensions/{package}/`, so it only accepts runnable standalone layouts (manifest-declared/root entrypoints), requires `tar` on `PATH`, and rejects packages whose runtime `dependencies` are not already bundled in the tarball
+  - **Local** (standalone): Copies to `~/.pi/agent/extensions/{package}/`, so it only accepts runnable standalone layouts (manifest-declared/root entrypoints), requires `tar` on `PATH`, and rejects packages whose runtime `dependencies` are not already bundled with the package contents
 - **Auto-update schedule is persistent**: `/extensions auto-update 1d` stays active across future Pi sessions and is restored when switching sessions.
 - **Auto-update coverage is npm-only today**: extmgr checks update availability for managed npm packages; git/local installs are not included in the background update badge yet.
 - **Settings/cache writes are hardened**: extmgr serializes writes and uses safe file replacement to reduce JSON corruption issues.

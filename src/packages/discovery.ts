@@ -16,6 +16,7 @@ import {
   getPackageSourceKind,
   normalizePackageIdentity,
   splitGitRepoAndRef,
+  stripGitSourcePrefix,
 } from "../utils/package-source.js";
 import { execNpm } from "../utils/npm-exec.js";
 
@@ -285,6 +286,12 @@ export async function isSourceInstalled(
   }
 }
 
+/**
+ * parseInstalledPackagesOutputAllScopes returns the raw parsed entries from
+ * parseInstalledPackagesOutputInternal without deduplication or scope merging.
+ * Prefer parseInstalledPackagesOutput for user-facing lists, since it applies
+ * deduplication and normalized scope selection.
+ */
 export function parseInstalledPackagesOutputAllScopes(text: string): InstalledPackage[] {
   return parseInstalledPackagesOutputInternal(text);
 }
@@ -325,7 +332,7 @@ function parsePackageNameAndVersion(fullSource: string): {
 
   const sourceKind = getPackageSourceKind(fullSource);
   if (sourceKind === "git") {
-    const gitSpec = fullSource.startsWith("git:") ? fullSource.slice(4) : fullSource;
+    const gitSpec = stripGitSourcePrefix(fullSource);
     const { repo } = splitGitRepoAndRef(gitSpec);
     return { name: extractGitPackageName(repo) };
   }

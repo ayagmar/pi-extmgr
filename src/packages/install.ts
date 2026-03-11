@@ -147,11 +147,20 @@ async function getStandaloneDependencyError(packageRoot: string): Promise<string
 }
 
 async function cleanupStandaloneTempArtifacts(tempDir: string, extractDir?: string): Promise<void> {
-  if (extractDir) {
-    await rm(extractDir, { recursive: true, force: true });
-  }
+  const paths = [extractDir, tempDir].filter((path): path is string => Boolean(path));
 
-  await rm(tempDir, { recursive: true, force: true });
+  await Promise.all(
+    paths.map(async (path) => {
+      try {
+        await rm(path, { recursive: true, force: true });
+      } catch (error) {
+        console.warn(
+          `[extmgr] Failed to remove temporary standalone install artifact at ${path}:`,
+          error
+        );
+      }
+    })
+  );
 }
 
 export async function installPackage(
@@ -273,7 +282,7 @@ export async function installFromUrl(
       await mkdir(extensionDir, { recursive: true });
       notify(ctx, `Downloading ${fileName}...`, "info");
 
-      const response = await fetchWithTimeout(url, TIMEOUTS.fetchPackageInfo);
+      const response = await fetchWithTimeout(url, TIMEOUTS.packageInstall);
       if (!response.ok) {
         throw new Error(`Download failed: ${response.status} ${response.statusText}`);
       }

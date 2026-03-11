@@ -10,7 +10,7 @@ import {
   parseInstalledPackagesOutputAllScopes,
 } from "../src/packages/discovery.js";
 import { isPackageSource, normalizePackageSource, parseNpmSource } from "../src/utils/format.js";
-import { getPackageSourceKind } from "../src/utils/package-source.js";
+import { getPackageSourceKind, normalizePackageIdentity } from "../src/utils/package-source.js";
 import { createMockHarness } from "./helpers/mocks.js";
 
 void test("parseInstalledPackagesOutput parses scopes, names, versions, and resolved path lines", () => {
@@ -282,6 +282,17 @@ void test("getPackageSourceKind classifies npm/git/local sources", () => {
   assert.equal(getPackageSourceKind(".\\vendor\\demo"), "local");
   assert.equal(getPackageSourceKind("file:///opt/pi/pkg"), "local");
   assert.equal(getPackageSourceKind("/opt/pi/pkg"), "local");
+});
+
+void test("normalizePackageIdentity strips git+ prefixes before matching", () => {
+  assert.equal(
+    normalizePackageIdentity("git+https://github.com/User/Repo.git@main"),
+    "git:https://github.com/user/repo.git"
+  );
+  assert.equal(
+    normalizePackageIdentity("git:https://github.com/User/Repo.git@main"),
+    "git:https://github.com/user/repo.git"
+  );
 });
 
 void test("getInstalledPackages hydrates version from resolved package.json when source has no inline version", async () => {

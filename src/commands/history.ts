@@ -189,7 +189,7 @@ function showHistoryHelp(ctx: ExtensionCommandContext): void {
     "Options:",
     "  --limit <n>      Maximum entries to show (default: 20)",
     "  --action <type>  Filter by action",
-    "                   extension_toggle | extension_delete | package_install | package_update | package_remove | cache_clear | auto_update_config",
+    `                   ${HISTORY_ACTIONS.join(" | ")}`,
     "  --success        Show only successful entries",
     "  --failed         Show only failed entries",
     "  --package <q>    Filter by package/source/extension id",

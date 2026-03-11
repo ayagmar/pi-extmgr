@@ -8,5 +8,5 @@ export function getSettingsListSelectedIndex(settingsList: unknown): number | un
   }
 
   const selectable = settingsList as SelectableListLike;
-  return typeof selectable.selectedIndex === "number" ? selectable.selectedIndex : undefined;
+  return Number.isInteger(selectable.selectedIndex) ? selectable.selectedIndex : undefined;
 }

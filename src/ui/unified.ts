@@ -42,6 +42,7 @@ import { logExtensionDelete, logExtensionToggle } from "../utils/history.js";
 import { getKnownUpdates, promptAutoUpdateWizard } from "../utils/auto-update.js";
 import { updateExtmgrStatus } from "../utils/status.js";
 import { parseChoiceByLabel } from "../utils/command.js";
+import { notify } from "../utils/notify.js";
 import { getPackageSourceKind, normalizePackageIdentity } from "../utils/package-source.js";
 import { hasCustomUI, runCustomUI } from "../utils/mode.js";
 import { getSettingsListSelectedIndex } from "../utils/settings-list.js";
@@ -61,7 +62,8 @@ export async function showInteractive(
   pi: ExtensionAPI
 ): Promise<void> {
   if (!hasCustomUI(ctx)) {
-    ctx.ui.notify(
+    notify(
+      ctx,
       "The unified extensions manager requires the full interactive TUI. Showing read-only local and installed package lists instead.",
       "warning"
     );

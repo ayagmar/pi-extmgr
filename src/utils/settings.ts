@@ -11,6 +11,7 @@ import { readFile, writeFile, mkdir, rename, rm } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { fileExists } from "./fs.js";
+import { normalizePackageIdentity } from "./package-source.js";
 
 export interface AutoUpdateConfig {
   intervalMs: number;
@@ -57,7 +58,9 @@ function sanitizeUpdateIdentities(value: unknown): string[] | undefined {
   const updates = sanitizeStringArray(value);
   if (!updates) return undefined;
 
-  const sanitized = updates.filter(isUpdateIdentity);
+  const sanitized = updates
+    .filter(isUpdateIdentity)
+    .map((entry) => normalizePackageIdentity(entry));
   return sanitized.length > 0 ? sanitized : undefined;
 }
 

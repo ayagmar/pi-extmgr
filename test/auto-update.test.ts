@@ -298,9 +298,8 @@ void test("enableAutoUpdate records the next scheduled check without faking a co
   try {
     enableAutoUpdate(pi, ctx, 60 * 60 * 1000, "1 hour");
 
-    const latestConfig = entries[entries.length - 1]?.data as
-      | { lastCheck?: number; nextCheck?: number; enabled?: boolean }
-      | undefined;
+    const latestConfig = entries.filter((entry) => entry.customType === "extmgr-auto-update").at(-1)
+      ?.data as { lastCheck?: number; nextCheck?: number; enabled?: boolean } | undefined;
 
     assert.equal(latestConfig?.enabled, true);
     assert.equal(latestConfig?.lastCheck, undefined);
@@ -331,4 +330,34 @@ void test("getKnownUpdates ignores legacy name-only update markers", () => {
   } as unknown as ReturnType<typeof createMockHarness>["ctx"];
 
   assert.deepEqual(Array.from(getKnownUpdates(ctx)), []);
+});
+
+void test("getKnownUpdates normalizes stored update identities", () => {
+  const ctx = {
+    hasUI: false,
+    cwd: "/tmp",
+    sessionManager: {
+      getEntries: () => [
+        {
+          type: "custom",
+          customType: "extmgr-auto-update",
+          data: {
+            enabled: true,
+            intervalMs: 60 * 60 * 1000,
+            displayText: "1 hour",
+            updatesAvailable: [
+              "npm:Demo-Pkg",
+              "git:HTTPS://GitHub.com/User/Repo.git@main",
+              "not-an-identity",
+            ],
+          },
+        },
+      ],
+    },
+  } as unknown as ReturnType<typeof createMockHarness>["ctx"];
+
+  assert.deepEqual(Array.from(getKnownUpdates(ctx)).sort(), [
+    "git:https://github.com/user/repo.git",
+    "npm:demo-pkg",
+  ]);
 });

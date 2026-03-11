@@ -56,6 +56,11 @@ export function normalizeLocalSourceIdentity(source: string): string {
   return looksWindowsPath ? normalized.toLowerCase() : normalized;
 }
 
+export function stripGitSourcePrefix(source: string): string {
+  const withoutGitPlus = source.startsWith("git+") ? source.slice(4) : source;
+  return withoutGitPlus.startsWith("git:") ? withoutGitPlus.slice(4) : withoutGitPlus;
+}
+
 export function normalizePackageIdentity(
   source: string,
   options?: { resolvedPath?: string }
@@ -69,7 +74,7 @@ export function normalizePackageIdentity(
   }
 
   if (kind === "git") {
-    const gitSpec = normalized.startsWith("git:") ? normalized.slice(4) : normalized;
+    const gitSpec = stripGitSourcePrefix(normalized);
     const { repo } = splitGitRepoAndRef(gitSpec);
     return `git:${repo.replace(/\\/g, "/").toLowerCase()}`;
   }
