@@ -68,8 +68,6 @@ export type CacheLimitKey = keyof typeof CACHE_LIMITS;
 export const UI = {
   /** Maximum height for scrollable lists in terminal rows */
   maxListHeight: 16,
-  /** Minimum number of items before enabling search functionality */
-  searchThreshold: 8,
   /** Default confirmation dialog timeout: 30 seconds */
   confirmTimeout: 30_000,
   /** Extended confirmation timeout for destructive operations: 1 minute */

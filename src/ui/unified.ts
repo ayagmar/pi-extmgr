@@ -181,8 +181,7 @@ async function showInteractiveOnce(
             }
             tui.requestRender();
           },
-          () => done({ type: "cancel" }),
-          { enableSearch: items.length > UI.searchThreshold }
+          () => done({ type: "cancel" })
         );
 
         container.addChild(settingsList);

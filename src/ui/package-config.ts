@@ -185,8 +185,7 @@ async function showConfigurePanel(
 
           tui.requestRender();
         },
-        () => done({ type: "cancel" }),
-        { enableSearch: rows.length > UI.searchThreshold }
+        () => done({ type: "cancel" })
       );
 
       container.addChild(settingsList);
