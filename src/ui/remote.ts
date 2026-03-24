@@ -370,8 +370,7 @@ export async function browseRemotePackages(
     return;
   }
 
-  // Check cache first
-  let allPackages: NpmPackage[] = [];
+  let allPackages: NpmPackage[] | undefined;
 
   if (isCacheValid(query)) {
     const cache = getSearchCache();
@@ -380,7 +379,7 @@ export async function browseRemotePackages(
     }
   }
 
-  if (allPackages.length === 0) {
+  if (!allPackages) {
     const results = await runTaskWithLoader(
       ctx,
       {
@@ -501,6 +500,7 @@ async function showPackageDetails(
 
         if (!text) {
           notify(ctx, `Loading ${packageName} details was cancelled.`, "info");
+          await showPackageDetails(packageName, ctx, pi, previousQuery, previousOffset);
           return;
         }
 
