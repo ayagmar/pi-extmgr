@@ -25,10 +25,10 @@ async function captureCustomComponent(
     lines: string[]
   ) => unknown
 ): Promise<unknown> {
-  let doneValue: unknown;
-  const done = (value: unknown) => {
-    doneValue = value;
-  };
+  let resolveCompletion: (value: unknown) => void = () => undefined;
+  const completion = new Promise<unknown>((resolve) => {
+    resolveCompletion = resolve;
+  });
 
   const component = await (
     factory as (
@@ -47,20 +47,21 @@ async function captureCustomComponent(
           handleInput?(data: string): void;
           dispose?(): void;
         }
-  )({ requestRender: noop, terminal: { rows: 40, columns: 120 } }, ctxTheme, {}, done);
+  )({ requestRender: noop, terminal: { rows: 40, columns: 120 } }, ctxTheme, {}, resolveCompletion);
 
-  const lines = component.render(120);
-  if (!matcher(lines)) {
-    for (let attempt = 0; attempt < 20 && doneValue === undefined; attempt += 1) {
-      await new Promise((resolve) => setTimeout(resolve, 0));
+  try {
+    const lines = component.render(120);
+    if (!matcher(lines)) {
+      return await Promise.race([
+        completion,
+        new Promise<unknown>((resolve) => setTimeout(() => resolve(undefined), 50)),
+      ]);
     }
-    component.dispose?.();
-    return doneValue;
-  }
 
-  const result = await onMatch(component, lines);
-  component.dispose?.();
-  return result;
+    return await onMatch(component, lines);
+  } finally {
+    component.dispose?.();
+  }
 }
 
 async function createPackageWithExtensions(root: string, count: number): Promise<void> {

@@ -86,9 +86,10 @@ void test("/extensions falls back when custom() degrades to undefined", async ()
   }
 });
 
-void test("/extensions installed lists packages without custom TUI", async () => {
+void test("/extensions installed lists packages from both scopes without custom TUI", async () => {
   const restoreCatalog = mockPackageCatalog({
     packages: [
+      { source: "npm:demo-pkg@1.0.0", name: "demo-pkg", version: "1.0.0", scope: "global" },
       { source: "npm:demo-pkg@1.0.0", name: "demo-pkg", version: "1.0.0", scope: "project" },
     ],
   });
@@ -113,7 +114,14 @@ void test("/extensions installed lists packages without custom TUI", async () =>
     await runResolvedCommand({ id: "installed", args: [] }, ctx, pi);
 
     assert.equal(customCallCount(), 0);
-    assert.ok(notifications.some((entry) => entry.message.includes("demo-pkg")));
+
+    const installedNotification = notifications.find((entry) =>
+      entry.message.includes("Installed packages:")
+    );
+
+    assert.ok(installedNotification);
+    assert.ok(installedNotification.message.includes("demo-pkg @1.0.0 (global)"));
+    assert.ok(installedNotification.message.includes("demo-pkg @1.0.0 (project)"));
   } finally {
     restoreCatalog();
   }

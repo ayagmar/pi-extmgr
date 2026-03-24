@@ -5,11 +5,15 @@ import {
   type AvailablePackageUpdate,
   type PackageCatalog,
 } from "../../src/packages/catalog.js";
-import { normalizePackageIdentity } from "../../src/utils/package-source.js";
+import {
+  normalizePackageIdentity,
+  parsePackageNameAndVersion,
+} from "../../src/utils/package-source.js";
 
 export function mockPackageCatalog(options?: {
   packages?: InstalledPackage[];
   updates?: AvailablePackageUpdate[];
+  checkForAvailableUpdatesImpl?: () => Promise<AvailablePackageUpdate[]> | AvailablePackageUpdate[];
   installImpl?: (
     source: string,
     scope: Scope,
@@ -25,8 +29,8 @@ export function mockPackageCatalog(options?: {
     onProgress?: (event: ProgressEvent) => void
   ) => Promise<void> | void;
 }): () => void {
-  const packages = options?.packages ?? [];
-  const updates = options?.updates ?? [];
+  let packages = [...(options?.packages ?? [])];
+  let updates = [...(options?.updates ?? [])];
 
   setPackageCatalogFactory(
     () =>
@@ -48,17 +52,71 @@ export function mockPackageCatalog(options?: {
           }
           return Promise.resolve([...deduped.values()]);
         },
-        checkForAvailableUpdates() {
-          return Promise.resolve(updates.map((update) => ({ ...update })));
+        async checkForAvailableUpdates() {
+          const result = await options?.checkForAvailableUpdatesImpl?.();
+          const nextUpdates = result ?? updates;
+          return nextUpdates.map((update) => ({ ...update }));
         },
-        install(source, scope, onProgress) {
-          return Promise.resolve(options?.installImpl?.(source, scope, onProgress));
+        async install(source, scope, onProgress) {
+          await options?.installImpl?.(source, scope, onProgress);
+
+          const identity = normalizePackageIdentity(source);
+          packages = packages.filter(
+            (pkg) => !(pkg.scope === scope && normalizePackageIdentity(pkg.source) === identity)
+          );
+
+          const parsed = parsePackageNameAndVersion(source);
+          packages.push({
+            source,
+            name: parsed.name,
+            ...(parsed.version ? { version: parsed.version } : {}),
+            scope,
+          });
         },
-        remove(source, scope, onProgress) {
-          return Promise.resolve(options?.removeImpl?.(source, scope, onProgress));
+        async remove(source, scope, onProgress) {
+          await options?.removeImpl?.(source, scope, onProgress);
+
+          const identity = normalizePackageIdentity(source);
+          packages = packages.filter(
+            (pkg) => !(pkg.scope === scope && normalizePackageIdentity(pkg.source) === identity)
+          );
+          updates = updates.filter(
+            (update) =>
+              !(update.scope === scope && normalizePackageIdentity(update.source) === identity)
+          );
         },
-        update(source, onProgress) {
-          return Promise.resolve(options?.updateImpl?.(source, onProgress));
+        async update(source, onProgress) {
+          await options?.updateImpl?.(source, onProgress);
+
+          if (!source) {
+            updates = [];
+            return;
+          }
+
+          const identity = normalizePackageIdentity(source);
+          const matchingUpdate = updates.find(
+            (update) => normalizePackageIdentity(update.source) === identity
+          );
+
+          if (matchingUpdate) {
+            const parsed = parsePackageNameAndVersion(matchingUpdate.source);
+            packages = packages.map((pkg) => {
+              if (normalizePackageIdentity(pkg.source) !== identity) {
+                return pkg;
+              }
+
+              return {
+                ...pkg,
+                source: matchingUpdate.source,
+                name: matchingUpdate.displayName || parsed.name,
+                ...(parsed.version ? { version: parsed.version } : {}),
+              };
+            });
+          }
+
+          updates = updates.filter(
+            (update) => normalizePackageIdentity(update.source) !== identity
+          );
         },
       }) satisfies PackageCatalog
   );

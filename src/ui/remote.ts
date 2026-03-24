@@ -110,6 +110,18 @@ const PACKAGE_DETAILS_CHOICES = {
   back: "Back to results",
 } as const;
 
+function createAbortError(): Error {
+  const error = new Error("Operation cancelled");
+  error.name = "AbortError";
+  return error;
+}
+
+function throwIfAborted(signal?: AbortSignal): void {
+  if (signal?.aborted) {
+    throw createAbortError();
+  }
+}
+
 function formatCount(value: number | undefined): string {
   if (typeof value !== "number" || !Number.isFinite(value)) return "unknown";
   return new Intl.NumberFormat().format(value);
@@ -132,7 +144,10 @@ async function fetchWeeklyDownloads(
     if (!res.ok) return undefined;
     const data = (await res.json()) as NpmDownloadsPoint;
     return typeof data.downloads === "number" ? data.downloads : undefined;
-  } catch {
+  } catch (error) {
+    if (signal?.aborted && error instanceof Error && error.name === "AbortError") {
+      throw error;
+    }
     return undefined;
   } finally {
     clearTimeout(timer);
@@ -158,6 +173,8 @@ async function buildPackageInfoText(
     }),
     fetchWeeklyDownloads(packageName, signal),
   ]);
+
+  throwIfAborted(signal);
 
   if (infoRes.code !== 0) {
     throw new Error(infoRes.stderr || infoRes.stdout || `npm view failed (exit ${infoRes.code})`);
@@ -186,7 +203,7 @@ async function buildPackageInfoText(
 
   const text = lines.join("\n");
 
-  // Store in LRU cache
+  throwIfAborted(signal);
   packageInfoCache.set(packageName, { text });
 
   return text;
