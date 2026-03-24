@@ -288,6 +288,38 @@ void test("updatePackage reloads after a real update", async () => {
   );
 });
 
+void test("updatePackage handles update checks that fail", async () => {
+  const restoreCatalog = mockPackageCatalog({
+    checkForAvailableUpdatesImpl: () => {
+      throw new Error("registry unavailable");
+    },
+  });
+
+  try {
+    const { pi, ctx, entries, notifications } = createMockHarness({ hasUI: true });
+
+    await updatePackage("npm:pi-extmgr", ctx, pi);
+
+    const historyEntries = entries
+      .filter((entry) => entry.customType === "extmgr-change")
+      .map((entry) => entry.data);
+
+    const latestHistory = historyEntries[historyEntries.length - 1] as
+      | { action?: string; success?: boolean; packageName?: string; error?: string }
+      | undefined;
+
+    assert.equal(latestHistory?.action, "package_update");
+    assert.equal(latestHistory?.success, false);
+    assert.equal(latestHistory?.packageName, "npm:pi-extmgr");
+    assert.match(latestHistory?.error ?? "", /registry unavailable/i);
+    assert.ok(
+      notifications.some((entry) => entry.message.includes("Update failed: registry unavailable"))
+    );
+  } finally {
+    restoreCatalog();
+  }
+});
+
 void test("updatePackages treats no available updates as a no-op", async () => {
   const output: string[] = [];
   const originalLog = console.log;
@@ -342,6 +374,38 @@ void test("updatePackages treats no available updates as a no-op", async () => {
   assert.equal(latestHistory?.action, "package_update");
   assert.equal(latestHistory?.success, true);
   assert.equal(latestHistory?.packageName, "all packages");
+});
+
+void test("updatePackages handles update checks that fail", async () => {
+  const restoreCatalog = mockPackageCatalog({
+    checkForAvailableUpdatesImpl: () => {
+      throw new Error("registry unavailable");
+    },
+  });
+
+  try {
+    const { pi, ctx, entries, notifications } = createMockHarness({ hasUI: true });
+
+    await updatePackages(ctx, pi);
+
+    const historyEntries = entries
+      .filter((entry) => entry.customType === "extmgr-change")
+      .map((entry) => entry.data);
+
+    const latestHistory = historyEntries[historyEntries.length - 1] as
+      | { action?: string; success?: boolean; packageName?: string; error?: string }
+      | undefined;
+
+    assert.equal(latestHistory?.action, "package_update");
+    assert.equal(latestHistory?.success, false);
+    assert.equal(latestHistory?.packageName, "all packages");
+    assert.match(latestHistory?.error ?? "", /registry unavailable/i);
+    assert.ok(
+      notifications.some((entry) => entry.message.includes("Update failed: registry unavailable"))
+    );
+  } finally {
+    restoreCatalog();
+  }
 });
 
 void test("updatePackages logs failure in history", async () => {

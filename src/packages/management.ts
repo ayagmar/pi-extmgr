@@ -57,20 +57,21 @@ async function updatePackageInternal(
   showProgress(ctx, "Updating", source);
 
   const updateIdentity = normalizePackageIdentity(source);
-  const updates = await getPackageCatalog(ctx.cwd).checkForAvailableUpdates();
-  const hasUpdate = updates.some(
-    (update) => normalizePackageIdentity(update.source) === updateIdentity
-  );
-
-  if (!hasUpdate) {
-    notify(ctx, `${source} is already up to date (or pinned).`, "info");
-    logPackageUpdate(pi, source, source, undefined, true);
-    clearUpdatesAvailable(pi, ctx, [updateIdentity]);
-    void updateExtmgrStatus(ctx, pi);
-    return NO_PACKAGE_MUTATION_OUTCOME;
-  }
 
   try {
+    const updates = await getPackageCatalog(ctx.cwd).checkForAvailableUpdates();
+    const hasUpdate = updates.some(
+      (update) => normalizePackageIdentity(update.source) === updateIdentity
+    );
+
+    if (!hasUpdate) {
+      notify(ctx, `${source} is already up to date (or pinned).`, "info");
+      logPackageUpdate(pi, source, source, undefined, true);
+      clearUpdatesAvailable(pi, ctx, [updateIdentity]);
+      void updateExtmgrStatus(ctx, pi);
+      return NO_PACKAGE_MUTATION_OUTCOME;
+    }
+
     await runTaskWithLoader(
       ctx,
       {
@@ -111,16 +112,16 @@ async function updatePackagesInternal(
 ): Promise<PackageMutationOutcome> {
   showProgress(ctx, "Updating", "all packages");
 
-  const updates = await getPackageCatalog(ctx.cwd).checkForAvailableUpdates();
-  if (updates.length === 0) {
-    notify(ctx, "All packages are already up to date.", "info");
-    logPackageUpdate(pi, BULK_UPDATE_LABEL, BULK_UPDATE_LABEL, undefined, true);
-    clearUpdatesAvailable(pi, ctx);
-    void updateExtmgrStatus(ctx, pi);
-    return NO_PACKAGE_MUTATION_OUTCOME;
-  }
-
   try {
+    const updates = await getPackageCatalog(ctx.cwd).checkForAvailableUpdates();
+    if (updates.length === 0) {
+      notify(ctx, "All packages are already up to date.", "info");
+      logPackageUpdate(pi, BULK_UPDATE_LABEL, BULK_UPDATE_LABEL, undefined, true);
+      clearUpdatesAvailable(pi, ctx);
+      void updateExtmgrStatus(ctx, pi);
+      return NO_PACKAGE_MUTATION_OUTCOME;
+    }
+
     await runTaskWithLoader(
       ctx,
       {
@@ -450,9 +451,9 @@ export async function promptRemove(ctx: ExtensionCommandContext, pi: ExtensionAP
 
 export async function showInstalledPackagesList(
   ctx: ExtensionCommandContext,
-  pi: ExtensionAPI
+  _pi: ExtensionAPI
 ): Promise<void> {
-  const packages = await getInstalledPackages(ctx, pi);
+  const packages = await getInstalledPackagesAllScopes(ctx);
 
   if (packages.length === 0) {
     notify(ctx, "No packages installed.", "info");

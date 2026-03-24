@@ -85,15 +85,6 @@ export async function runTaskWithLoader<T>(
 
   const result = await ctx.ui.custom<T | typeof TASK_ABORTED | typeof TASK_FAILED>(
     (tui, theme, _keybindings, done) => {
-      const { container, loader, signal } = createLoaderComponent(
-        tui,
-        theme,
-        config.title,
-        config.message,
-        config.cancellable ?? true,
-        () => done(TASK_ABORTED)
-      );
-
       let finished = false;
       const finish = (value: T | typeof TASK_ABORTED | typeof TASK_FAILED): void => {
         if (finished) {
@@ -102,6 +93,15 @@ export async function runTaskWithLoader<T>(
         finished = true;
         done(value);
       };
+
+      const { container, loader, signal } = createLoaderComponent(
+        tui,
+        theme,
+        config.title,
+        config.message,
+        config.cancellable ?? true,
+        () => finish(TASK_ABORTED)
+      );
 
       void task({
         signal,
