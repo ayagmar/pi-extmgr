@@ -1,15 +1,18 @@
 /**
  * Package management (update, remove)
  */
-import type { ExtensionAPI, ExtensionCommandContext } from "@mariozechner/pi-coding-agent";
+import type {
+  ExtensionAPI,
+  ExtensionCommandContext,
+  ProgressEvent,
+} from "@mariozechner/pi-coding-agent";
 import type { InstalledPackage } from "../types/index.js";
 import {
   getInstalledPackages,
+  getInstalledPackagesAllScopes,
   clearSearchCache,
-  parseInstalledPackagesOutputAllScopes,
-  isSourceInstalled,
 } from "./discovery.js";
-import { waitForCondition } from "../utils/retry.js";
+import { getPackageCatalog } from "./catalog.js";
 import { formatInstalledPackageLabel } from "../utils/format.js";
 import { normalizePackageIdentity } from "../utils/package-source.js";
 import { logPackageUpdate, logPackageRemove } from "../utils/history.js";
@@ -22,8 +25,9 @@ import {
   formatListOutput,
 } from "../utils/ui-helpers.js";
 import { requireUI } from "../utils/mode.js";
+import { runTaskWithLoader } from "../ui/async-task.js";
 import { updateExtmgrStatus } from "../utils/status.js";
-import { TIMEOUTS, UI } from "../constants.js";
+import { UI } from "../constants.js";
 
 export interface PackageMutationOutcome {
   reloaded: boolean;
@@ -41,9 +45,8 @@ function packageMutationOutcome(
   return { ...NO_PACKAGE_MUTATION_OUTCOME, ...overrides };
 }
 
-function isUpToDateOutput(stdout: string): boolean {
-  const pinnedAsStatus = /^\s*pinned\b(?!\s+dependency\b)(?:\s*$|\s*[:(-])/im.test(stdout);
-  return /already\s+up\s+to\s+date/i.test(stdout) || pinnedAsStatus;
+function getProgressMessage(event: ProgressEvent, fallback: string): string {
+  return event.message?.trim() || fallback;
 }
 
 async function updatePackageInternal(
@@ -53,25 +56,40 @@ async function updatePackageInternal(
 ): Promise<PackageMutationOutcome> {
   showProgress(ctx, "Updating", source);
 
-  const res = await pi.exec("pi", ["update", source], {
-    timeout: TIMEOUTS.packageUpdate,
-    cwd: ctx.cwd,
-  });
+  const updateIdentity = normalizePackageIdentity(source);
+  const updates = await getPackageCatalog(ctx.cwd).checkForAvailableUpdates();
+  const hasUpdate = updates.some(
+    (update) => normalizePackageIdentity(update.source) === updateIdentity
+  );
 
-  if (res.code !== 0) {
-    const errorMsg = `Update failed: ${res.stderr || res.stdout || `exit ${res.code}`}`;
-    logPackageUpdate(pi, source, source, undefined, false, errorMsg);
-    notifyError(ctx, errorMsg);
+  if (!hasUpdate) {
+    notify(ctx, `${source} is already up to date (or pinned).`, "info");
+    logPackageUpdate(pi, source, source, undefined, true);
+    clearUpdatesAvailable(pi, ctx, [updateIdentity]);
     void updateExtmgrStatus(ctx, pi);
     return NO_PACKAGE_MUTATION_OUTCOME;
   }
 
-  const updateIdentity = normalizePackageIdentity(source);
-  const stdout = res.stdout || "";
-  if (isUpToDateOutput(stdout)) {
-    notify(ctx, `${source} is already up to date (or pinned).`, "info");
-    logPackageUpdate(pi, source, source, undefined, true);
-    clearUpdatesAvailable(pi, ctx, [updateIdentity]);
+  try {
+    await runTaskWithLoader(
+      ctx,
+      {
+        title: "Update Package",
+        message: `Updating ${source}...`,
+        cancellable: false,
+      },
+      async ({ setMessage }) => {
+        await getPackageCatalog(ctx.cwd).update(source, (event) => {
+          setMessage(getProgressMessage(event, `Updating ${source}...`));
+        });
+        return undefined;
+      }
+    );
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    const errorMsg = `Update failed: ${message}`;
+    logPackageUpdate(pi, source, source, undefined, false, errorMsg);
+    notifyError(ctx, errorMsg);
     void updateExtmgrStatus(ctx, pi);
     return NO_PACKAGE_MUTATION_OUTCOME;
   }
@@ -93,21 +111,35 @@ async function updatePackagesInternal(
 ): Promise<PackageMutationOutcome> {
   showProgress(ctx, "Updating", "all packages");
 
-  const res = await pi.exec("pi", ["update"], { timeout: TIMEOUTS.packageUpdateAll, cwd: ctx.cwd });
-
-  if (res.code !== 0) {
-    const errorMsg = `Update failed: ${res.stderr || res.stdout || `exit ${res.code}`}`;
-    logPackageUpdate(pi, BULK_UPDATE_LABEL, BULK_UPDATE_LABEL, undefined, false, errorMsg);
-    notifyError(ctx, errorMsg);
+  const updates = await getPackageCatalog(ctx.cwd).checkForAvailableUpdates();
+  if (updates.length === 0) {
+    notify(ctx, "All packages are already up to date.", "info");
+    logPackageUpdate(pi, BULK_UPDATE_LABEL, BULK_UPDATE_LABEL, undefined, true);
+    clearUpdatesAvailable(pi, ctx);
     void updateExtmgrStatus(ctx, pi);
     return NO_PACKAGE_MUTATION_OUTCOME;
   }
 
-  const stdout = res.stdout || "";
-  if (isUpToDateOutput(stdout) || stdout.trim() === "") {
-    notify(ctx, "All packages are already up to date.", "info");
-    logPackageUpdate(pi, BULK_UPDATE_LABEL, BULK_UPDATE_LABEL, undefined, true);
-    clearUpdatesAvailable(pi, ctx);
+  try {
+    await runTaskWithLoader(
+      ctx,
+      {
+        title: "Update Packages",
+        message: "Updating all packages...",
+        cancellable: false,
+      },
+      async ({ setMessage }) => {
+        await getPackageCatalog(ctx.cwd).update(undefined, (event) => {
+          setMessage(getProgressMessage(event, "Updating all packages..."));
+        });
+        return undefined;
+      }
+    );
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    const errorMsg = `Update failed: ${message}`;
+    logPackageUpdate(pi, BULK_UPDATE_LABEL, BULK_UPDATE_LABEL, undefined, false, errorMsg);
+    notifyError(ctx, errorMsg);
     void updateExtmgrStatus(ctx, pi);
     return NO_PACKAGE_MUTATION_OUTCOME;
   }
@@ -157,13 +189,10 @@ function packageIdentity(source: string): string {
   return normalizePackageIdentity(source);
 }
 
-async function getInstalledPackagesAllScopes(
-  ctx: ExtensionCommandContext,
-  pi: ExtensionAPI
+async function getInstalledPackagesAllScopesForRemoval(
+  ctx: ExtensionCommandContext
 ): Promise<InstalledPackage[]> {
-  const res = await pi.exec("pi", ["list"], { timeout: TIMEOUTS.listPackages, cwd: ctx.cwd });
-  if (res.code !== 0) return [];
-  return parseInstalledPackagesOutputAllScopes(res.stdout || "");
+  return getInstalledPackagesAllScopes(ctx);
 }
 
 type RemovalScopeChoice = "both" | "global" | "project" | "cancel";
@@ -197,14 +226,9 @@ async function selectRemovalScope(ctx: ExtensionCommandContext): Promise<Removal
 
 function buildRemovalTargets(
   matching: InstalledPackage[],
-  source: string,
   hasUI: boolean,
   scopeChoice: RemovalScopeChoice
 ): RemovalTarget[] {
-  if (matching.length === 0) {
-    return [{ scope: "global", source, name: source }];
-  }
-
   const byScope = new Map(matching.map((pkg) => [pkg.scope, pkg] as const));
   const addTarget = (scope: "global" | "project") => {
     const pkg = byScope.get(scope);
@@ -253,18 +277,30 @@ async function executeRemovalTargets(
   for (const target of targets) {
     showProgress(ctx, "Removing", `${target.source} (${target.scope})`);
 
-    const args = ["remove", ...(target.scope === "project" ? ["-l"] : []), target.source];
-    const res = await pi.exec("pi", args, { timeout: TIMEOUTS.packageRemove, cwd: ctx.cwd });
+    try {
+      await runTaskWithLoader(
+        ctx,
+        {
+          title: "Remove Package",
+          message: `Removing ${target.source}...`,
+          cancellable: false,
+        },
+        async ({ setMessage }) => {
+          await getPackageCatalog(ctx.cwd).remove(target.source, target.scope, (event) => {
+            setMessage(getProgressMessage(event, `Removing ${target.source}...`));
+          });
+          return undefined;
+        }
+      );
 
-    if (res.code !== 0) {
-      const errorMsg = `Remove failed (${target.scope}): ${res.stderr || res.stdout || `exit ${res.code}`}`;
+      logPackageRemove(pi, target.source, target.name, true);
+      results.push({ target, success: true });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      const errorMsg = `Remove failed (${target.scope}): ${message}`;
       logPackageRemove(pi, target.source, target.name, false, errorMsg);
       results.push({ target, success: false, error: errorMsg });
-      continue;
     }
-
-    logPackageRemove(pi, target.source, target.name, true);
-    results.push({ target, success: true });
   }
 
   return results;
@@ -300,7 +336,7 @@ async function removePackageInternal(
   ctx: ExtensionCommandContext,
   pi: ExtensionAPI
 ): Promise<PackageMutationOutcome> {
-  const installed = await getInstalledPackagesAllScopes(ctx, pi);
+  const installed = await getInstalledPackagesAllScopesForRemoval(ctx);
   const identity = packageIdentity(source);
   const matching = installed.filter((p) => packageIdentity(p.source) === identity);
 
@@ -314,7 +350,12 @@ async function removePackageInternal(
     return NO_PACKAGE_MUTATION_OUTCOME;
   }
 
-  const targets = buildRemovalTargets(matching, source, ctx.hasUI, scopeChoice);
+  if (matching.length === 0) {
+    notify(ctx, `${source} is not installed.`, "info");
+    return NO_PACKAGE_MUTATION_OUTCOME;
+  }
+
+  const targets = buildRemovalTargets(matching, ctx.hasUI, scopeChoice);
   if (targets.length === 0) {
     notify(ctx, "Nothing to remove.", "info");
     return NO_PACKAGE_MUTATION_OUTCOME;
@@ -343,7 +384,7 @@ async function removePackageInternal(
     .filter((result) => result.success)
     .map((result) => result.target);
 
-  const remaining = (await getInstalledPackagesAllScopes(ctx, pi)).filter(
+  const remaining = (await getInstalledPackagesAllScopesForRemoval(ctx)).filter(
     (p) => packageIdentity(p.source) === identity
   );
   notifyRemovalSummary(source, remaining, failures, ctx);
@@ -353,28 +394,6 @@ async function removePackageInternal(
   }
 
   const successfulRemovalCount = successfulTargets.length;
-
-  // Wait for successfully removed targets to disappear from their target scopes before reloading.
-  if (successfulTargets.length > 0) {
-    notify(ctx, "Waiting for removal to complete...", "info");
-    const isRemoved = await waitForCondition(
-      async () => {
-        const installedChecks = await Promise.all(
-          successfulTargets.map((target) =>
-            isSourceInstalled(target.source, ctx, pi, {
-              scope: target.scope,
-            })
-          )
-        );
-        return installedChecks.every((installedInScope) => !installedInScope);
-      },
-      { maxAttempts: 10, delayMs: 100, backoff: "exponential" }
-    );
-
-    if (!isRemoved) {
-      notify(ctx, "Extension may still be active. Restart pi manually if needed.", "warning");
-    }
-  }
 
   if (successfulRemovalCount === 0) {
     void updateExtmgrStatus(ctx, pi);

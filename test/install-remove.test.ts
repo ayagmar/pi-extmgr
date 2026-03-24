@@ -7,37 +7,83 @@ import type { ExtensionAPI, ExtensionCommandContext } from "@mariozechner/pi-cod
 import { installFromUrl, installPackage, installPackageLocally } from "../src/packages/install.js";
 import { removePackage, updatePackage, updatePackages } from "../src/packages/management.js";
 import { createMockHarness } from "./helpers/mocks.js";
+import { mockPackageCatalog } from "./helpers/package-catalog.js";
 
-void test("installPackage calls pi install with normalized npm source", async () => {
-  const { pi, ctx, calls } = createMockHarness();
+void test("installPackage installs the normalized npm source", async () => {
+  const installs: { source: string; scope: "global" | "project" }[] = [];
+  const restoreCatalog = mockPackageCatalog({
+    installImpl: (source, scope) => {
+      installs.push({ source, scope });
+    },
+  });
 
-  await installPackage("pi-extmgr", ctx, pi);
+  try {
+    const { pi, ctx } = createMockHarness();
+    await installPackage("pi-extmgr", ctx, pi);
 
-  const installCalls = calls.filter((c) => c.command === "pi" && c.args[0] === "install");
-  assert.equal(installCalls.length, 1);
-  assert.equal(installCalls[0]?.command, "pi");
-  assert.deepEqual(installCalls[0]?.args, ["install", "npm:pi-extmgr"]);
+    assert.deepEqual(installs, [{ source: "npm:pi-extmgr", scope: "global" }]);
+  } finally {
+    restoreCatalog();
+  }
 });
 
 void test("installPackage normalizes git@ sources to git: prefix", async () => {
-  const { pi, ctx, calls } = createMockHarness();
+  const installs: { source: string; scope: "global" | "project" }[] = [];
+  const restoreCatalog = mockPackageCatalog({
+    installImpl: (source, scope) => {
+      installs.push({ source, scope });
+    },
+  });
 
-  await installPackage("git@github.com:user/repo.git", ctx, pi);
+  try {
+    const { pi, ctx } = createMockHarness();
+    await installPackage("git@github.com:user/repo.git", ctx, pi);
 
-  const installCalls = calls.filter((c) => c.command === "pi" && c.args[0] === "install");
-  assert.equal(installCalls.length, 1);
-  assert.equal(installCalls[0]?.command, "pi");
-  assert.deepEqual(installCalls[0]?.args, ["install", "git:git@github.com:user/repo.git"]);
+    assert.deepEqual(installs, [{ source: "git:git@github.com:user/repo.git", scope: "global" }]);
+  } finally {
+    restoreCatalog();
+  }
 });
 
-void test("removePackage calls pi remove", async () => {
-  const { pi, ctx, calls } = createMockHarness();
+void test("removePackage removes the selected package source", async () => {
+  const removals: { source: string; scope: "global" | "project" }[] = [];
+  const restoreCatalog = mockPackageCatalog({
+    packages: [{ source: "npm:pi-extmgr", name: "pi-extmgr", scope: "global" }],
+    removeImpl: (source, scope) => {
+      removals.push({ source, scope });
+    },
+  });
 
-  await removePackage("npm:pi-extmgr", ctx, pi);
+  try {
+    const { pi, ctx } = createMockHarness();
+    await removePackage("npm:pi-extmgr", ctx, pi);
 
-  const removeCalls = calls.filter((c) => c.command === "pi" && c.args[0] === "remove");
-  assert.equal(removeCalls.length, 1);
-  assert.deepEqual(removeCalls[0]?.args, ["remove", "npm:pi-extmgr"]);
+    assert.deepEqual(removals, [{ source: "npm:pi-extmgr", scope: "global" }]);
+  } finally {
+    restoreCatalog();
+  }
+});
+
+void test("removePackage does not attempt removal when the package is not installed", async () => {
+  const removals: { source: string; scope: "global" | "project" }[] = [];
+  const restoreCatalog = mockPackageCatalog({
+    packages: [],
+    removeImpl: (source, scope) => {
+      removals.push({ source, scope });
+    },
+  });
+
+  try {
+    const { pi, ctx, notifications } = createMockHarness({ hasUI: true });
+    await removePackage("npm:missing", ctx, pi);
+
+    assert.deepEqual(removals, []);
+    assert.ok(
+      notifications.some((entry) => entry.message.includes("npm:missing is not installed"))
+    );
+  } finally {
+    restoreCatalog();
+  }
 });
 
 void test("removePackage does not request reload when removal fails", async () => {
@@ -47,33 +93,18 @@ void test("removePackage does not request reload when removal fails", async () =
     output.push(args.map(String).join(" "));
   };
 
+  const restoreCatalog = mockPackageCatalog({
+    packages: [{ source: "npm:pi-extmgr", name: "pi-extmgr", scope: "global" }],
+    removeImpl: () => {
+      throw new Error("permission denied");
+    },
+  });
+
   try {
-    const { pi, ctx } = createMockHarness({
-      execImpl: (command, args) => {
-        if (command === "pi" && args[0] === "list") {
-          return {
-            code: 0,
-            stdout: "Global:\n  npm:pi-extmgr\n",
-            stderr: "",
-            killed: false,
-          };
-        }
-
-        if (command === "pi" && args[0] === "remove") {
-          return {
-            code: 1,
-            stdout: "",
-            stderr: "permission denied",
-            killed: false,
-          };
-        }
-
-        return { code: 0, stdout: "", stderr: "", killed: false };
-      },
-    });
-
+    const { pi, ctx } = createMockHarness();
     await removePackage("npm:pi-extmgr", ctx, pi);
   } finally {
+    restoreCatalog();
     console.log = originalLog;
   }
 
@@ -83,48 +114,25 @@ void test("removePackage does not request reload when removal fails", async () =
   );
 });
 
-void test("removePackage waits for successful removals on partial failures", async () => {
+void test("removePackage keeps successful removals when another scope fails", async () => {
   const entries: { type: "custom"; customType: string; data: unknown }[] = [];
-  const calls: { command: string; args: string[] }[] = [];
-  let listCalls = 0;
-  let globalInstalled = true;
-  let projectInstalled = true;
+  const removals: { source: string; scope: "global" | "project" }[] = [];
+  const installed = [
+    { source: "npm:demo@1.0.0", name: "demo", version: "1.0.0", scope: "global" as const },
+    { source: "npm:demo@1.0.0", name: "demo", version: "1.0.0", scope: "project" as const },
+  ];
+
+  const restoreCatalog = mockPackageCatalog({
+    packages: installed,
+    removeImpl: (source, scope) => {
+      removals.push({ source, scope });
+      if (scope === "project") {
+        throw new Error("permission denied");
+      }
+    },
+  });
 
   const pi = {
-    exec: (command: string, args: string[]) => {
-      calls.push({ command, args });
-
-      if (command === "pi" && args[0] === "list") {
-        listCalls += 1;
-        const lines: string[] = [];
-        if (globalInstalled) {
-          lines.push("Global:", "  npm:demo@1.0.0");
-        }
-        if (projectInstalled) {
-          lines.push("Project:", "  npm:demo@1.0.0");
-        }
-        if (lines.length === 0) {
-          lines.push("No packages installed");
-        }
-        return Promise.resolve({ code: 0, stdout: lines.join("\n"), stderr: "", killed: false });
-      }
-
-      if (command === "pi" && args[0] === "remove") {
-        if (args.includes("-l")) {
-          return Promise.resolve({
-            code: 1,
-            stdout: "",
-            stderr: "permission denied",
-            killed: false,
-          });
-        }
-
-        globalInstalled = false;
-        return Promise.resolve({ code: 0, stdout: "removed", stderr: "", killed: false });
-      }
-
-      return Promise.resolve({ code: 0, stdout: "", stderr: "", killed: false });
-    },
     appendEntry: (customType: string, data: unknown) => {
       entries.push({ type: "custom", customType, data });
     },
@@ -146,80 +154,63 @@ void test("removePackage waits for successful removals on partial failures", asy
     },
   } as unknown as ExtensionCommandContext;
 
-  await removePackage("npm:demo@1.0.0", ctx, pi);
+  try {
+    await removePackage("npm:demo@1.0.0", ctx, pi);
+  } finally {
+    restoreCatalog();
+  }
 
-  const removeCalls = calls.filter((call) => call.command === "pi" && call.args[0] === "remove");
-  assert.equal(removeCalls.length, 2);
-  assert.ok(listCalls >= 3);
+  assert.deepEqual(removals, [
+    { source: "npm:demo@1.0.0", scope: "global" },
+    { source: "npm:demo@1.0.0", scope: "project" },
+  ]);
 });
 
 void test("removePackage targets exact local source when names collide", async () => {
-  const installed = ["/opt/extensions/alpha/index.ts", "/opt/extensions/beta/index.ts"];
-
-  const { pi, ctx, calls } = createMockHarness({
-    execImpl: (command, args) => {
-      if (command === "pi" && args[0] === "list") {
-        const lines = ["Global:", ...installed.map((source) => `  ${source}`), ""];
-        return {
-          code: 0,
-          stdout: lines.join("\n"),
-          stderr: "",
-          killed: false,
-        };
-      }
-
-      if (command === "pi" && args[0] === "remove") {
-        const source = args[1];
-        const index = installed.indexOf(source ?? "");
-        if (index >= 0) installed.splice(index, 1);
-        return { code: 0, stdout: "Removed", stderr: "", killed: false };
-      }
-
-      return { code: 0, stdout: "", stderr: "", killed: false };
+  const removals: { source: string; scope: "global" | "project" }[] = [];
+  const restoreCatalog = mockPackageCatalog({
+    packages: [
+      { source: "/opt/extensions/alpha/index.ts", name: "index.ts", scope: "global" },
+      { source: "/opt/extensions/beta/index.ts", name: "index.ts", scope: "global" },
+    ],
+    removeImpl: (source, scope) => {
+      removals.push({ source, scope });
     },
   });
 
-  await removePackage("/opt/extensions/beta/index.ts", ctx, pi);
+  try {
+    const { pi, ctx } = createMockHarness();
+    await removePackage("/opt/extensions/beta/index.ts", ctx, pi);
+  } finally {
+    restoreCatalog();
+  }
 
-  const removeCalls = calls.filter((c) => c.command === "pi" && c.args[0] === "remove");
-  assert.equal(removeCalls.length, 1);
-  assert.deepEqual(removeCalls[0]?.args, ["remove", "/opt/extensions/beta/index.ts"]);
+  assert.deepEqual(removals, [{ source: "/opt/extensions/beta/index.ts", scope: "global" }]);
 });
 
 void test("removePackage keeps case-sensitive local paths distinct", async () => {
-  const installed = ["/opt/extensions/Foo/index.ts", "/opt/extensions/foo/index.ts"];
-
-  const { pi, ctx, calls } = createMockHarness({
-    execImpl: (command, args) => {
-      if (command === "pi" && args[0] === "list") {
-        const lines = ["Global:", ...installed.map((source) => `  ${source}`), ""];
-        return {
-          code: 0,
-          stdout: lines.join("\n"),
-          stderr: "",
-          killed: false,
-        };
-      }
-
-      if (command === "pi" && args[0] === "remove") {
-        const source = args[1];
-        const index = installed.indexOf(source ?? "");
-        if (index >= 0) installed.splice(index, 1);
-        return { code: 0, stdout: "Removed", stderr: "", killed: false };
-      }
-
-      return { code: 0, stdout: "", stderr: "", killed: false };
+  const removals: { source: string; scope: "global" | "project" }[] = [];
+  const restoreCatalog = mockPackageCatalog({
+    packages: [
+      { source: "/opt/extensions/Foo/index.ts", name: "index.ts", scope: "global" },
+      { source: "/opt/extensions/foo/index.ts", name: "index.ts", scope: "global" },
+    ],
+    removeImpl: (source, scope) => {
+      removals.push({ source, scope });
     },
   });
 
-  await removePackage("/opt/extensions/foo/index.ts", ctx, pi);
+  try {
+    const { pi, ctx } = createMockHarness();
+    await removePackage("/opt/extensions/foo/index.ts", ctx, pi);
+  } finally {
+    restoreCatalog();
+  }
 
-  const removeCalls = calls.filter((c) => c.command === "pi" && c.args[0] === "remove");
-  assert.equal(removeCalls.length, 1);
-  assert.deepEqual(removeCalls[0]?.args, ["remove", "/opt/extensions/foo/index.ts"]);
+  assert.deepEqual(removals, [{ source: "/opt/extensions/foo/index.ts", scope: "global" }]);
 });
 
-void test("updatePackage treats case-variant already-up-to-date output as no-op", async () => {
+void test("updatePackage treats missing available updates as a no-op", async () => {
   const output: string[] = [];
   const originalLog = console.log;
   console.log = (...args: unknown[]) => {
@@ -227,26 +218,10 @@ void test("updatePackage treats case-variant already-up-to-date output as no-op"
   };
 
   let autoUpdateEntries: unknown[] = [];
+  const restoreCatalog = mockPackageCatalog({ updates: [] });
 
   try {
-    const { pi, ctx, entries } = createMockHarness({
-      execImpl: (command, args) => {
-        if (command === "pi" && args[0] === "update") {
-          return {
-            code: 0,
-            stdout: "Already up to date",
-            stderr: "",
-            killed: false,
-          };
-        }
-
-        if (command === "pi" && args[0] === "list") {
-          return { code: 0, stdout: "No packages installed", stderr: "", killed: false };
-        }
-
-        return { code: 0, stdout: "", stderr: "", killed: false };
-      },
-    });
+    const { pi, ctx, entries } = createMockHarness();
 
     entries.push({
       type: "custom",
@@ -265,6 +240,7 @@ void test("updatePackage treats case-variant already-up-to-date output as no-op"
       .filter((entry) => entry.customType === "extmgr-auto-update")
       .map((entry) => entry.data);
   } finally {
+    restoreCatalog();
     console.log = originalLog;
   }
 
@@ -279,31 +255,30 @@ void test("updatePackage treats case-variant already-up-to-date output as no-op"
   assert.deepEqual(latestAutoUpdate?.updatesAvailable ?? [], []);
 });
 
-void test("updatePackage does not treat pinned dependency messages as no-op", async () => {
+void test("updatePackage reloads after a real update", async () => {
   const output: string[] = [];
   const originalLog = console.log;
   console.log = (...args: unknown[]) => {
     output.push(args.map(String).join(" "));
   };
 
-  try {
-    const { pi, ctx } = createMockHarness({
-      execImpl: (command, args) => {
-        if (command === "pi" && args[0] === "update") {
-          return {
-            code: 0,
-            stdout: "Updated npm:pi-extmgr\npinned dependency foo skipped",
-            stderr: "",
-            killed: false,
-          };
-        }
-
-        return { code: 0, stdout: "", stderr: "", killed: false };
+  const restoreCatalog = mockPackageCatalog({
+    updates: [
+      {
+        source: "npm:pi-extmgr@1.0.0",
+        displayName: "pi-extmgr",
+        type: "npm",
+        scope: "global",
       },
-    });
+    ],
+    updateImpl: () => undefined,
+  });
 
+  try {
+    const { pi, ctx } = createMockHarness();
     await updatePackage("npm:pi-extmgr", ctx, pi);
   } finally {
+    restoreCatalog();
     console.log = originalLog;
   }
 
@@ -313,7 +288,7 @@ void test("updatePackage does not treat pinned dependency messages as no-op", as
   );
 });
 
-void test("updatePackages treats case-variant already-up-to-date output as no-op", async () => {
+void test("updatePackages treats no available updates as a no-op", async () => {
   const output: string[] = [];
   const originalLog = console.log;
   console.log = (...args: unknown[]) => {
@@ -322,26 +297,10 @@ void test("updatePackages treats case-variant already-up-to-date output as no-op
 
   let autoUpdateEntries: unknown[] = [];
   let historyEntries: unknown[] = [];
+  const restoreCatalog = mockPackageCatalog({ updates: [] });
 
   try {
-    const { pi, ctx, entries } = createMockHarness({
-      execImpl: (command, args) => {
-        if (command === "pi" && args[0] === "update") {
-          return {
-            code: 0,
-            stdout: "All packages are Already Up To Date",
-            stderr: "",
-            killed: false,
-          };
-        }
-
-        if (command === "pi" && args[0] === "list") {
-          return { code: 0, stdout: "No packages installed", stderr: "", killed: false };
-        }
-
-        return { code: 0, stdout: "", stderr: "", killed: false };
-      },
-    });
+    const { pi, ctx, entries } = createMockHarness();
 
     entries.push({
       type: "custom",
@@ -363,6 +322,7 @@ void test("updatePackages treats case-variant already-up-to-date output as no-op
       .filter((entry) => entry.customType === "extmgr-change")
       .map((entry) => entry.data);
   } finally {
+    restoreCatalog();
     console.log = originalLog;
   }
 
@@ -385,30 +345,40 @@ void test("updatePackages treats case-variant already-up-to-date output as no-op
 });
 
 void test("updatePackages logs failure in history", async () => {
-  const { pi, ctx, entries } = createMockHarness({
-    execImpl: (command, args) => {
-      if (command === "pi" && args[0] === "update") {
-        return { code: 1, stdout: "", stderr: "network timeout", killed: false };
-      }
-
-      return { code: 0, stdout: "", stderr: "", killed: false };
+  const restoreCatalog = mockPackageCatalog({
+    updates: [
+      {
+        source: "npm:pi-extmgr@1.0.0",
+        displayName: "pi-extmgr",
+        type: "npm",
+        scope: "global",
+      },
+    ],
+    updateImpl: () => {
+      throw new Error("network timeout");
     },
   });
 
-  await updatePackages(ctx, pi);
+  try {
+    const { pi, ctx, entries } = createMockHarness();
 
-  const historyEntries = entries
-    .filter((entry) => entry.customType === "extmgr-change")
-    .map((entry) => entry.data);
+    await updatePackages(ctx, pi);
 
-  const latestHistory = historyEntries[historyEntries.length - 1] as
-    | { action?: string; success?: boolean; packageName?: string; error?: string }
-    | undefined;
+    const historyEntries = entries
+      .filter((entry) => entry.customType === "extmgr-change")
+      .map((entry) => entry.data);
 
-  assert.equal(latestHistory?.action, "package_update");
-  assert.equal(latestHistory?.success, false);
-  assert.equal(latestHistory?.packageName, "all packages");
-  assert.match(latestHistory?.error ?? "", /network timeout/i);
+    const latestHistory = historyEntries[historyEntries.length - 1] as
+      | { action?: string; success?: boolean; packageName?: string; error?: string }
+      | undefined;
+
+    assert.equal(latestHistory?.action, "package_update");
+    assert.equal(latestHistory?.success, false);
+    assert.equal(latestHistory?.packageName, "all packages");
+    assert.match(latestHistory?.error ?? "", /network timeout/i);
+  } finally {
+    restoreCatalog();
+  }
 });
 
 void test("installPackageLocally removes temporary extraction artifacts after success", async () => {

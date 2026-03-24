@@ -3,7 +3,6 @@ import assert from "node:assert/strict";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { parseInstalledPackagesOutput } from "../src/packages/discovery.js";
 import type { ExtensionEntry, InstalledPackage } from "../src/types/index.js";
 import { buildUnifiedItems } from "../src/ui/unified.js";
 
@@ -110,9 +109,9 @@ void test("buildUnifiedItems keeps case-sensitive POSIX paths distinct", () => {
 });
 
 void test("buildUnifiedItems uses the project-winning package metadata for duplicates", () => {
-  const installed = parseInstalledPackagesOutput(
-    ["Global:", "  npm:demo@1.0.0", "Project:", "  npm:demo@2.0.0", ""].join("\n")
-  );
+  const installed: InstalledPackage[] = [
+    { source: "npm:demo@2.0.0", name: "demo", version: "2.0.0", scope: "project" },
+  ];
 
   const items = buildUnifiedItems([], installed, new Set());
   const packageRow = items.find((item) => item.type === "package");
@@ -166,16 +165,23 @@ void test("integration: pi list fixture with single-entry npm packages renders p
     );
     await writeFile(join(shittyPromptRoot, "extensions", "index.ts"), "// prompt\n", "utf8");
 
-    const listOutput = [
-      "User packages:",
-      `  npm:pi-extmgr@0.1.12`,
-      `    ${extmgrRoot}`,
-      `  npm:shitty-prompt@0.0.1`,
-      `    ${shittyPromptRoot}`,
-      "",
-    ].join("\n");
+    const installed: InstalledPackage[] = [
+      {
+        source: "npm:pi-extmgr@0.1.12",
+        name: "pi-extmgr",
+        version: "0.1.12",
+        scope: "global",
+        resolvedPath: extmgrRoot,
+      },
+      {
+        source: "npm:shitty-prompt@0.0.1",
+        name: "shitty-prompt",
+        version: "0.0.1",
+        scope: "global",
+        resolvedPath: shittyPromptRoot,
+      },
+    ];
 
-    const installed = parseInstalledPackagesOutput(listOutput);
     const items = buildUnifiedItems([], installed, new Set());
 
     assert.equal(installed.length, 2);

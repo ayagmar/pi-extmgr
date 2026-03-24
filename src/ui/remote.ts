@@ -18,6 +18,7 @@ import { installPackage, installPackageLocally } from "../packages/install.js";
 import { execNpm } from "../utils/npm-exec.js";
 import { notify } from "../utils/notify.js";
 import { requireCustomUI, runCustomUI } from "../utils/mode.js";
+import { runTaskWithLoader } from "./async-task.js";
 
 interface PackageInfoCacheEntry {
   timestamp: number;
@@ -114,14 +115,18 @@ function formatCount(value: number | undefined): string {
   return new Intl.NumberFormat().format(value);
 }
 
-async function fetchWeeklyDownloads(packageName: string): Promise<number | undefined> {
+async function fetchWeeklyDownloads(
+  packageName: string,
+  signal?: AbortSignal
+): Promise<number | undefined> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), TIMEOUTS.weeklyDownloads);
+  const combinedSignal = signal ? AbortSignal.any([signal, controller.signal]) : controller.signal;
 
   try {
     const encoded = encodeURIComponent(packageName);
     const res = await fetch(`https://api.npmjs.org/downloads/point/last-week/${encoded}`, {
-      signal: controller.signal,
+      signal: combinedSignal,
     });
 
     if (!res.ok) return undefined;
@@ -137,7 +142,8 @@ async function fetchWeeklyDownloads(packageName: string): Promise<number | undef
 async function buildPackageInfoText(
   packageName: string,
   ctx: ExtensionCommandContext,
-  pi: ExtensionAPI
+  pi: ExtensionAPI,
+  signal?: AbortSignal
 ): Promise<string> {
   // Check cache first
   const cached = packageInfoCache.get(packageName);
@@ -148,8 +154,9 @@ async function buildPackageInfoText(
   const [infoRes, weeklyDownloads] = await Promise.all([
     execNpm(pi, ["view", packageName, "--json"], ctx, {
       timeout: TIMEOUTS.npmView,
+      ...(signal ? { signal } : {}),
     }),
-    fetchWeeklyDownloads(packageName),
+    fetchWeeklyDownloads(packageName, signal),
   ]);
 
   if (infoRes.code !== 0) {
@@ -349,17 +356,32 @@ export async function browseRemotePackages(
   // Check cache first
   let allPackages: NpmPackage[] = [];
 
-  if (isCacheValid(query) && offset > 0) {
+  if (isCacheValid(query)) {
     const cache = getSearchCache();
-    if (cache) allPackages = cache.results;
-  } else {
-    // Show searching notification
-    ctx.ui.notify(`Searching npm for: ${truncate(query, 40)}...`, "info");
+    if (cache) {
+      allPackages = cache.results;
+    }
+  }
 
-    // Perform search
-    allPackages = await searchNpmPackages(query, ctx, pi);
+  if (allPackages.length === 0) {
+    const results = await runTaskWithLoader(
+      ctx,
+      {
+        title: "Remote Packages",
+        message: `Searching npm for ${truncate(query, 40)}...`,
+      },
+      async ({ signal, setMessage }) => {
+        setMessage(`Searching npm for ${truncate(query, 40)}...`);
+        return searchNpmPackages(query, ctx, { signal });
+      }
+    );
 
-    // Cache results for pagination
+    if (!results) {
+      notify(ctx, "Remote package search was cancelled.", "info");
+      return;
+    }
+
+    allPackages = results;
     setSearchCache({
       query,
       results: allPackages,
@@ -451,7 +473,20 @@ async function showPackageDetails(
       return;
     case "viewInfo":
       try {
-        const text = await buildPackageInfoText(packageName, ctx, pi);
+        const text = await runTaskWithLoader(
+          ctx,
+          {
+            title: packageName,
+            message: `Fetching package details for ${packageName}...`,
+          },
+          ({ signal }) => buildPackageInfoText(packageName, ctx, pi, signal)
+        );
+
+        if (!text) {
+          notify(ctx, `Loading ${packageName} details was cancelled.`, "info");
+          return;
+        }
+
         ctx.ui.notify(text, "info");
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);

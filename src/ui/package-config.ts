@@ -21,6 +21,7 @@ import {
 import { notify } from "../utils/notify.js";
 import { logExtensionToggle } from "../utils/history.js";
 import { requireCustomUI, runCustomUI } from "../utils/mode.js";
+import { runTaskWithLoader } from "./async-task.js";
 import { getPackageSourceKind } from "../utils/package-source.js";
 import { getSettingsListSelectedIndex } from "../utils/settings-list.js";
 import { fileExists } from "../utils/fs.js";
@@ -329,8 +330,32 @@ export async function configurePackageExtensions(
     return { changed: 0, reloaded: false };
   }
 
-  const discovered = await discoverPackageExtensions([pkg], ctx.cwd);
-  const rows = await buildPackageConfigRows(discovered);
+  let initialData: { rows: PackageConfigRow[] } | undefined;
+  try {
+    initialData = await runTaskWithLoader(
+      ctx,
+      {
+        title: `Configure ${pkg.name}`,
+        message: "Discovering package extensions...",
+        cancellable: false,
+      },
+      async () => {
+        const discovered = await discoverPackageExtensions([pkg], ctx.cwd);
+        const rows = await buildPackageConfigRows(discovered);
+        return { rows };
+      }
+    );
+  } catch (error) {
+    notify(ctx, error instanceof Error ? error.message : String(error), "error");
+    return { changed: 0, reloaded: false };
+  }
+
+  if (!initialData) {
+    notify(ctx, "Package extension configuration requires the full interactive TUI.", "warning");
+    return { changed: 0, reloaded: false };
+  }
+
+  const { rows } = initialData;
 
   if (rows.length === 0) {
     notify(ctx, "No configurable extensions discovered for this package.", "info");

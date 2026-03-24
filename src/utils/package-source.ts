@@ -100,3 +100,54 @@ export function splitGitRepoAndRef(gitSpec: string): { repo: string; ref?: strin
 
   return { repo: gitSpec.slice(0, lastAt), ref: tail };
 }
+
+function extractGitPackageName(repoSpec: string): string {
+  if (repoSpec.startsWith("git@")) {
+    const afterColon = repoSpec.split(":").slice(1).join(":");
+    if (afterColon) {
+      const last = afterColon.split("/").pop() || afterColon;
+      return last.replace(/\.git$/i, "") || repoSpec;
+    }
+  }
+
+  try {
+    const url = new URL(repoSpec);
+    const last = url.pathname.split("/").filter(Boolean).pop();
+    if (last) {
+      return last.replace(/\.git$/i, "") || repoSpec;
+    }
+  } catch {
+    // Fall back to generic path splitting below.
+  }
+
+  const last = repoSpec.split(/[/:]/).filter(Boolean).pop();
+  return (last ? last.replace(/\.git$/i, "") : repoSpec) || repoSpec;
+}
+
+export function parsePackageNameAndVersion(fullSource: string): {
+  name: string;
+  version?: string | undefined;
+} {
+  const parsedNpm = parseNpmSource(fullSource);
+  if (parsedNpm) {
+    return parsedNpm;
+  }
+
+  const sourceKind = getPackageSourceKind(fullSource);
+  if (sourceKind === "git") {
+    const gitSpec = stripGitSourcePrefix(fullSource);
+    const { repo } = splitGitRepoAndRef(gitSpec);
+    return { name: extractGitPackageName(repo) };
+  }
+
+  if (fullSource.includes("node_modules/")) {
+    const nmMatch = fullSource.match(/node_modules\/(.+)$/);
+    if (nmMatch?.[1]) {
+      return { name: nmMatch[1] };
+    }
+  }
+
+  const pathParts = fullSource.split(/[\\/]/);
+  const fileName = pathParts[pathParts.length - 1];
+  return { name: fileName || fullSource };
+}

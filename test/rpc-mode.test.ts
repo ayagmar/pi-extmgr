@@ -7,9 +7,15 @@ import { runResolvedCommand } from "../src/commands/registry.js";
 import { showRemote } from "../src/ui/remote.js";
 import { configurePackageExtensions } from "../src/ui/package-config.js";
 import { createMockHarness } from "./helpers/mocks.js";
+import { mockPackageCatalog } from "./helpers/package-catalog.js";
 
 void test("/extensions falls back cleanly when custom TUI is unavailable", async () => {
   const cwd = await mkdtemp(join(tmpdir(), "pi-extmgr-rpc-"));
+  const restoreCatalog = mockPackageCatalog({
+    packages: [
+      { source: "npm:demo-pkg@1.0.0", name: "demo-pkg", version: "1.0.0", scope: "global" },
+    ],
+  });
 
   try {
     const { pi, ctx, notifications, customCallCount } = createMockHarness({
@@ -17,15 +23,6 @@ void test("/extensions falls back cleanly when custom TUI is unavailable", async
       hasUI: true,
       hasCustomUI: false,
       execImpl: (command, args) => {
-        if (command === "pi" && args[0] === "list") {
-          return {
-            code: 0,
-            stdout: "Global:\n  npm:demo-pkg@1.0.0\n",
-            stderr: "",
-            killed: false,
-          };
-        }
-
         if (command === "npm" && args[0] === "view" && args[2] === "description") {
           return { code: 0, stdout: '"demo package"', stderr: "", killed: false };
         }
@@ -46,27 +43,24 @@ void test("/extensions falls back cleanly when custom TUI is unavailable", async
     );
     assert.ok(notifications.some((entry) => entry.message.includes("demo-pkg")));
   } finally {
+    restoreCatalog();
     await rm(cwd, { recursive: true, force: true });
   }
 });
 
 void test("/extensions falls back when custom() degrades to undefined", async () => {
   const cwd = await mkdtemp(join(tmpdir(), "pi-extmgr-rpc-custom-"));
+  const restoreCatalog = mockPackageCatalog({
+    packages: [
+      { source: "npm:demo-pkg@1.0.0", name: "demo-pkg", version: "1.0.0", scope: "global" },
+    ],
+  });
 
   try {
     const { pi, ctx, notifications, customCallCount } = createMockHarness({
       cwd,
       hasUI: true,
       execImpl: (command, args) => {
-        if (command === "pi" && args[0] === "list") {
-          return {
-            code: 0,
-            stdout: "Global:\n  npm:demo-pkg@1.0.0\n",
-            stderr: "",
-            killed: false,
-          };
-        }
-
         if (command === "npm" && args[0] === "view" && args[2] === "description") {
           return { code: 0, stdout: '"demo package"', stderr: "", killed: false };
         }
@@ -87,40 +81,42 @@ void test("/extensions falls back when custom() degrades to undefined", async ()
     );
     assert.ok(notifications.some((entry) => entry.message.includes("demo-pkg")));
   } finally {
+    restoreCatalog();
     await rm(cwd, { recursive: true, force: true });
   }
 });
 
 void test("/extensions installed lists packages without custom TUI", async () => {
-  const { pi, ctx, notifications, customCallCount } = createMockHarness({
-    hasUI: true,
-    hasCustomUI: false,
-    execImpl: (command, args) => {
-      if (command === "pi" && args[0] === "list") {
-        return {
-          code: 0,
-          stdout: "Project:\n  npm:demo-pkg@1.0.0\n",
-          stderr: "",
-          killed: false,
-        };
-      }
-
-      if (command === "npm" && args[0] === "view" && args[2] === "description") {
-        return { code: 0, stdout: '"demo package"', stderr: "", killed: false };
-      }
-
-      if (command === "npm" && args[0] === "view" && args[2] === "dist.unpackedSize") {
-        return { code: 0, stdout: "1024", stderr: "", killed: false };
-      }
-
-      return { code: 0, stdout: "", stderr: "", killed: false };
-    },
+  const restoreCatalog = mockPackageCatalog({
+    packages: [
+      { source: "npm:demo-pkg@1.0.0", name: "demo-pkg", version: "1.0.0", scope: "project" },
+    ],
   });
 
-  await runResolvedCommand({ id: "installed", args: [] }, ctx, pi);
+  try {
+    const { pi, ctx, notifications, customCallCount } = createMockHarness({
+      hasUI: true,
+      hasCustomUI: false,
+      execImpl: (command, args) => {
+        if (command === "npm" && args[0] === "view" && args[2] === "description") {
+          return { code: 0, stdout: '"demo package"', stderr: "", killed: false };
+        }
 
-  assert.equal(customCallCount(), 0);
-  assert.ok(notifications.some((entry) => entry.message.includes("demo-pkg")));
+        if (command === "npm" && args[0] === "view" && args[2] === "dist.unpackedSize") {
+          return { code: 0, stdout: "1024", stderr: "", killed: false };
+        }
+
+        return { code: 0, stdout: "", stderr: "", killed: false };
+      },
+    });
+
+    await runResolvedCommand({ id: "installed", args: [] }, ctx, pi);
+
+    assert.equal(customCallCount(), 0);
+    assert.ok(notifications.some((entry) => entry.message.includes("demo-pkg")));
+  } finally {
+    restoreCatalog();
+  }
 });
 
 void test("remote browsing warns instead of calling custom UI in RPC mode", async () => {
@@ -140,22 +136,30 @@ void test("remote browsing warns instead of calling custom UI in RPC mode", asyn
 });
 
 void test("remote install prompt still works without custom TUI", async () => {
-  const { pi, ctx, calls, customCallCount, inputPrompts } = createMockHarness({
-    hasUI: true,
-    hasCustomUI: false,
-    inputResult: "npm:demo-pkg",
-    selectResult: "Global (~/.pi/agent/settings.json)",
-    confirmImpl: (title) => title === "Install Package",
+  const installs: { source: string; scope: "global" | "project" }[] = [];
+  const restoreCatalog = mockPackageCatalog({
+    installImpl: (source, scope) => {
+      installs.push({ source, scope });
+    },
   });
 
-  await showRemote("install", ctx, pi);
+  try {
+    const { pi, ctx, customCallCount, inputPrompts } = createMockHarness({
+      hasUI: true,
+      hasCustomUI: false,
+      inputResult: "npm:demo-pkg",
+      selectResult: "Global (~/.pi/agent/settings.json)",
+      confirmImpl: (title) => title === "Install Package",
+    });
 
-  assert.equal(customCallCount(), 0);
-  assert.ok(inputPrompts.includes("Install package"));
+    await showRemote("install", ctx, pi);
 
-  const installCalls = calls.filter((call) => call.command === "pi" && call.args[0] === "install");
-  assert.equal(installCalls.length, 1);
-  assert.deepEqual(installCalls[0]?.args, ["install", "npm:demo-pkg"]);
+    assert.equal(customCallCount(), 0);
+    assert.ok(inputPrompts.includes("Install package"));
+    assert.deepEqual(installs, [{ source: "npm:demo-pkg", scope: "global" }]);
+  } finally {
+    restoreCatalog();
+  }
 });
 
 void test("package config handles custom() degrading to undefined", async () => {

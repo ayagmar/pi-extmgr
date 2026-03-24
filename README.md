@@ -38,10 +38,11 @@ Requires Node.js `>=22.5.0`.
   - npm search/browse with pagination
   - Install by source (`npm:`, `git:`, `https://`, `ssh://`, `git@...`, local path)
   - Supports direct GitHub `.ts` installs and standalone local install for self-contained packages
+  - Long-running discovery/detail screens now show dedicated loading UI, and cancellable reads can be aborted with `Esc`
 - **Auto-update**
   - Interactive wizard (`t` in manager, or `/extensions auto-update`)
   - Persistent schedule restored on startup and session switch
-  - Background checks + status bar updates for installed npm packages
+  - Background checks + status bar updates for installed npm + git packages
 - **Operational visibility**
   - Session history (`/extensions history`)
   - Cache controls (`/extensions clear-cache` clears persistent + runtime extmgr caches)
@@ -159,7 +160,7 @@ Examples:
   - **Managed** (npm): Auto-updates with `pi update`, stored in pi's package cache, supports Pi package manifest/convention loading
   - **Local** (standalone): Copies to `~/.pi/agent/extensions/{package}/`, so it only accepts runnable standalone layouts (manifest-declared/root entrypoints), requires `tar` on `PATH`, and rejects packages whose runtime `dependencies` are not already bundled with the package contents
 - **Auto-update schedule is persistent**: `/extensions auto-update 1d` stays active across future Pi sessions and is restored when switching sessions.
-- **Auto-update coverage is npm-only today**: extmgr checks update availability for managed npm packages; git/local installs are not included in the background update badge yet.
+- **Auto-update/update badges cover npm + git packages**: extmgr now uses pi's package manager APIs for structured update detection instead of parsing `pi list` output.
 - **Settings/cache writes are hardened**: extmgr serializes writes and uses safe file replacement to reduce JSON corruption issues.
 - **Invalid JSON is handled safely**: malformed `auto-update.json` / metadata cache files are backed up and reset; invalid `.pi/settings.json` is not overwritten during package-extension toggles.
 - **Reload is built-in**: When extmgr asks to reload, it calls `ctx.reload()` directly.

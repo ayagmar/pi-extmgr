@@ -6,14 +6,16 @@ import type {
   ExtensionCommandContext,
   ExtensionContext,
 } from "@mariozechner/pi-coding-agent";
-import { getInstalledPackages } from "../packages/discovery.js";
+import { getPackageCatalog, type PackageCatalog } from "../packages/catalog.js";
 import { getAutoUpdateStatus } from "./auto-update.js";
 import { normalizePackageIdentity } from "./package-source.js";
 import { getAutoUpdateConfigAsync, saveAutoUpdateConfig } from "./settings.js";
 
+type CatalogInstalledPackages = Awaited<ReturnType<PackageCatalog["listInstalledPackages"]>>;
+
 function filterStaleUpdates(
   knownUpdates: string[],
-  installedPackages: Awaited<ReturnType<typeof getInstalledPackages>>
+  installedPackages: CatalogInstalledPackages
 ): string[] {
   const installedIdentities = new Set(
     installedPackages.map((pkg) =>
@@ -34,7 +36,7 @@ export async function updateExtmgrStatus(
 
   try {
     const [packages, autoUpdateConfig] = await Promise.all([
-      getInstalledPackages(ctx, pi),
+      getPackageCatalog(ctx.cwd).listInstalledPackages(),
       getAutoUpdateConfigAsync(ctx),
     ]);
     const statusParts: string[] = [];

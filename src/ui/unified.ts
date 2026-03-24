@@ -29,6 +29,7 @@ import {
 } from "../packages/management.js";
 import { showRemote } from "./remote.js";
 import { showHelp } from "./help.js";
+import { runTaskWithLoader } from "./async-task.js";
 import { formatEntry as formatExtEntry, dynamicTruncate, formatBytes } from "../utils/format.js";
 import {
   getStatusIcon,
@@ -43,6 +44,7 @@ import { getKnownUpdates, promptAutoUpdateWizard } from "../utils/auto-update.js
 import { updateExtmgrStatus } from "../utils/status.js";
 import { parseChoiceByLabel } from "../utils/command.js";
 import { notify } from "../utils/notify.js";
+import { confirmReload } from "../utils/ui-helpers.js";
 import { getPackageSourceKind, normalizePackageIdentity } from "../utils/package-source.js";
 import { hasCustomUI, runCustomUI } from "../utils/mode.js";
 import { getSettingsListSelectedIndex } from "../utils/settings-list.js";
@@ -82,11 +84,46 @@ async function showInteractiveOnce(
   ctx: ExtensionCommandContext,
   pi: ExtensionAPI
 ): Promise<boolean> {
-  // Load local extensions and installed packages.
-  const [localEntries, installedPackages] = await Promise.all([
-    discoverExtensions(ctx.cwd),
-    getInstalledPackages(ctx, pi),
-  ]);
+  const initialData = await runTaskWithLoader(
+    ctx,
+    {
+      title: "Extensions Manager",
+      message: "Loading extensions and packages...",
+    },
+    async ({ signal, setMessage }) => {
+      const localEntriesPromise = discoverExtensions(ctx.cwd);
+      const installedPackagesPromise = getInstalledPackages(
+        ctx,
+        pi,
+        (current, total) => {
+          if (total <= 0) {
+            return;
+          }
+          setMessage(`Loading package metadata... ${current}/${total}`);
+        },
+        signal
+      );
+
+      const [localEntries, installedPackages] = await Promise.all([
+        localEntriesPromise,
+        installedPackagesPromise,
+      ]);
+
+      return { localEntries, installedPackages };
+    }
+  );
+
+  if (!initialData) {
+    notify(
+      ctx,
+      "The unified extensions manager requires the full interactive TUI. Showing read-only local and installed package lists instead.",
+      "warning"
+    );
+    await showInteractiveFallback(ctx, pi);
+    return true;
+  }
+
+  const { localEntries, installedPackages } = initialData;
 
   // Build unified items list.
   const knownUpdates = getKnownUpdates(ctx);
@@ -498,7 +535,7 @@ async function applyToggleChangesFromManager(
       );
 
       if (shouldReload) {
-        await (ctx as ExtensionCommandContext & { reload: () => Promise<void> }).reload();
+        await ctx.reload();
         return { changed: apply.changed, reloaded: true };
       }
     } else {
@@ -768,12 +805,8 @@ async function handleUnifiedAction(
         "info"
       );
 
-      const shouldReload = await ctx.ui.confirm(
-        "Reload Recommended",
-        "Extension removed. Reload pi now?"
-      );
-      if (shouldReload) {
-        await (ctx as ExtensionCommandContext & { reload: () => Promise<void> }).reload();
+      const reloaded = await confirmReload(ctx, "Extension removed.");
+      if (reloaded) {
         return true;
       }
 

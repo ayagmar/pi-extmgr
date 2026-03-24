@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { initTheme } from "@mariozechner/pi-coding-agent";
+import { initTheme, type Theme } from "@mariozechner/pi-coding-agent";
 import { configurePackageExtensions } from "../src/ui/package-config.js";
 import { showInteractive } from "../src/ui/unified.js";
 import { createMockHarness } from "./helpers/mocks.js";
@@ -11,6 +11,57 @@ import { createMockHarness } from "./helpers/mocks.js";
 initTheme();
 
 const noop = (): undefined => undefined;
+
+async function captureCustomComponent(
+  factory: unknown,
+  ctxTheme: Theme,
+  matcher: (lines: string[]) => boolean,
+  onMatch: (
+    component: {
+      render(width: number): string[];
+      handleInput?(data: string): void;
+      dispose?(): void;
+    },
+    lines: string[]
+  ) => unknown
+): Promise<unknown> {
+  let doneValue: unknown;
+  const done = (value: unknown) => {
+    doneValue = value;
+  };
+
+  const component = await (
+    factory as (
+      tui: unknown,
+      theme: unknown,
+      keybindings: unknown,
+      done: (result: unknown) => void
+    ) =>
+      | Promise<{
+          render(width: number): string[];
+          handleInput?(data: string): void;
+          dispose?(): void;
+        }>
+      | {
+          render(width: number): string[];
+          handleInput?(data: string): void;
+          dispose?(): void;
+        }
+  )({ requestRender: noop, terminal: { rows: 40, columns: 120 } }, ctxTheme, {}, done);
+
+  const lines = component.render(120);
+  if (!matcher(lines)) {
+    for (let attempt = 0; attempt < 20 && doneValue === undefined; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+    component.dispose?.();
+    return doneValue;
+  }
+
+  const result = await onMatch(component, lines);
+  component.dispose?.();
+  return result;
+}
 
 async function createPackageWithExtensions(root: string, count: number): Promise<void> {
   await mkdir(join(root, "extensions"), { recursive: true });
@@ -38,26 +89,18 @@ void test("package extension config does not start filtering on plain typing", a
     let beforeTyping: string[] = [];
     let afterTyping: string[] = [];
 
-    (ctx.ui as { custom: (...args: unknown[]) => Promise<unknown> }).custom = async (factory) => {
-      const component = await (
-        factory as (
-          tui: unknown,
-          theme: unknown,
-          keybindings: unknown,
-          done: (result: unknown) => void
-        ) =>
-          | Promise<{ render(width: number): string[]; handleInput?(data: string): void }>
-          | {
-              render(width: number): string[];
-              handleInput?(data: string): void;
-            }
-      )({ requestRender: noop, terminal: { rows: 40, columns: 120 } }, ctx.ui.theme, {}, noop);
-
-      beforeTyping = component.render(120);
-      component.handleInput?.("z");
-      afterTyping = component.render(120);
-      return { type: "cancel" };
-    };
+    (ctx.ui as { custom: (factory: unknown) => Promise<unknown> }).custom = async (factory) =>
+      captureCustomComponent(
+        factory,
+        ctx.ui.theme,
+        (lines) => lines.some((line) => line.includes("Configure extensions: demo")),
+        (component, lines) => {
+          beforeTyping = lines;
+          component.handleInput?.("z");
+          afterTyping = component.render(120);
+          return { type: "cancel" };
+        }
+      );
 
     const result = await configurePackageExtensions(
       {
@@ -98,26 +141,18 @@ void test("/extensions manager does not start filtering on plain typing", async 
     let beforeTyping: string[] = [];
     let afterTyping: string[] = [];
 
-    (ctx.ui as { custom: (...args: unknown[]) => Promise<unknown> }).custom = async (factory) => {
-      const component = await (
-        factory as (
-          tui: unknown,
-          theme: unknown,
-          keybindings: unknown,
-          done: (result: unknown) => void
-        ) =>
-          | Promise<{ render(width: number): string[]; handleInput?(data: string): void }>
-          | {
-              render(width: number): string[];
-              handleInput?(data: string): void;
-            }
-      )({ requestRender: noop, terminal: { rows: 40, columns: 120 } }, ctx.ui.theme, {}, noop);
-
-      beforeTyping = component.render(120);
-      component.handleInput?.("z");
-      afterTyping = component.render(120);
-      return { type: "cancel" };
-    };
+    (ctx.ui as { custom: (factory: unknown) => Promise<unknown> }).custom = async (factory) =>
+      captureCustomComponent(
+        factory,
+        ctx.ui.theme,
+        (lines) => lines.some((line) => line.includes("Space/Enter toggle local")),
+        (component, lines) => {
+          beforeTyping = lines;
+          component.handleInput?.("z");
+          afterTyping = component.render(120);
+          return { type: "cancel" };
+        }
+      );
 
     await showInteractive(ctx, pi);
 

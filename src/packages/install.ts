@@ -4,17 +4,22 @@
 import { mkdir, rm, writeFile, cp } from "node:fs/promises";
 import { join } from "node:path";
 import { homedir } from "node:os";
-import type { ExtensionAPI, ExtensionCommandContext } from "@mariozechner/pi-coding-agent";
+import type {
+  ExtensionAPI,
+  ExtensionCommandContext,
+  ProgressEvent,
+} from "@mariozechner/pi-coding-agent";
 import { normalizePackageSource } from "../utils/format.js";
 import { fileExists } from "../utils/fs.js";
-import { clearSearchCache, isSourceInstalled } from "./discovery.js";
+import { clearSearchCache } from "./discovery.js";
+import { getPackageCatalog } from "./catalog.js";
 import { discoverPackageExtensionEntrypoints, readPackageManifest } from "./extensions.js";
-import { waitForCondition } from "../utils/retry.js";
 import { logPackageInstall } from "../utils/history.js";
 import { clearUpdatesAvailable } from "../utils/settings.js";
 import { notify, error as notifyError, success } from "../utils/notify.js";
 import { confirmAction, confirmReload, showProgress } from "../utils/ui-helpers.js";
 import { tryOperation } from "../utils/mode.js";
+import { runTaskWithLoader } from "../ui/async-task.js";
 import { updateExtmgrStatus } from "../utils/status.js";
 import { execNpm } from "../utils/npm-exec.js";
 import { normalizePackageIdentity } from "../utils/package-source.js";
@@ -25,6 +30,10 @@ export type InstallScope = "global" | "project";
 
 export interface InstallOptions {
   scope?: InstallScope;
+}
+
+function getProgressMessage(event: ProgressEvent, fallback: string): string {
+  return event.message?.trim() || fallback;
 }
 
 async function resolveInstallScope(
@@ -195,11 +204,24 @@ export async function installPackage(
 
   showProgress(ctx, "Installing", normalized);
 
-  const args = ["install", ...(scope === "project" ? ["-l"] : []), normalized];
-  const res = await pi.exec("pi", args, { timeout: TIMEOUTS.packageInstall, cwd: ctx.cwd });
-
-  if (res.code !== 0) {
-    const errorMsg = `Install failed:\n${res.stderr || res.stdout || `exit ${res.code}`}`;
+  try {
+    await runTaskWithLoader(
+      ctx,
+      {
+        title: "Install Package",
+        message: `Installing ${normalized}...`,
+        cancellable: false,
+      },
+      async ({ setMessage }) => {
+        await getPackageCatalog(ctx.cwd).install(normalized, scope, (event) => {
+          setMessage(getProgressMessage(event, `Installing ${normalized}...`));
+        });
+        return undefined;
+      }
+    );
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    const errorMsg = `Install failed:\n${message}`;
     logPackageInstall(pi, normalized, normalized, undefined, scope, false, errorMsg);
     notifyError(ctx, errorMsg);
     void updateExtmgrStatus(ctx, pi);
@@ -210,24 +232,6 @@ export async function installPackage(
   logPackageInstall(pi, normalized, normalized, undefined, scope, true);
   success(ctx, `Installed ${normalized} (${scope})`);
   clearUpdatesAvailable(pi, ctx, [normalizePackageIdentity(normalized)]);
-
-  // Wait for the extension to be discoverable before reloading.
-  // This prevents a race condition where ctx.reload() runs before
-  // settings.json or extension files are fully flushed to disk.
-  notify(ctx, "Waiting for extension to be ready...", "info");
-  const isReady = await waitForCondition(() => isSourceInstalled(normalized, ctx, pi, { scope }), {
-    maxAttempts: 10,
-    delayMs: 100,
-    backoff: "exponential",
-  });
-
-  if (!isReady) {
-    notify(
-      ctx,
-      "Extension may not be immediately available. Reload pi manually if needed.",
-      "warning"
-    );
-  }
 
   const reloaded = await confirmReload(ctx, "Package installed.");
   if (!reloaded) {

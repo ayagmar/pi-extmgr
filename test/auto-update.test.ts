@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import extensionsManager from "../src/index.js";
+import { setPackageCatalogFactory } from "../src/packages/catalog.js";
 import {
   checkForUpdates,
   enableAutoUpdate,
@@ -11,7 +12,8 @@ import {
   stopAutoUpdateTimer,
 } from "../src/utils/auto-update.js";
 import { parseDuration } from "../src/utils/settings.js";
-import { createMockHarness, type ExecResult } from "./helpers/mocks.js";
+import { createMockHarness } from "./helpers/mocks.js";
+import { mockPackageCatalog } from "./helpers/package-catalog.js";
 
 void test("parseDuration supports flexible durations", () => {
   assert.deepEqual(parseDuration("1h"), { ms: 60 * 60 * 1000, display: "1 hour" });
@@ -29,70 +31,45 @@ void test("parseDuration supports flexible durations", () => {
 });
 
 void test("checkForUpdates detects npm package update availability", async () => {
-  const { pi, ctx } = createMockHarness({
-    execImpl: (command: string, args: string[]): ExecResult => {
-      if (command === "pi" && args[0] === "list") {
-        return {
-          code: 0,
-          stdout: "Global:\n  npm:demo-pkg@1.0.0\n",
-          stderr: "",
-          killed: false,
-        };
-      }
-
-      if (command === "npm" && args[0] === "view" && args[2] === "description") {
-        return { code: 0, stdout: '"demo"', stderr: "", killed: false };
-      }
-      if (command === "npm" && args[0] === "view" && args[2] === "dist.unpackedSize") {
-        return { code: 0, stdout: "1234", stderr: "", killed: false };
-      }
-      if (command === "npm" && args[0] === "view" && args[2] === "version") {
-        return { code: 0, stdout: '"1.1.0"', stderr: "", killed: false };
-      }
-
-      return { code: 1, stdout: "", stderr: "unknown call", killed: false };
-    },
+  const restoreCatalog = mockPackageCatalog({
+    updates: [
+      {
+        source: "npm:demo-pkg@1.0.0",
+        displayName: "demo-pkg",
+        type: "npm",
+        scope: "global",
+      },
+    ],
   });
 
-  const updates = await checkForUpdates(pi, ctx);
-  assert.deepEqual(updates, ["demo-pkg"]);
+  try {
+    const { pi, ctx } = createMockHarness();
+    const updates = await checkForUpdates(pi, ctx);
+    assert.deepEqual(updates, ["demo-pkg"]);
+  } finally {
+    restoreCatalog();
+  }
 });
 
 void test("checkForUpdates handles scoped npm packages", async () => {
-  const npmViewCalls: string[] = [];
-
-  const { pi, ctx } = createMockHarness({
-    execImpl: (command: string, args: string[]): ExecResult => {
-      if (command === "pi" && args[0] === "list") {
-        return {
-          code: 0,
-          stdout: "Global:\n  npm:@scope/demo-pkg@1.0.0\n",
-          stderr: "",
-          killed: false,
-        };
-      }
-
-      if (command === "npm" && args[0] === "view") {
-        npmViewCalls.push(args[1] ?? "");
-      }
-
-      if (command === "npm" && args[0] === "view" && args[2] === "description") {
-        return { code: 0, stdout: '"scoped demo"', stderr: "", killed: false };
-      }
-      if (command === "npm" && args[0] === "view" && args[2] === "dist.unpackedSize") {
-        return { code: 0, stdout: "4321", stderr: "", killed: false };
-      }
-      if (command === "npm" && args[0] === "view" && args[2] === "version") {
-        return { code: 0, stdout: '"1.1.0"', stderr: "", killed: false };
-      }
-
-      return { code: 1, stdout: "", stderr: "unknown call", killed: false };
-    },
+  const restoreCatalog = mockPackageCatalog({
+    updates: [
+      {
+        source: "npm:@scope/demo-pkg@1.0.0",
+        displayName: "@scope/demo-pkg",
+        type: "npm",
+        scope: "global",
+      },
+    ],
   });
 
-  const updates = await checkForUpdates(pi, ctx);
-  assert.deepEqual(updates, ["@scope/demo-pkg"]);
-  assert.ok(npmViewCalls.includes("@scope/demo-pkg"));
+  try {
+    const { pi, ctx } = createMockHarness();
+    const updates = await checkForUpdates(pi, ctx);
+    assert.deepEqual(updates, ["@scope/demo-pkg"]);
+  } finally {
+    restoreCatalog();
+  }
 });
 
 void test("session switch to disabled auto-update stops existing timer", async () => {
@@ -117,12 +94,6 @@ void test("session switch to disabled auto-update stops existing timer", async (
     on: (event: string, handler: (event: unknown, ctx: SessionCtx) => Promise<void>) => {
       handlers[event] = handler;
     },
-    exec: (command: string, args: string[]) =>
-      Promise.resolve(
-        command === "pi" && args[0] === "list"
-          ? { code: 0, stdout: "No packages installed", stderr: "", killed: false }
-          : { code: 0, stdout: "", stderr: "", killed: false }
-      ),
     appendEntry: () => undefined,
   };
 
@@ -162,6 +133,8 @@ void test("session switch to disabled auto-update stops existing timer", async (
     },
   };
 
+  const restoreCatalog = mockPackageCatalog();
+
   try {
     extensionsManager(pi as unknown as ExtensionAPI);
 
@@ -171,6 +144,7 @@ void test("session switch to disabled auto-update stops existing timer", async (
     await handlers["session_switch"]?.({}, disabledCtx);
     assert.equal(isAutoUpdateRunning(), false);
   } finally {
+    restoreCatalog();
     stopAutoUpdateTimer();
   }
 });
@@ -189,20 +163,28 @@ void test("startAutoUpdateTimer waits until persisted nextCheck when not yet due
     },
   ];
 
-  let listCalls = 0;
+  let updateChecks = 0;
+  setPackageCatalogFactory(() => ({
+    listInstalledPackages() {
+      return Promise.resolve([]);
+    },
+    checkForAvailableUpdates() {
+      updateChecks += 1;
+      return Promise.resolve([]);
+    },
+    install() {
+      return Promise.resolve(undefined);
+    },
+    remove() {
+      return Promise.resolve(undefined);
+    },
+    update() {
+      return Promise.resolve(undefined);
+    },
+  }));
+
   const pi = {
     appendEntry: () => undefined,
-    exec: (command: string, args: string[]) => {
-      if (command === "pi" && args[0] === "list") {
-        listCalls += 1;
-      }
-      return Promise.resolve({
-        code: 0,
-        stdout: "No packages installed",
-        stderr: "",
-        killed: false,
-      });
-    },
   } as unknown as ExtensionAPI;
 
   const ctx = {
@@ -221,8 +203,9 @@ void test("startAutoUpdateTimer waits until persisted nextCheck when not yet due
   try {
     startAutoUpdateTimer(pi, () => ctx);
     await new Promise((resolve) => setTimeout(resolve, 40));
-    assert.equal(listCalls, 0);
+    assert.equal(updateChecks, 0);
   } finally {
+    setPackageCatalogFactory();
     stopAutoUpdateTimer();
   }
 });
@@ -241,20 +224,28 @@ void test("startAutoUpdateTimer checks immediately when persisted nextCheck is d
     },
   ];
 
-  let listCalls = 0;
+  let updateChecks = 0;
+  setPackageCatalogFactory(() => ({
+    listInstalledPackages() {
+      return Promise.resolve([]);
+    },
+    checkForAvailableUpdates() {
+      updateChecks += 1;
+      return Promise.resolve([]);
+    },
+    install() {
+      return Promise.resolve(undefined);
+    },
+    remove() {
+      return Promise.resolve(undefined);
+    },
+    update() {
+      return Promise.resolve(undefined);
+    },
+  }));
+
   const pi = {
     appendEntry: () => undefined,
-    exec: (command: string, args: string[]) => {
-      if (command === "pi" && args[0] === "list") {
-        listCalls += 1;
-      }
-      return Promise.resolve({
-        code: 0,
-        stdout: "No packages installed",
-        stderr: "",
-        killed: false,
-      });
-    },
   } as unknown as ExtensionAPI;
 
   const ctx = {
@@ -273,8 +264,9 @@ void test("startAutoUpdateTimer checks immediately when persisted nextCheck is d
   try {
     startAutoUpdateTimer(pi, () => ctx);
     await new Promise((resolve) => setTimeout(resolve, 40));
-    assert.equal(listCalls, 1);
+    assert.equal(updateChecks, 1);
   } finally {
+    setPackageCatalogFactory();
     stopAutoUpdateTimer();
   }
 });

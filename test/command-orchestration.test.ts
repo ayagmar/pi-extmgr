@@ -6,6 +6,7 @@ import {
   runResolvedCommand,
 } from "../src/commands/registry.js";
 import { createMockHarness } from "./helpers/mocks.js";
+import { mockPackageCatalog } from "./helpers/package-catalog.js";
 
 void test("resolveCommand defaults to local when no args are provided", () => {
   const resolved = resolveCommand([]);
@@ -29,13 +30,21 @@ void test("autocomplete includes base commands and aliases", () => {
 });
 
 void test("runResolvedCommand install respects --project scope", async () => {
-  const { pi, ctx, calls } = createMockHarness();
+  const installs: { source: string; scope: "global" | "project" }[] = [];
+  const restoreCatalog = mockPackageCatalog({
+    installImpl: (source, scope) => {
+      installs.push({ source, scope });
+    },
+  });
 
-  await runResolvedCommand({ id: "install", args: ["pi-extmgr", "--project"] }, ctx, pi);
+  try {
+    const { pi, ctx } = createMockHarness();
+    await runResolvedCommand({ id: "install", args: ["pi-extmgr", "--project"] }, ctx, pi);
 
-  const installCalls = calls.filter((c) => c.command === "pi" && c.args[0] === "install");
-  assert.equal(installCalls.length, 1);
-  assert.deepEqual(installCalls[0]?.args, ["install", "-l", "npm:pi-extmgr"]);
+    assert.deepEqual(installs, [{ source: "npm:pi-extmgr", scope: "project" }]);
+  } finally {
+    restoreCatalog();
+  }
 });
 
 void test("runResolvedCommand install rejects conflicting scope flags", async () => {

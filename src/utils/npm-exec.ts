@@ -9,6 +9,7 @@ interface NpmCommandResolutionOptions {
 
 interface NpmExecOptions {
   timeout: number;
+  signal?: AbortSignal;
 }
 
 function getNpmCliPath(nodeExecPath: string, runtimePlatform: NodeJS.Platform): string {
@@ -43,5 +44,6 @@ export async function execNpm(
   return pi.exec(resolved.command, resolved.args, {
     timeout: options.timeout,
     cwd: ctx.cwd,
+    ...(options.signal ? { signal: options.signal } : {}),
   });
 }

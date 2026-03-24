@@ -21,7 +21,7 @@ export async function confirmReload(
   const confirmed = await ctx.ui.confirm("Reload Required", `${reason}\nReload pi now?`);
 
   if (confirmed) {
-    await (ctx as ExtensionCommandContext & { reload: () => Promise<void> }).reload();
+    await ctx.reload();
     return true;
   }
 

@@ -6,8 +6,7 @@ import type {
   ExtensionCommandContext,
   ExtensionContext,
 } from "@mariozechner/pi-coding-agent";
-import type { InstalledPackage } from "../types/index.js";
-import { getInstalledPackages } from "../packages/discovery.js";
+import { getPackageCatalog } from "../packages/catalog.js";
 import { notify } from "./notify.js";
 import {
   getAutoUpdateConfig,
@@ -17,20 +16,13 @@ import {
   parseDuration,
   type AutoUpdateConfig,
 } from "./settings.js";
-import { parseNpmSource } from "./format.js";
-import { execNpm } from "./npm-exec.js";
 import { normalizePackageIdentity } from "./package-source.js";
 import { logAutoUpdateConfig } from "./history.js";
-import { TIMEOUTS } from "../constants.js";
 
 import { startTimer, stopTimer, isTimerRunning } from "./timer.js";
 
 // Context provider for safe session handling
 export type ContextProvider = () => (ExtensionCommandContext | ExtensionContext) | undefined;
-
-function getUpdateIdentity(pkg: InstalledPackage): string {
-  return normalizePackageIdentity(pkg.source);
-}
 
 /**
  * Start auto-update background checker
@@ -67,7 +59,10 @@ export function startAutoUpdateTimer(
         stopAutoUpdateTimer();
         return;
       }
-      void checkForUpdates(pi, checkCtx, onUpdateAvailable);
+
+      void checkForUpdates(pi, checkCtx, onUpdateAvailable).catch((error) => {
+        console.warn("[extmgr] Auto-update check failed:", error);
+      });
     },
     { initialDelayMs }
   );
@@ -96,19 +91,9 @@ export async function checkForUpdates(
   ctx: ExtensionCommandContext | ExtensionContext,
   onUpdateAvailable?: (packages: string[]) => void
 ): Promise<string[]> {
-  const packages = await getInstalledPackages(ctx, pi);
-  const npmPackages = packages.filter((p) => p.source.startsWith("npm:"));
-
-  const updatesAvailable: string[] = [];
-  const updatedPackageNames: string[] = [];
-
-  for (const pkg of npmPackages) {
-    const hasUpdate = await checkPackageUpdate(pkg, ctx, pi);
-    if (hasUpdate) {
-      updatesAvailable.push(getUpdateIdentity(pkg));
-      updatedPackageNames.push(pkg.name);
-    }
-  }
+  const updates = await getPackageCatalog(ctx.cwd).checkForAvailableUpdates();
+  const updatesAvailable = updates.map((update) => normalizePackageIdentity(update.source));
+  const updatedPackageNames = updates.map((update) => update.displayName);
 
   const checkedAt = Date.now();
   const config = getAutoUpdateConfig(ctx);
@@ -124,37 +109,6 @@ export async function checkForUpdates(
   }
 
   return updatedPackageNames;
-}
-
-/**
- * Check if a specific package has updates available
- */
-async function checkPackageUpdate(
-  pkg: InstalledPackage,
-  ctx: ExtensionCommandContext | ExtensionContext,
-  pi: ExtensionAPI
-): Promise<boolean> {
-  const parsed = parseNpmSource(pkg.source);
-  const pkgName = parsed?.name;
-  if (!pkgName) return false;
-
-  try {
-    const res = await execNpm(pi, ["view", pkgName, "version", "--json"], ctx, {
-      timeout: TIMEOUTS.npmView,
-    });
-
-    if (res.code !== 0) return false;
-
-    const latestVersion = JSON.parse(res.stdout) as string;
-    const currentVersion = pkg.version;
-
-    if (!currentVersion) return false;
-
-    // Simple version comparison (assumes semver)
-    return latestVersion !== currentVersion;
-  } catch {
-    return false;
-  }
 }
 
 /**

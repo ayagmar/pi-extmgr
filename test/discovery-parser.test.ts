@@ -3,227 +3,120 @@ import assert from "node:assert/strict";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import {
-  getInstalledPackages,
-  isSourceInstalled,
-  parseInstalledPackagesOutput,
-  parseInstalledPackagesOutputAllScopes,
-} from "../src/packages/discovery.js";
+import { getInstalledPackages, isSourceInstalled } from "../src/packages/discovery.js";
 import { isPackageSource, normalizePackageSource, parseNpmSource } from "../src/utils/format.js";
 import { getPackageSourceKind, normalizePackageIdentity } from "../src/utils/package-source.js";
 import { createMockHarness } from "./helpers/mocks.js";
+import { mockPackageCatalog } from "./helpers/package-catalog.js";
 
-void test("parseInstalledPackagesOutput parses scopes, names, versions, and resolved path lines", () => {
-  const input = `
-User packages:
-  npm:pi-extmgr@0.1.4
-Project packages:
-  git:https://github.com/user/repo.git@main (filtered)
-    resolved: /tmp/.pi/git/github.com/user/repo
-  /home/user/.fnm/node_modules/local-pkg
-    /tmp/.pi/npm/local-pkg
-`;
-
-  const result = parseInstalledPackagesOutput(input);
-
-  assert.equal(result.length, 3);
-
-  assert.deepEqual(result[0], {
-    source: "npm:pi-extmgr@0.1.4",
-    name: "pi-extmgr",
-    version: "0.1.4",
-    scope: "global",
+void test("getInstalledPackages reads structured package records and keeps project precedence", async () => {
+  const restoreCatalog = mockPackageCatalog({
+    packages: [
+      {
+        source: "git:https://github.com/user/repo.git@v2",
+        name: "repo",
+        scope: "project",
+        resolvedPath: "/tmp/.pi/git/github.com/user/repo",
+      },
+      {
+        source: "npm:pi-extmgr@0.1.4",
+        name: "pi-extmgr",
+        version: "0.1.4",
+        scope: "global",
+      },
+      {
+        source: "git:https://github.com/user/repo.git@v1",
+        name: "repo",
+        scope: "global",
+      },
+    ],
   });
 
-  assert.deepEqual(result[1], {
-    source: "git:https://github.com/user/repo.git@main",
-    name: "repo",
-    scope: "project",
-    resolvedPath: "/tmp/.pi/git/github.com/user/repo",
+  try {
+    const { pi, ctx } = createMockHarness();
+    const result = await getInstalledPackages(ctx, pi);
+
+    assert.equal(result.length, 2);
+    assert.deepEqual(result[0], {
+      source: "git:https://github.com/user/repo.git@v2",
+      name: "repo",
+      scope: "project",
+      resolvedPath: "/tmp/.pi/git/github.com/user/repo",
+      description: "git repository",
+    });
+    assert.equal(result[1]?.source, "npm:pi-extmgr@0.1.4");
+    assert.equal(result[1]?.name, "pi-extmgr");
+    assert.equal(result[1]?.version, "0.1.4");
+    assert.equal(result[1]?.scope, "global");
+  } finally {
+    restoreCatalog();
+  }
+});
+
+void test("isSourceInstalled matches exact package sources without substring false positives", async () => {
+  const restoreCatalog = mockPackageCatalog({
+    packages: [
+      {
+        source: "npm:demo-package-two@1.0.0",
+        name: "demo-package-two",
+        version: "1.0.0",
+        scope: "global",
+      },
+    ],
   });
 
-  assert.deepEqual(result[2], {
-    source: "/home/user/.fnm/node_modules/local-pkg",
-    name: "local-pkg",
-    scope: "project",
-    resolvedPath: "/tmp/.pi/npm/local-pkg",
-  });
-});
-
-void test("parseInstalledPackagesOutput deduplicates by normalized source", () => {
-  const input = `
-Global:
-  npm:dup-pkg@1.0.0
-  npm:dup-pkg@1.0.0 (filtered)
-`;
-
-  const result = parseInstalledPackagesOutput(input);
-  assert.equal(result.length, 1);
-  assert.equal(result[0]?.source, "npm:dup-pkg@1.0.0");
-});
-
-void test("parseInstalledPackagesOutput gives project scope precedence for duplicate npm packages", () => {
-  const input = `
-Global:
-  npm:dup-pkg@1.0.0
-Project:
-  npm:dup-pkg@2.0.0
-`;
-
-  const result = parseInstalledPackagesOutput(input);
-  assert.equal(result.length, 1);
-  assert.deepEqual(result[0], {
-    source: "npm:dup-pkg@2.0.0",
-    name: "dup-pkg",
-    version: "2.0.0",
-    scope: "project",
-  });
-});
-
-void test("parseInstalledPackagesOutput deduplicates git packages by repo identity without ref", () => {
-  const input = `
-Global:
-  git:https://github.com/user/repo.git@v1
-Project:
-  git:https://github.com/user/repo.git@v2
-`;
-
-  const result = parseInstalledPackagesOutput(input);
-  assert.equal(result.length, 1);
-  assert.equal(result[0]?.scope, "project");
-  assert.equal(result[0]?.source, "git:https://github.com/user/repo.git@v2");
-});
-
-void test("parseInstalledPackagesOutputAllScopes keeps duplicates across scopes", () => {
-  const input = `
-Global:
-  npm:dup-pkg@1.0.0
-Project:
-  npm:dup-pkg@1.0.0
-`;
-
-  const result = parseInstalledPackagesOutputAllScopes(input);
-  assert.equal(result.length, 2);
-  assert.equal(result[0]?.scope, "global");
-  assert.equal(result[1]?.scope, "project");
-});
-
-void test("isSourceInstalled matches exact package sources (no substring false positives)", async () => {
-  const { pi, ctx } = createMockHarness({
-    execImpl: (command, args) => {
-      if (command === "pi" && args[0] === "list") {
-        return {
-          code: 0,
-          stdout: "Global:\n  npm:demo-package-two@1.0.0\n",
-          stderr: "",
-          killed: false,
-        };
-      }
-      return { code: 1, stdout: "", stderr: "unexpected", killed: false };
-    },
-  });
-
-  assert.equal(await isSourceInstalled("npm:demo-package", ctx, pi), false);
-  assert.equal(await isSourceInstalled("npm:demo-package-two@1.0.0", ctx, pi), true);
+  try {
+    const { ctx } = createMockHarness();
+    assert.equal(await isSourceInstalled("npm:demo-package", ctx), false);
+    assert.equal(await isSourceInstalled("npm:demo-package-two@1.0.0", ctx), true);
+  } finally {
+    restoreCatalog();
+  }
 });
 
 void test("isSourceInstalled supports scope-aware checks", async () => {
-  const { pi, ctx } = createMockHarness({
-    execImpl: (command, args) => {
-      if (command === "pi" && args[0] === "list") {
-        return {
-          code: 0,
-          stdout: "Global:\n  npm:demo-package@1.0.0\nProject:\n  npm:demo-package@1.0.0\n",
-          stderr: "",
-          killed: false,
-        };
-      }
-      return { code: 1, stdout: "", stderr: "unexpected", killed: false };
-    },
+  const restoreCatalog = mockPackageCatalog({
+    packages: [
+      { source: "npm:demo-package@1.0.0", name: "demo-package", version: "1.0.0", scope: "global" },
+      {
+        source: "npm:demo-package@1.0.0",
+        name: "demo-package",
+        version: "1.0.0",
+        scope: "project",
+      },
+    ],
   });
 
-  assert.equal(
-    await isSourceInstalled("npm:demo-package@1.0.0", ctx, pi, { scope: "global" }),
-    true
-  );
-  assert.equal(
-    await isSourceInstalled("npm:demo-package@1.0.0", ctx, pi, { scope: "project" }),
-    true
-  );
+  try {
+    const { ctx } = createMockHarness();
+    assert.equal(await isSourceInstalled("npm:demo-package@1.0.0", ctx, { scope: "global" }), true);
+    assert.equal(
+      await isSourceInstalled("npm:demo-package@1.0.0", ctx, { scope: "project" }),
+      true
+    );
+  } finally {
+    restoreCatalog();
+  }
 });
 
 void test("isSourceInstalled keeps case-sensitive local paths distinct", async () => {
-  const { pi, ctx } = createMockHarness({
-    execImpl: (command, args) => {
-      if (command === "pi" && args[0] === "list") {
-        return {
-          code: 0,
-          stdout: "Global:\n  /opt/extensions/Foo/index.ts\n",
-          stderr: "",
-          killed: false,
-        };
-      }
-      return { code: 1, stdout: "", stderr: "unexpected", killed: false };
-    },
+  const restoreCatalog = mockPackageCatalog({
+    packages: [
+      {
+        source: "/opt/extensions/Foo/index.ts",
+        name: "index.ts",
+        scope: "global",
+      },
+    ],
   });
 
-  assert.equal(await isSourceInstalled("/opt/extensions/Foo/index.ts", ctx, pi), true);
-  assert.equal(await isSourceInstalled("/opt/extensions/foo/index.ts", ctx, pi), false);
-});
-
-void test("parseInstalledPackagesOutput parses ssh git sources", () => {
-  const input = `
-Global:
-  git:git@github.com:user/super-ext.git@v1
-`;
-
-  const result = parseInstalledPackagesOutput(input);
-  assert.equal(result.length, 1);
-  assert.equal(result[0]?.name, "super-ext");
-});
-
-void test("parseInstalledPackagesOutput parses https git sources without git: prefix", () => {
-  const input = `
-Global:
-  https://github.com/user/super-ext.git@v1
-`;
-
-  const result = parseInstalledPackagesOutput(input);
-  assert.equal(result.length, 1);
-  assert.equal(result[0]?.name, "super-ext");
-});
-
-void test("parseInstalledPackagesOutput parses git@ ssh sources without git: prefix", () => {
-  const input = `
-Global:
-  git@github.com:user/super-ext.git@v1
-`;
-
-  const result = parseInstalledPackagesOutput(input);
-  assert.equal(result.length, 1);
-  assert.equal(result[0]?.name, "super-ext");
-});
-
-void test("parseInstalledPackagesOutput parses ssh:// sources without git: prefix", () => {
-  const input = `
-Global:
-  ssh://git@github.com/user/super-ext.git@v1
-`;
-
-  const result = parseInstalledPackagesOutput(input);
-  assert.equal(result.length, 1);
-  assert.equal(result[0]?.name, "super-ext");
-});
-
-void test("parseInstalledPackagesOutput parses git:// sources", () => {
-  const input = `
-Global:
-  git://github.com/user/super-ext.git
-`;
-
-  const result = parseInstalledPackagesOutput(input);
-  assert.equal(result.length, 1);
-  assert.equal(result[0]?.name, "super-ext");
+  try {
+    const { ctx } = createMockHarness();
+    assert.equal(await isSourceInstalled("/opt/extensions/Foo/index.ts", ctx), true);
+    assert.equal(await isSourceInstalled("/opt/extensions/foo/index.ts", ctx), false);
+  } finally {
+    restoreCatalog();
+  }
 });
 
 void test("normalizePackageSource preserves git and local path sources", () => {
@@ -297,6 +190,16 @@ void test("normalizePackageIdentity strips git+ prefixes before matching", () =>
 
 void test("getInstalledPackages hydrates version from resolved package.json when source has no inline version", async () => {
   const root = await mkdtemp(join(tmpdir(), "pi-extmgr-discovery-"));
+  const restoreCatalog = mockPackageCatalog({
+    packages: [
+      {
+        source: "npm:pi-extmgr",
+        name: "pi-extmgr",
+        scope: "global",
+        resolvedPath: join(root, "node_modules", "pi-extmgr"),
+      },
+    ],
+  });
 
   try {
     const installedPath = join(root, "node_modules", "pi-extmgr");
@@ -315,15 +218,9 @@ void test("getInstalledPackages hydrates version from resolved package.json when
       "utf8"
     );
 
-    const listOutput = `User packages:\n  npm:pi-extmgr\n    ${installedPath}\n`;
-
     const { pi, ctx } = createMockHarness({
       cwd: root,
       execImpl: (command, args) => {
-        if (command === "pi" && args[0] === "list") {
-          return { code: 0, stdout: listOutput, stderr: "", killed: false };
-        }
-
         if (command === "npm" && args[0] === "view" && args[2] === "dist.unpackedSize") {
           return { code: 0, stdout: "173693", stderr: "", killed: false };
         }
@@ -337,6 +234,32 @@ void test("getInstalledPackages hydrates version from resolved package.json when
     assert.equal(result[0]?.source, "npm:pi-extmgr");
     assert.equal(result[0]?.version, "0.1.10");
   } finally {
+    restoreCatalog();
     await rm(root, { recursive: true, force: true });
+  }
+});
+
+void test("getInstalledPackages aborts instead of returning partial metadata", async () => {
+  const restoreCatalog = mockPackageCatalog({
+    packages: [
+      {
+        source: "npm:pi-extmgr@0.1.4",
+        name: "pi-extmgr",
+        version: "0.1.4",
+        scope: "global",
+      },
+    ],
+  });
+
+  try {
+    const { pi, ctx } = createMockHarness();
+    const controller = new AbortController();
+    controller.abort();
+
+    await assert.rejects(getInstalledPackages(ctx, pi, undefined, controller.signal), {
+      name: "AbortError",
+    });
+  } finally {
+    restoreCatalog();
   }
 });

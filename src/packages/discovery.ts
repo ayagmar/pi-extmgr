@@ -12,12 +12,8 @@ import type { InstalledPackage, NpmPackage, SearchCache } from "../types/index.j
 import { CACHE_TTL, TIMEOUTS } from "../constants.js";
 import { readSummary } from "../utils/fs.js";
 import { parseNpmSource } from "../utils/format.js";
-import {
-  getPackageSourceKind,
-  normalizePackageIdentity,
-  splitGitRepoAndRef,
-  stripGitSourcePrefix,
-} from "../utils/package-source.js";
+import { normalizePackageIdentity } from "../utils/package-source.js";
+import { getPackageCatalog } from "./catalog.js";
 import { execNpm } from "../utils/npm-exec.js";
 import { fetchWithTimeout } from "../utils/network.js";
 
@@ -40,6 +36,18 @@ interface NpmSearchResponse {
 }
 
 let searchCache: SearchCache | null = null;
+
+function createAbortError(): Error {
+  const error = new Error("Operation cancelled");
+  error.name = "AbortError";
+  return error;
+}
+
+function throwIfAborted(signal?: AbortSignal): void {
+  if (signal?.aborted) {
+    throw createAbortError();
+  }
+}
 
 export function getSearchCache(): SearchCache | null {
   return searchCache;
@@ -88,7 +96,8 @@ function toNpmPackage(entry: NpmSearchResultObject): NpmPackage | undefined {
 
 async function fetchNpmSearchPage(
   query: string,
-  from: number
+  from: number,
+  signal?: AbortSignal
 ): Promise<{
   total: number;
   resultCount: number;
@@ -101,7 +110,8 @@ async function fetchNpmSearchPage(
   });
   const response = await fetchWithTimeout(
     `${NPM_SEARCH_API}?${params.toString()}`,
-    TIMEOUTS.npmSearch
+    TIMEOUTS.npmSearch,
+    signal
   );
 
   if (!response.ok) {
@@ -120,13 +130,16 @@ async function fetchNpmSearchPage(
   };
 }
 
-export async function fetchNpmRegistrySearchResults(query: string): Promise<NpmPackage[]> {
+export async function fetchNpmRegistrySearchResults(
+  query: string,
+  signal?: AbortSignal
+): Promise<NpmPackage[]> {
   const packagesByName = new Map<string, NpmPackage>();
   let from = 0;
   let total = Infinity;
 
   while (from < total) {
-    const page = await fetchNpmSearchPage(query, from);
+    const page = await fetchNpmSearchPage(query, from, signal);
     total = page.total;
 
     if (page.resultCount === 0) {
@@ -148,11 +161,10 @@ export async function fetchNpmRegistrySearchResults(query: string): Promise<NpmP
 export async function searchNpmPackages(
   query: string,
   ctx: ExtensionCommandContext,
-  _pi: ExtensionAPI
+  options?: { signal?: AbortSignal }
 ): Promise<NpmPackage[]> {
-  // Check persistent cache first
   const cached = await getCachedSearch(query);
-  if (cached && cached.length > 0) {
+  if (cached) {
     if (ctx.hasUI) {
       ctx.ui.notify(`Using ${cached.length} cached results`, "info");
     }
@@ -163,7 +175,7 @@ export async function searchNpmPackages(
     ctx.ui.notify(`Searching npm for "${query}"...`, "info");
   }
 
-  const packages = await fetchNpmRegistrySearchResults(query);
+  const packages = await fetchNpmRegistrySearchResults(query, options?.signal);
 
   // Cache the results
   await setCachedSearch(query, packages);
@@ -174,29 +186,19 @@ export async function searchNpmPackages(
 export async function getInstalledPackages(
   ctx: ExtensionCommandContext | ExtensionContext,
   pi: ExtensionAPI,
-  onProgress?: (current: number, total: number) => void
+  onProgress?: (current: number, total: number) => void,
+  signal?: AbortSignal
 ): Promise<InstalledPackage[]> {
-  const res = await pi.exec("pi", ["list"], { timeout: TIMEOUTS.listPackages, cwd: ctx.cwd });
-  if (res.code !== 0) return [];
+  throwIfAborted(signal);
 
-  const text = res.stdout || "";
-  if (!text.trim() || /No packages installed/i.test(text)) {
+  const packages = await getPackageCatalog(ctx.cwd).listInstalledPackages();
+  if (packages.length === 0) {
     return [];
   }
 
-  const packages = parseInstalledPackagesOutput(text);
-
-  // Fetch metadata (descriptions and sizes) for packages in parallel
-  await addPackageMetadata(packages, ctx, pi, onProgress);
-
+  await addPackageMetadata(packages, ctx, pi, onProgress, signal);
+  throwIfAborted(signal);
   return packages;
-}
-
-function sanitizeListSourceSuffix(source: string): string {
-  return source
-    .trim()
-    .replace(/\s+\((filtered|pinned)\)$/i, "")
-    .trim();
 }
 
 function getInstalledPackageIdentity(pkg: InstalledPackage): string {
@@ -206,224 +208,26 @@ function getInstalledPackageIdentity(pkg: InstalledPackage): string {
   );
 }
 
-function isScopeHeader(lowerTrimmed: string, scope: "global" | "project"): boolean {
-  if (scope === "global") {
-    return (
-      lowerTrimmed === "global" ||
-      lowerTrimmed === "user" ||
-      lowerTrimmed.startsWith("global packages") ||
-      lowerTrimmed.startsWith("global:") ||
-      lowerTrimmed.startsWith("user packages") ||
-      lowerTrimmed.startsWith("user:")
-    );
-  }
-
-  return (
-    lowerTrimmed === "project" ||
-    lowerTrimmed === "local" ||
-    lowerTrimmed.startsWith("project packages") ||
-    lowerTrimmed.startsWith("project:") ||
-    lowerTrimmed.startsWith("local packages") ||
-    lowerTrimmed.startsWith("local:")
-  );
-}
-
-function looksLikePackageSource(source: string): boolean {
-  return getPackageSourceKind(source) !== "unknown";
-}
-
-function parseResolvedPathLine(line: string): string | undefined {
-  const resolvedMatch = line.match(/^resolved\s*:\s*(.+)$/i);
-  if (resolvedMatch?.[1]) {
-    return resolvedMatch[1].trim();
-  }
-
-  if (
-    line.startsWith("/") ||
-    line.startsWith("./") ||
-    line.startsWith("../") ||
-    line.startsWith(".\\") ||
-    line.startsWith("..\\") ||
-    line.startsWith("~/") ||
-    line.startsWith("file://") ||
-    /^[a-zA-Z]:[\\/]/.test(line) ||
-    line.startsWith("\\\\")
-  ) {
-    return line;
-  }
-
-  return undefined;
-}
-
-function parseInstalledPackagesOutputInternal(text: string): InstalledPackage[] {
-  const packages: InstalledPackage[] = [];
-
-  const lines = text.split("\n");
-  let currentScope: "global" | "project" = "global";
-  let currentPackage: InstalledPackage | undefined;
-
-  for (const rawLine of lines) {
-    if (!rawLine.trim()) continue;
-
-    const isIndented = /^(?:\t+|\s{4,})/.test(rawLine);
-    const trimmed = rawLine.trim();
-
-    if (isIndented && currentPackage) {
-      const resolved = parseResolvedPathLine(trimmed);
-      if (resolved) {
-        currentPackage.resolvedPath = resolved;
-      }
-      continue;
-    }
-
-    const lowerTrimmed = trimmed.toLowerCase();
-    if (isScopeHeader(lowerTrimmed, "global")) {
-      currentScope = "global";
-      currentPackage = undefined;
-      continue;
-    }
-    if (isScopeHeader(lowerTrimmed, "project")) {
-      currentScope = "project";
-      currentPackage = undefined;
-      continue;
-    }
-
-    const candidate = trimmed.replace(/^[-•]?\s*/, "").trim();
-    if (!looksLikePackageSource(candidate)) continue;
-
-    const source = sanitizeListSourceSuffix(candidate);
-    const { name, version } = parsePackageNameAndVersion(source);
-
-    const pkg: InstalledPackage = { source, name, scope: currentScope };
-    if (version !== undefined) {
-      pkg.version = version;
-    }
-    packages.push(pkg);
-    currentPackage = pkg;
-  }
-
-  return packages;
-}
-
-function shouldReplaceInstalledPackage(
-  current: InstalledPackage | undefined,
-  candidate: InstalledPackage
-): boolean {
-  if (!current) {
-    return true;
-  }
-
-  if (current.scope !== candidate.scope) {
-    return candidate.scope === "project";
-  }
-
-  return false;
-}
-
-export function parseInstalledPackagesOutput(text: string): InstalledPackage[] {
-  const parsed = parseInstalledPackagesOutputInternal(text);
-  const deduped = new Map<string, InstalledPackage>();
-
-  for (const pkg of parsed) {
-    const identity = getInstalledPackageIdentity(pkg);
-    const current = deduped.get(identity);
-    if (shouldReplaceInstalledPackage(current, pkg)) {
-      deduped.set(identity, pkg);
-    }
-  }
-
-  return Array.from(deduped.values());
-}
-
-/**
- * Check whether a specific package source is installed.
- * Matches on normalized package source and optional scope.
- */
 export async function isSourceInstalled(
   source: string,
   ctx: ExtensionCommandContext | ExtensionContext,
-  pi: ExtensionAPI,
   options?: { scope?: "global" | "project" }
 ): Promise<boolean> {
-  try {
-    const res = await pi.exec("pi", ["list"], { timeout: TIMEOUTS.listPackages, cwd: ctx.cwd });
-    if (res.code !== 0) return false;
+  const installed = await getPackageCatalog(ctx.cwd).listInstalledPackages({ dedupe: false });
+  const expected = normalizePackageIdentity(source);
 
-    const installed = parseInstalledPackagesOutputAllScopes(res.stdout || "");
-    const expected = normalizePackageIdentity(source);
-
-    return installed.some((pkg) => {
-      if (getInstalledPackageIdentity(pkg) !== expected) {
-        return false;
-      }
-      return options?.scope ? pkg.scope === options.scope : true;
-    });
-  } catch {
-    return false;
-  }
+  return installed.some((pkg) => {
+    if (getInstalledPackageIdentity(pkg) !== expected) {
+      return false;
+    }
+    return options?.scope ? pkg.scope === options.scope : true;
+  });
 }
 
-/**
- * parseInstalledPackagesOutputAllScopes returns the raw parsed entries from
- * parseInstalledPackagesOutputInternal without deduplication or scope merging.
- * Prefer parseInstalledPackagesOutput for user-facing lists, since it applies
- * deduplication and normalized scope selection.
- */
-export function parseInstalledPackagesOutputAllScopes(text: string): InstalledPackage[] {
-  return parseInstalledPackagesOutputInternal(text);
-}
-
-function extractGitPackageName(repoSpec: string): string {
-  // git@github.com:user/repo(.git)
-  if (repoSpec.startsWith("git@")) {
-    const afterColon = repoSpec.split(":").slice(1).join(":");
-    if (afterColon) {
-      const last = afterColon.split("/").pop() || afterColon;
-      return last.replace(/\.git$/i, "") || repoSpec;
-    }
-  }
-
-  // https://..., ssh://..., git://...
-  try {
-    const url = new URL(repoSpec);
-    const last = url.pathname.split("/").filter(Boolean).pop();
-    if (last) {
-      return last.replace(/\.git$/i, "") || repoSpec;
-    }
-  } catch {
-    // Fallback below
-  }
-
-  const last = repoSpec.split(/[/:]/).filter(Boolean).pop();
-  return (last ? last.replace(/\.git$/i, "") : repoSpec) || repoSpec;
-}
-
-function parsePackageNameAndVersion(fullSource: string): {
-  name: string;
-  version?: string | undefined;
-} {
-  const parsedNpm = parseNpmSource(fullSource);
-  if (parsedNpm) {
-    return parsedNpm;
-  }
-
-  const sourceKind = getPackageSourceKind(fullSource);
-  if (sourceKind === "git") {
-    const gitSpec = stripGitSourcePrefix(fullSource);
-    const { repo } = splitGitRepoAndRef(gitSpec);
-    return { name: extractGitPackageName(repo) };
-  }
-
-  if (fullSource.includes("node_modules/")) {
-    const nmMatch = fullSource.match(/node_modules\/(.+)$/);
-    if (nmMatch?.[1]) {
-      return { name: nmMatch[1] };
-    }
-  }
-
-  const pathParts = fullSource.split(/[\\/]/);
-  const fileName = pathParts[pathParts.length - 1];
-  return { name: fileName || fullSource };
+export async function getInstalledPackagesAllScopes(
+  ctx: ExtensionCommandContext | ExtensionContext
+): Promise<InstalledPackage[]> {
+  return getPackageCatalog(ctx.cwd).listInstalledPackages({ dedupe: false });
 }
 
 async function hydratePackageFromResolvedPath(pkg: InstalledPackage): Promise<void> {
@@ -471,7 +275,8 @@ async function hydratePackageFromResolvedPath(pkg: InstalledPackage): Promise<vo
 async function fetchPackageSize(
   pkgName: string,
   ctx: ExtensionCommandContext | ExtensionContext,
-  pi: ExtensionAPI
+  pi: ExtensionAPI,
+  signal?: AbortSignal
 ): Promise<number | undefined> {
   // Check cache first
   const cachedSize = await getCachedPackageSize(pkgName);
@@ -481,6 +286,7 @@ async function fetchPackageSize(
     // Try to get unpacked size from npm view
     const res = await execNpm(pi, ["view", pkgName, "dist.unpackedSize", "--json"], ctx, {
       timeout: TIMEOUTS.npmView,
+      ...(signal ? { signal } : {}),
     });
     if (res.code === 0) {
       try {
@@ -503,25 +309,29 @@ async function addPackageMetadata(
   packages: InstalledPackage[],
   ctx: ExtensionCommandContext | ExtensionContext,
   pi: ExtensionAPI,
-  onProgress?: (current: number, total: number) => void
+  onProgress?: (current: number, total: number) => void,
+  signal?: AbortSignal
 ): Promise<void> {
-  // First, try to get descriptions from cache
+  throwIfAborted(signal);
+
   const cachedDescriptions = await getPackageDescriptions(packages);
   for (const [source, description] of cachedDescriptions) {
     const pkg = packages.find((p) => p.source === source);
     if (pkg) pkg.description = description;
   }
 
-  // Process remaining packages in batches
   const batchSize = 5;
   for (let i = 0; i < packages.length; i += batchSize) {
+    throwIfAborted(signal);
+
     const batch = packages.slice(i, i + batchSize);
 
-    // Report progress
     onProgress?.(i, packages.length);
 
     await Promise.all(
       batch.map(async (pkg) => {
+        throwIfAborted(signal);
+
         await hydratePackageFromResolvedPath(pkg);
 
         const needsDescription = !pkg.description;
@@ -546,6 +356,7 @@ async function addPackageMetadata(
                 } else {
                   const res = await execNpm(pi, ["view", pkgName, "description", "--json"], ctx, {
                     timeout: TIMEOUTS.npmView,
+                    ...(signal ? { signal } : {}),
                   });
                   if (res.code === 0) {
                     try {
@@ -565,7 +376,7 @@ async function addPackageMetadata(
               }
 
               if (needsSize) {
-                pkg.size = await fetchPackageSize(pkgName, ctx, pi);
+                pkg.size = await fetchPackageSize(pkgName, ctx, pi, signal);
               }
             }
           } else if (pkg.source.startsWith("git:")) {
@@ -578,8 +389,9 @@ async function addPackageMetadata(
         }
       })
     );
+
+    throwIfAborted(signal);
   }
 
-  // Final progress update
   onProgress?.(packages.length, packages.length);
 }
