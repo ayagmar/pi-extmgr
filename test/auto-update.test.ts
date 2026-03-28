@@ -1,6 +1,6 @@
-import test from "node:test";
 import assert from "node:assert/strict";
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import test from "node:test";
+import { type ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import extensionsManager from "../src/index.js";
 import { setPackageCatalogFactory } from "../src/packages/catalog.js";
 import {
@@ -138,10 +138,10 @@ void test("session switch to disabled auto-update stops existing timer", async (
   try {
     extensionsManager(pi as unknown as ExtensionAPI);
 
-    await handlers["session_start"]?.({}, enabledCtx);
+    await handlers.session_start?.({}, enabledCtx);
     assert.equal(isAutoUpdateRunning(), true);
 
-    await handlers["session_switch"]?.({}, disabledCtx);
+    await handlers.session_switch?.({}, disabledCtx);
     assert.equal(isAutoUpdateRunning(), false);
   } finally {
     restoreCatalog();

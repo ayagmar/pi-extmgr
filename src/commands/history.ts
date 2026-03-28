@@ -1,10 +1,10 @@
-import type { ExtensionAPI, ExtensionCommandContext } from "@mariozechner/pi-coding-agent";
+import { type ExtensionAPI, type ExtensionCommandContext } from "@mariozechner/pi-coding-agent";
 import {
+  type ChangeAction,
   formatChangeEntry,
+  type HistoryFilters,
   queryGlobalHistory,
   querySessionChanges,
-  type ChangeAction,
-  type HistoryFilters,
 } from "../utils/history.js";
 import { notify } from "../utils/notify.js";
 import { formatListOutput } from "../utils/ui-helpers.js";

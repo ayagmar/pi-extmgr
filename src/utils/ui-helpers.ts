@@ -1,9 +1,9 @@
 /**
  * Common UI helper patterns
  */
-import type { ExtensionCommandContext } from "@mariozechner/pi-coding-agent";
-import { notify } from "./notify.js";
+import { type ExtensionCommandContext } from "@mariozechner/pi-coding-agent";
 import { UI } from "../constants.js";
+import { notify } from "./notify.js";
 
 /**
  * Confirm and trigger reload

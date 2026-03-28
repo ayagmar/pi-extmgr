@@ -1,8 +1,8 @@
-import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
+import { join } from "node:path";
+import test from "node:test";
 import { initTheme, type Theme } from "@mariozechner/pi-coding-agent";
 import { configurePackageExtensions } from "../src/ui/package-config.js";
 import { showInteractive } from "../src/ui/unified.js";

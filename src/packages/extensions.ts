@@ -1,12 +1,17 @@
-import { mkdir, readFile, writeFile, rename, rm, readdir } from "node:fs/promises";
-import type { Dirent } from "node:fs";
+import { execFile } from "node:child_process";
+import { type Dirent } from "node:fs";
+import { mkdir, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { homedir } from "node:os";
 import { dirname, join, matchesGlob, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { homedir } from "node:os";
-import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { getAgentDir } from "@mariozechner/pi-coding-agent";
-import type { InstalledPackage, PackageExtensionEntry, Scope, State } from "../types/index.js";
+import {
+  type InstalledPackage,
+  type PackageExtensionEntry,
+  type Scope,
+  type State,
+} from "../types/index.js";
 import { parseNpmSource } from "../utils/format.js";
 import { fileExists, readSummary } from "../utils/fs.js";
 import { resolveNpmCommand } from "../utils/npm-exec.js";

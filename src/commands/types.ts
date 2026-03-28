@@ -1,4 +1,4 @@
-import type { ExtensionAPI, ExtensionCommandContext } from "@mariozechner/pi-coding-agent";
+import { type ExtensionAPI, type ExtensionCommandContext } from "@mariozechner/pi-coding-agent";
 
 export type CommandId =
   | "local"

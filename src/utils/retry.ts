@@ -23,7 +23,7 @@ export async function retryWithBackoff<T>(
     if (attempt < maxAttempts) {
       const delay =
         backoff === "exponential"
-          ? delayMs * Math.pow(2, attempt - 1)
+          ? delayMs * 2 ** (attempt - 1)
           : backoff === "linear"
             ? delayMs * attempt
             : delayMs;

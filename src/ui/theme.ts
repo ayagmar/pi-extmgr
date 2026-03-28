@@ -1,7 +1,7 @@
 /**
  * Theme utilities for consistent UI styling across dark/light themes
  */
-import type { Theme } from "@mariozechner/pi-coding-agent";
+import { type Theme } from "@mariozechner/pi-coding-agent";
 
 /**
  * Status icons that work across themes
@@ -62,7 +62,7 @@ export function getScopeIcon(
  */
 export function getChangeMarker(theme: Theme, hasChanges: boolean): string {
   if (!hasChanges) return "";
-  return " " + theme.fg("warning", "*");
+  return ` ${theme.fg("warning", "*")}`;
 }
 
 /**

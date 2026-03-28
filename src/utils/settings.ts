@@ -2,14 +2,15 @@
  * Auto-update settings storage
  * Persists to disk so config survives across pi sessions.
  */
-import type {
-  ExtensionAPI,
-  ExtensionCommandContext,
-  ExtensionContext,
-} from "@mariozechner/pi-coding-agent";
-import { readFile, writeFile, mkdir, rename, rm } from "node:fs/promises";
+
+import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import {
+  type ExtensionAPI,
+  type ExtensionCommandContext,
+  type ExtensionContext,
+} from "@mariozechner/pi-coding-agent";
 import { fileExists } from "./fs.js";
 import { normalizePackageIdentity } from "./package-source.js";
 
@@ -328,8 +329,16 @@ export function parseDuration(input: string): { ms: number; display: string } | 
     /^(\d+)\s*(h|hr|hrs|hour|hours|d|day|days|w|wk|wks|week|weeks|m|mo|mos|month|months)$/
   );
   if (durationMatch) {
-    const value = parseInt(durationMatch[1]!, 10);
-    const unit = durationMatch[2]![0]; // First character of unit
+    const [, rawValue, rawUnit] = durationMatch;
+    if (!rawValue || !rawUnit) {
+      return undefined;
+    }
+
+    const value = Number.parseInt(rawValue, 10);
+    const unit = rawUnit[0];
+    if (!unit) {
+      return undefined;
+    }
 
     let ms: number;
     let display: string;

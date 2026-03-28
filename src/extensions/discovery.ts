@@ -4,12 +4,13 @@
  * This module handles discovery and management of local Pi extensions
  * in both global (~/.pi/agent/extensions) and project (.pi/extensions) scopes.
  */
+
+import { type Dirent } from "node:fs";
 import { readdir, rename, rm } from "node:fs/promises";
-import { basename, dirname, join, relative } from "node:path";
 import { homedir } from "node:os";
-import type { Dirent } from "node:fs";
-import type { ExtensionEntry, Scope, State } from "../types/index.js";
+import { basename, dirname, join, relative } from "node:path";
 import { DISABLED_SUFFIX } from "../constants.js";
+import { type ExtensionEntry, type Scope, type State } from "../types/index.js";
 import { fileExists, readSummary } from "../utils/fs.js";
 
 interface RootConfig {

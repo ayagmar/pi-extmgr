@@ -1,7 +1,5 @@
-import type { ExtensionAPI, ExtensionCommandContext } from "@mariozechner/pi-coding-agent";
-import type { AutocompleteItem } from "@mariozechner/pi-tui";
-import { showInteractive, showInstalledPackagesLegacy, showListOnly } from "../ui/unified.js";
-import { showRemote } from "../ui/remote.js";
+import { type ExtensionAPI, type ExtensionCommandContext } from "@mariozechner/pi-coding-agent";
+import { type AutocompleteItem } from "@mariozechner/pi-tui";
 import {
   promptRemove,
   removePackage,
@@ -9,12 +7,14 @@ import {
   updatePackage,
   updatePackages,
 } from "../packages/management.js";
+import { showRemote } from "../ui/remote.js";
+import { showInstalledPackagesLegacy, showInteractive, showListOnly } from "../ui/unified.js";
 import { notify } from "../utils/notify.js";
-import { handleInstallSubcommand, INSTALL_USAGE } from "./install.js";
-import { handleHistorySubcommand } from "./history.js";
 import { handleAutoUpdateSubcommand } from "./auto-update.js";
 import { clearMetadataCacheCommand } from "./cache.js";
-import type { CommandDefinition, CommandId } from "./types.js";
+import { handleHistorySubcommand } from "./history.js";
+import { handleInstallSubcommand, INSTALL_USAGE } from "./install.js";
+import { type CommandDefinition, type CommandId } from "./types.js";
 
 const REMOVE_USAGE = "Usage: /extensions remove <npm:package|git:url|path>";
 

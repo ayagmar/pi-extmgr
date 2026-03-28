@@ -1,7 +1,7 @@
-import test from "node:test";
 import assert from "node:assert/strict";
-import { browseRemotePackages } from "../src/ui/remote.js";
+import test from "node:test";
 import { clearSearchCache, setSearchCache } from "../src/packages/discovery.js";
+import { browseRemotePackages } from "../src/ui/remote.js";
 import { createMockHarness } from "./helpers/mocks.js";
 
 void test("browseRemotePackages honors an empty in-memory cache", async () => {
