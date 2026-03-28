@@ -52,6 +52,7 @@
   },
   "author": "ayagmar",
   "license": "MIT",
+  "packageManager": "pnpm@10.33.0",
   "engines": {
     "node": ">=22"
   },
