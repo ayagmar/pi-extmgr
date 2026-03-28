@@ -1,10 +1,11 @@
 /**
  * Status bar helpers for extmgr
  */
-import type {
-  ExtensionAPI,
-  ExtensionCommandContext,
-  ExtensionContext,
+import {
+  type ExtensionAPI,
+  type ExtensionCommandContext,
+  type ExtensionContext,
+  getAgentDir,
 } from "@mariozechner/pi-coding-agent";
 import { getPackageCatalog, type PackageCatalog } from "../packages/catalog.js";
 import { getAutoUpdateStatus } from "./auto-update.js";
@@ -15,14 +16,15 @@ type CatalogInstalledPackages = Awaited<ReturnType<PackageCatalog["listInstalled
 
 function filterStaleUpdates(
   knownUpdates: string[],
-  installedPackages: CatalogInstalledPackages
+  installedPackages: CatalogInstalledPackages,
+  cwd: string
 ): string[] {
   const installedIdentities = new Set(
     installedPackages.map((pkg) =>
-      normalizePackageIdentity(
-        pkg.source,
-        pkg.resolvedPath ? { resolvedPath: pkg.resolvedPath } : undefined
-      )
+      normalizePackageIdentity(pkg.source, {
+        ...(pkg.resolvedPath ? { resolvedPath: pkg.resolvedPath } : {}),
+        cwd: pkg.scope === "project" ? cwd : getAgentDir(),
+      })
     )
   );
   return knownUpdates.filter((identity) => installedIdentities.has(identity));
@@ -52,7 +54,7 @@ export async function updateExtmgrStatus(
 
     // Validate updates against actually installed packages (handles external pi update)
     const knownUpdates = autoUpdateConfig.updatesAvailable ?? [];
-    const validUpdates = filterStaleUpdates(knownUpdates, packages);
+    const validUpdates = filterStaleUpdates(knownUpdates, packages, ctx.cwd);
 
     // If stale updates were filtered, persist the correction
     if (validUpdates.length !== knownUpdates.length) {

@@ -2,19 +2,23 @@
  * Unified extension manager UI
  * Displays local extensions and installed packages in one view
  */
-import type { ExtensionAPI, ExtensionCommandContext } from "@mariozechner/pi-coding-agent";
-import type { Theme } from "@mariozechner/pi-coding-agent";
-import { getSettingsListTheme, DynamicBorder } from "@mariozechner/pi-coding-agent";
+import {
+  DynamicBorder,
+  type ExtensionAPI,
+  type ExtensionCommandContext,
+  getSettingsListTheme,
+  type Theme,
+} from "@mariozechner/pi-coding-agent";
 import {
   Container,
-  SettingsList,
-  Text,
-  Spacer,
-  type SettingItem,
-  matchesKey,
   Key,
+  matchesKey,
+  type SettingItem,
+  SettingsList,
+  Spacer,
+  Text,
 } from "@mariozechner/pi-tui";
-import type { UnifiedItem, State, UnifiedAction, InstalledPackage } from "../types/index.js";
+import { UI } from "../constants.js";
 import {
   discoverExtensions,
   removeLocalExtension,
@@ -22,34 +26,40 @@ import {
 } from "../extensions/discovery.js";
 import { getInstalledPackages } from "../packages/discovery.js";
 import {
-  updatePackageWithOutcome,
   removePackageWithOutcome,
-  updatePackagesWithOutcome,
   showInstalledPackagesList,
+  updatePackagesWithOutcome,
+  updatePackageWithOutcome,
 } from "../packages/management.js";
-import { showRemote } from "./remote.js";
-import { showHelp } from "./help.js";
-import { runTaskWithLoader } from "./async-task.js";
-import { formatEntry as formatExtEntry, dynamicTruncate, formatBytes } from "../utils/format.js";
 import {
-  getStatusIcon,
+  type InstalledPackage,
+  type LocalUnifiedItem,
+  type State,
+  type UnifiedAction,
+  type UnifiedItem,
+} from "../types/index.js";
+import { getKnownUpdates, promptAutoUpdateWizard } from "../utils/auto-update.js";
+import { parseChoiceByLabel } from "../utils/command.js";
+import { dynamicTruncate, formatBytes, formatEntry as formatExtEntry } from "../utils/format.js";
+import { logExtensionDelete, logExtensionToggle } from "../utils/history.js";
+import { hasCustomUI, runCustomUI } from "../utils/mode.js";
+import { notify } from "../utils/notify.js";
+import { getPackageSourceKind, normalizePackageIdentity } from "../utils/package-source.js";
+import { getSettingsListSelectedIndex } from "../utils/settings-list.js";
+import { updateExtmgrStatus } from "../utils/status.js";
+import { confirmReload } from "../utils/ui-helpers.js";
+import { runTaskWithLoader } from "./async-task.js";
+import { buildFooterShortcuts, buildFooterState, getPendingToggleChangeCount } from "./footer.js";
+import { showHelp } from "./help.js";
+import { configurePackageExtensions } from "./package-config.js";
+import { showRemote } from "./remote.js";
+import {
+  formatSize,
+  getChangeMarker,
   getPackageIcon,
   getScopeIcon,
-  getChangeMarker,
-  formatSize,
+  getStatusIcon,
 } from "./theme.js";
-import { buildFooterState, buildFooterShortcuts, getPendingToggleChangeCount } from "./footer.js";
-import { logExtensionDelete, logExtensionToggle } from "../utils/history.js";
-import { getKnownUpdates, promptAutoUpdateWizard } from "../utils/auto-update.js";
-import { updateExtmgrStatus } from "../utils/status.js";
-import { parseChoiceByLabel } from "../utils/command.js";
-import { notify } from "../utils/notify.js";
-import { confirmReload } from "../utils/ui-helpers.js";
-import { getPackageSourceKind, normalizePackageIdentity } from "../utils/package-source.js";
-import { hasCustomUI, runCustomUI } from "../utils/mode.js";
-import { getSettingsListSelectedIndex } from "../utils/settings-list.js";
-import { UI } from "../constants.js";
-import { configurePackageExtensions } from "./package-config.js";
 
 async function showInteractiveFallback(
   ctx: ExtensionCommandContext,
@@ -190,8 +200,8 @@ async function showInteractiveOnce(
             if (!item) continue;
 
             if (item.type === "local") {
-              const currentState = staged.get(item.id) ?? item.state!;
-              const changed = staged.has(item.id) && currentState !== item.originalState;
+              const currentState = staged.get(item.id) ?? item.state;
+              const changed = currentState !== item.originalState;
               settingsItem.label = formatUnifiedItemLabel(item, currentState, theme, changed);
             } else {
               settingsItem.label = formatUnifiedItemLabel(item, "enabled", theme, false);
@@ -209,7 +219,11 @@ async function showInteractiveOnce(
             if (!item || item.type !== "local") return;
 
             const state = newValue as State;
-            staged.set(id, state);
+            if (state === item.originalState) {
+              staged.delete(id);
+            } else {
+              staged.set(id, state);
+            }
 
             const settingsItem = settingsItems.find((x) => x.id === id);
             if (settingsItem) {
@@ -380,16 +394,7 @@ export function buildUnifiedItems(
         isDuplicate = true;
         break;
       }
-      if (
-        pkgResolvedNormalized &&
-        (localPath.startsWith(`${pkgResolvedNormalized}/`) ||
-          pkgResolvedNormalized.startsWith(localPath))
-      ) {
-        isDuplicate = true;
-        break;
-      }
-      const localDir = localPath.split("/").slice(0, -1).join("/");
-      if (pkgResolvedNormalized && pkgResolvedNormalized === localDir) {
+      if (pkgResolvedNormalized && localPath.startsWith(`${pkgResolvedNormalized}/`)) {
         isDuplicate = true;
         break;
       }
@@ -400,7 +405,6 @@ export function buildUnifiedItems(
       type: "package",
       id: `pkg:${pkg.source}`,
       displayName: pkg.name,
-      summary: pkg.description || `${pkg.source} (${pkg.scope})`,
       scope: pkg.scope,
       source: pkg.source,
       version: pkg.version,
@@ -432,8 +436,8 @@ function buildSettingsItems(
 ): SettingItem[] {
   return items.map((item) => {
     if (item.type === "local") {
-      const currentState = staged.get(item.id) ?? item.state!;
-      const changed = staged.has(item.id) && staged.get(item.id) !== item.originalState;
+      const currentState = staged.get(item.id) ?? item.state;
+      const changed = currentState !== item.originalState;
       return {
         id: item.id,
         label: formatUnifiedItemLabel(item, currentState, theme, changed),
@@ -458,7 +462,7 @@ function formatUnifiedItemLabel(
   changed = false
 ): string {
   if (item.type === "local") {
-    const statusIcon = getStatusIcon(theme, state === "enabled" ? "enabled" : "disabled");
+    const statusIcon = getStatusIcon(theme, state);
     const scopeIcon = getScopeIcon(theme, item.scope);
     const changeMarker = getChangeMarker(theme, changed);
     const name = theme.bold(item.displayName);
@@ -466,7 +470,7 @@ function formatUnifiedItemLabel(
     return `${statusIcon} [${scopeIcon}] ${name} - ${summary}${changeMarker}`;
   }
 
-  const sourceKind = getPackageSourceKind(item.source ?? "");
+  const sourceKind = getPackageSourceKind(item.source);
   const pkgIcon = getPackageIcon(
     theme,
     sourceKind === "npm" || sourceKind === "git" || sourceKind === "local" ? sourceKind : "local"
@@ -500,8 +504,8 @@ function formatUnifiedItemLabel(
   return `${pkgIcon} [${scopeIcon}] ${name}${version}${updateBadge} - ${summary}`;
 }
 
-function getToggleItemsForApply(items: UnifiedItem[]): UnifiedItem[] {
-  return items.filter((item) => item.type === "local");
+function getToggleItemsForApply(items: UnifiedItem[]): LocalUnifiedItem[] {
+  return items.filter((item): item is LocalUnifiedItem => item.type === "local");
 }
 
 async function applyToggleChangesFromManager(
@@ -510,7 +514,7 @@ async function applyToggleChangesFromManager(
   ctx: ExtensionCommandContext,
   pi: ExtensionAPI,
   options?: { promptReload?: boolean }
-): Promise<{ changed: number; reloaded: boolean }> {
+): Promise<{ changed: number; reloaded: boolean; hasErrors: boolean }> {
   const toggleItems = getToggleItemsForApply(items);
   const apply = await applyStagedChanges(toggleItems, staged, pi);
 
@@ -529,24 +533,14 @@ async function applyToggleChangesFromManager(
     const shouldPromptReload = options?.promptReload ?? true;
 
     if (shouldPromptReload) {
-      const shouldReload = await ctx.ui.confirm(
-        "Reload Required",
-        "Local extensions changed. Reload pi now?"
-      );
-
-      if (shouldReload) {
-        await ctx.reload();
-        return { changed: apply.changed, reloaded: true };
-      }
-    } else {
-      ctx.ui.notify(
-        "Changes saved. Reload pi later to fully apply extension state updates.",
-        "info"
-      );
+      const reloaded = await confirmReload(ctx, "Local extensions changed.");
+      return { changed: apply.changed, reloaded, hasErrors: apply.errors.length > 0 };
     }
+
+    ctx.ui.notify("Changes saved. Reload pi later to fully apply extension state updates.", "info");
   }
 
-  return { changed: apply.changed, reloaded: false };
+  return { changed: apply.changed, reloaded: false, hasErrors: apply.errors.length > 0 };
 }
 
 async function resolvePendingChangesBeforeLeave(
@@ -556,7 +550,7 @@ async function resolvePendingChangesBeforeLeave(
   ctx: ExtensionCommandContext,
   pi: ExtensionAPI,
   destinationLabel: string
-): Promise<"continue" | "stay" | "exit"> {
+): Promise<"continue" | "stay"> {
   const pendingCount = getPendingToggleChangeCount(staged, byId);
   if (pendingCount === 0) return "continue";
 
@@ -574,10 +568,10 @@ async function resolvePendingChangesBeforeLeave(
     return "continue";
   }
 
-  const result = await applyToggleChangesFromManager(items, staged, ctx, pi, {
+  const apply = await applyToggleChangesFromManager(items, staged, ctx, pi, {
     promptReload: false,
   });
-  return result.reloaded ? "exit" : "continue";
+  return apply.changed === 0 && apply.hasErrors ? "stay" : "continue";
 }
 
 const PALETTE_OPTIONS = {
@@ -648,7 +642,6 @@ async function navigateWithPendingGuard(
     QUICK_DESTINATION_LABELS[destination]
   );
   if (pending === "stay") return "stay";
-  if (pending === "exit") return "exit";
 
   switch (destination) {
     case "install":
@@ -703,6 +696,7 @@ async function handleUnifiedAction(
       if (choice === "Save and exit") {
         const apply = await applyToggleChangesFromManager(items, staged, ctx, pi);
         if (apply.reloaded) return true;
+        if (apply.changed === 0 && apply.hasErrors) return false;
       }
     }
 
@@ -712,7 +706,6 @@ async function handleUnifiedAction(
   if (result.type === "remote") {
     const pending = await resolvePendingChangesBeforeLeave(items, staged, byId, ctx, pi, "Remote");
     if (pending === "stay") return false;
-    if (pending === "exit") return true;
 
     await showRemote("", ctx, pi);
     return false;
@@ -721,7 +714,6 @@ async function handleUnifiedAction(
   if (result.type === "help") {
     const pending = await resolvePendingChangesBeforeLeave(items, staged, byId, ctx, pi, "Help");
     if (pending === "stay") return false;
-    if (pending === "exit") return true;
 
     showHelp(ctx);
     return false;
@@ -778,7 +770,6 @@ async function handleUnifiedAction(
       pendingDestination
     );
     if (pending === "stay") return false;
-    if (pending === "exit") return true;
 
     if (item.type === "local") {
       if (result.action !== "remove") return false;
@@ -790,7 +781,7 @@ async function handleUnifiedAction(
       if (!confirmed) return false;
 
       const removal = await removeLocalExtension(
-        { activePath: item.activePath!, disabledPath: item.disabledPath! },
+        { activePath: item.activePath, disabledPath: item.disabledPath },
         ctx.cwd
       );
       if (!removal.ok) {
@@ -805,16 +796,11 @@ async function handleUnifiedAction(
         "info"
       );
 
-      const reloaded = await confirmReload(ctx, "Extension removed.");
-      if (reloaded) {
-        return true;
-      }
-
-      return false;
+      return await confirmReload(ctx, "Extension removed.");
     }
 
     const pkg: InstalledPackage = {
-      source: item.source!,
+      source: item.source,
       name: item.displayName,
       ...(item.version ? { version: item.version } : {}),
       scope: item.scope,
@@ -860,7 +846,7 @@ async function handleUnifiedAction(
 }
 
 async function applyStagedChanges(
-  items: UnifiedItem[],
+  items: LocalUnifiedItem[],
   staged: Map<string, State>,
   pi: ExtensionAPI
 ) {
@@ -868,10 +854,6 @@ async function applyStagedChanges(
   const errors: string[] = [];
 
   for (const item of items) {
-    if (item.type !== "local" || !item.originalState || !item.activePath || !item.disabledPath) {
-      continue;
-    }
-
     const target = staged.get(item.id) ?? item.originalState;
     if (target === item.originalState) continue;
 

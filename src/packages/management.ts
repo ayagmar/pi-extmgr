@@ -1,33 +1,34 @@
 /**
  * Package management (update, remove)
  */
-import type {
-  ExtensionAPI,
-  ExtensionCommandContext,
-  ProgressEvent,
-} from "@mariozechner/pi-coding-agent";
-import type { InstalledPackage } from "../types/index.js";
 import {
-  getInstalledPackages,
-  getInstalledPackagesAllScopes,
-  clearSearchCache,
-} from "./discovery.js";
-import { getPackageCatalog } from "./catalog.js";
+  type ExtensionAPI,
+  type ExtensionCommandContext,
+  getAgentDir,
+  type ProgressEvent,
+} from "@mariozechner/pi-coding-agent";
+import { UI } from "../constants.js";
+import { type InstalledPackage } from "../types/index.js";
+import { runTaskWithLoader } from "../ui/async-task.js";
 import { formatInstalledPackageLabel } from "../utils/format.js";
-import { normalizePackageIdentity } from "../utils/package-source.js";
-import { logPackageUpdate, logPackageRemove } from "../utils/history.js";
-import { clearUpdatesAvailable } from "../utils/settings.js";
+import { logPackageRemove, logPackageUpdate } from "../utils/history.js";
+import { requireUI } from "../utils/mode.js";
 import { notify, error as notifyError, success } from "../utils/notify.js";
+import { normalizePackageIdentity } from "../utils/package-source.js";
+import { clearUpdatesAvailable } from "../utils/settings.js";
+import { updateExtmgrStatus } from "../utils/status.js";
 import {
   confirmAction,
   confirmReload,
-  showProgress,
   formatListOutput,
+  showProgress,
 } from "../utils/ui-helpers.js";
-import { requireUI } from "../utils/mode.js";
-import { runTaskWithLoader } from "../ui/async-task.js";
-import { updateExtmgrStatus } from "../utils/status.js";
-import { UI } from "../constants.js";
+import { getPackageCatalog } from "./catalog.js";
+import {
+  clearSearchCache,
+  getInstalledPackages,
+  getInstalledPackagesAllScopes,
+} from "./discovery.js";
 
 export interface PackageMutationOutcome {
   reloaded: boolean;
@@ -56,7 +57,7 @@ async function updatePackageInternal(
 ): Promise<PackageMutationOutcome> {
   showProgress(ctx, "Updating", source);
 
-  const updateIdentity = normalizePackageIdentity(source);
+  const updateIdentity = normalizePackageIdentity(source, { cwd: ctx.cwd });
 
   try {
     const updates = await getPackageCatalog(ctx.cwd).checkForAvailableUpdates();
@@ -78,6 +79,7 @@ async function updatePackageInternal(
         title: "Update Package",
         message: `Updating ${source}...`,
         cancellable: false,
+        fallbackWithoutLoader: true,
       },
       async ({ setMessage }) => {
         await getPackageCatalog(ctx.cwd).update(source, (event) => {
@@ -128,6 +130,7 @@ async function updatePackagesInternal(
         title: "Update Packages",
         message: "Updating all packages...",
         cancellable: false,
+        fallbackWithoutLoader: true,
       },
       async ({ setMessage }) => {
         await getPackageCatalog(ctx.cwd).update(undefined, (event) => {
@@ -186,8 +189,11 @@ export async function updatePackagesWithOutcome(
   return updatePackagesInternal(ctx, pi);
 }
 
-function packageIdentity(source: string): string {
-  return normalizePackageIdentity(source);
+function packageIdentity(
+  source: string,
+  options?: { resolvedPath?: string; cwd?: string }
+): string {
+  return normalizePackageIdentity(source, options);
 }
 
 async function getInstalledPackagesAllScopesForRemoval(
@@ -244,7 +250,6 @@ function buildRemovalTargets(
         return addTarget("global");
       case "project":
         return addTarget("project");
-      case "cancel":
       default:
         return [];
     }
@@ -285,6 +290,7 @@ async function executeRemovalTargets(
           title: "Remove Package",
           message: `Removing ${target.source}...`,
           cancellable: false,
+          fallbackWithoutLoader: true,
         },
         async ({ setMessage }) => {
           await getPackageCatalog(ctx.cwd).remove(target.source, target.scope, (event) => {
@@ -338,8 +344,14 @@ async function removePackageInternal(
   pi: ExtensionAPI
 ): Promise<PackageMutationOutcome> {
   const installed = await getInstalledPackagesAllScopesForRemoval(ctx);
-  const identity = packageIdentity(source);
-  const matching = installed.filter((p) => packageIdentity(p.source) === identity);
+  const identity = packageIdentity(source, { cwd: ctx.cwd });
+  const matching = installed.filter(
+    (p) =>
+      packageIdentity(p.source, {
+        ...(p.resolvedPath ? { resolvedPath: p.resolvedPath } : {}),
+        cwd: p.scope === "project" ? ctx.cwd : getAgentDir(),
+      }) === identity
+  );
 
   const hasBothScopes =
     matching.some((pkg) => pkg.scope === "global") &&

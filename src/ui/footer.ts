@@ -1,10 +1,9 @@
 /**
  * Footer helpers for the unified extension manager UI
  */
-import type { UnifiedItem, State } from "../types/index.js";
+import { type State, type UnifiedItem } from "../types/index.js";
 
 export interface FooterState {
-  hasToggleRows: boolean;
   hasLocals: boolean;
   hasPackages: boolean;
 }
@@ -13,11 +12,8 @@ export interface FooterState {
  * Build footer state from visible items.
  */
 export function buildFooterState(items: UnifiedItem[]): FooterState {
-  const hasLocals = items.some((i) => i.type === "local");
-
   return {
-    hasToggleRows: hasLocals,
-    hasLocals,
+    hasLocals: items.some((i) => i.type === "local"),
     hasPackages: items.some((i) => i.type === "package"),
   };
 }
@@ -47,8 +43,8 @@ export function buildFooterShortcuts(state: FooterState): string {
   const parts: string[] = [];
   parts.push("↑↓ Navigate");
 
-  if (state.hasToggleRows) parts.push("Space/Enter Toggle");
-  if (state.hasToggleRows) parts.push("S Save");
+  if (state.hasLocals) parts.push("Space/Enter Toggle");
+  if (state.hasLocals) parts.push("S Save");
   if (state.hasPackages) parts.push("Enter/A Actions");
   if (state.hasPackages) parts.push("c Configure");
   if (state.hasPackages) parts.push("u Update");

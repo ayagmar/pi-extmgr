@@ -1,11 +1,11 @@
 import {
   DefaultPackageManager,
   getAgentDir,
-  SettingsManager,
   type PackageSource,
   type ProgressEvent,
+  SettingsManager,
 } from "@mariozechner/pi-coding-agent";
-import type { InstalledPackage, Scope } from "../types/index.js";
+import { type InstalledPackage, type Scope } from "../types/index.js";
 import { normalizePackageIdentity, parsePackageNameAndVersion } from "../utils/package-source.js";
 
 type PiScope = "user" | "project";
@@ -57,14 +57,15 @@ function createPackageRecord(
   };
 }
 
-function dedupeInstalledPackages(packages: InstalledPackage[]): InstalledPackage[] {
+function dedupeInstalledPackages(packages: InstalledPackage[], cwd: string): InstalledPackage[] {
   const byIdentity = new Map<string, InstalledPackage>();
 
   for (const pkg of packages) {
-    const identity = normalizePackageIdentity(
-      pkg.source,
-      pkg.resolvedPath ? { resolvedPath: pkg.resolvedPath } : undefined
-    );
+    const baseCwd = pkg.scope === "project" ? cwd : getAgentDir();
+    const identity = normalizePackageIdentity(pkg.source, {
+      ...(pkg.resolvedPath ? { resolvedPath: pkg.resolvedPath } : {}),
+      cwd: baseCwd,
+    });
 
     if (!byIdentity.has(identity)) {
       byIdentity.set(identity, pkg);
@@ -97,7 +98,7 @@ function createDefaultPackageCatalog(cwd: string): PackageCatalog {
 
       const installed = [...projectPackages, ...globalPackages];
       return Promise.resolve(
-        options?.dedupe === false ? installed : dedupeInstalledPackages(installed)
+        options?.dedupe === false ? installed : dedupeInstalledPackages(installed, cwd)
       );
     },
 
