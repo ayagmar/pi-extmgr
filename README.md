@@ -156,7 +156,7 @@ Examples:
 
 - **Staged local changes**: Toggle local extensions on/off, then press `S` to apply all at once.
 - **Package extension config**: Select a package and press `c` (or Enter/A → Configure) to enable/disable individual package entrypoints.
-  - After saving package extension config, reload pi to apply changes.
+  - After saving package extension config, run /reload to apply changes.
 - **Two install modes**:
   - **Managed** (npm): Auto-updates with `pi update`, stored in pi's package cache, supports Pi package manifest/convention loading
   - **Local** (standalone): Copies to `~/.pi/agent/extensions/{package}/`, so it only accepts runnable standalone layouts (manifest-declared/root entrypoints), requires `tar` on `PATH`, and rejects packages whose runtime `dependencies` are not already bundled with the package contents
