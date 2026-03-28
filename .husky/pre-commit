@@ -1,7 +1,20 @@
 #!/usr/bin/env sh
+set -eu
 
-# fnm: set up the correct Node/pnpm environment
-export PATH="$HOME/.fnm:$PATH"
-eval "$(fnm env --shell bash)"
+if ! command -v node >/dev/null 2>&1; then
+  echo "pre-commit: node was not found in PATH." >&2
+  echo "If you use a Node version manager, expose it in ~/.config/husky/init.sh so Git hooks use your own Node." >&2
+  exit 127
+fi
 
-pnpm run check
+if command -v corepack >/dev/null 2>&1; then
+  exec corepack pnpm run check
+fi
+
+if command -v pnpm >/dev/null 2>&1; then
+  exec pnpm run check
+fi
+
+echo "pre-commit: pnpm was not found in PATH." >&2
+echo "Install pnpm, or expose it in ~/.config/husky/init.sh for Git hooks." >&2
+exit 127
