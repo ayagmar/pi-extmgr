@@ -1,10 +1,10 @@
-import type { ProgressEvent } from "@mariozechner/pi-coding-agent";
-import type { InstalledPackage, Scope } from "../../src/types/index.js";
+import { type ProgressEvent } from "@mariozechner/pi-coding-agent";
 import {
-  setPackageCatalogFactory,
   type AvailablePackageUpdate,
   type PackageCatalog,
+  setPackageCatalogFactory,
 } from "../../src/packages/catalog.js";
+import { type InstalledPackage, type Scope } from "../../src/types/index.js";
 import {
   normalizePackageIdentity,
   parsePackageNameAndVersion,

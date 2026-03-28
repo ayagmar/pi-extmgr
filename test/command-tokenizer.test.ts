@@ -1,5 +1,5 @@
-import test from "node:test";
 import assert from "node:assert/strict";
+import test from "node:test";
 import { tokenizeArgs } from "../src/utils/command.js";
 
 void test("tokenizeArgs preserves legacy whitespace splitting", () => {

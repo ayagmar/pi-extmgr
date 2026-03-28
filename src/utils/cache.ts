@@ -1,11 +1,11 @@
 /**
  * Persistent cache for package metadata to reduce npm API calls
  */
-import { readFile, writeFile, mkdir, access, rename, rm } from "node:fs/promises";
-import { join } from "node:path";
+import { access, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
-import type { NpmPackage, InstalledPackage } from "../types/index.js";
+import { join } from "node:path";
 import { CACHE_LIMITS } from "../constants.js";
+import { type InstalledPackage, type NpmPackage } from "../types/index.js";
 import { parseNpmSource } from "./format.js";
 
 const CACHE_DIR = process.env.PI_EXTMGR_CACHE_DIR

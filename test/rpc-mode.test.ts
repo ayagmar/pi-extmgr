@@ -1,11 +1,11 @@
-import test from "node:test";
 import assert from "node:assert/strict";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import test from "node:test";
 import { runResolvedCommand } from "../src/commands/registry.js";
-import { showRemote } from "../src/ui/remote.js";
 import { configurePackageExtensions } from "../src/ui/package-config.js";
+import { showRemote } from "../src/ui/remote.js";
 import { createMockHarness } from "./helpers/mocks.js";
 import { mockPackageCatalog } from "./helpers/package-catalog.js";
 

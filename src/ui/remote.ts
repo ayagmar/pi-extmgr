@@ -1,23 +1,26 @@
 /**
  * Remote package browsing UI
  */
-import type { ExtensionAPI, ExtensionCommandContext } from "@mariozechner/pi-coding-agent";
-import { DynamicBorder } from "@mariozechner/pi-coding-agent";
-import { Container, SelectList, Text, type SelectItem } from "@mariozechner/pi-tui";
-import type { BrowseAction, NpmPackage } from "../types/index.js";
-import { PAGE_SIZE, TIMEOUTS, CACHE_LIMITS } from "../constants.js";
-import { truncate, dynamicTruncate, formatBytes } from "../utils/format.js";
-import { parseChoiceByLabel, splitCommandArgs } from "../utils/command.js";
 import {
-  searchNpmPackages,
+  DynamicBorder,
+  type ExtensionAPI,
+  type ExtensionCommandContext,
+} from "@mariozechner/pi-coding-agent";
+import { Container, type SelectItem, SelectList, Text } from "@mariozechner/pi-tui";
+import { CACHE_LIMITS, PAGE_SIZE, TIMEOUTS } from "../constants.js";
+import {
   getSearchCache,
-  setSearchCache,
   isCacheValid,
+  searchNpmPackages,
+  setSearchCache,
 } from "../packages/discovery.js";
 import { installPackage, installPackageLocally } from "../packages/install.js";
-import { execNpm } from "../utils/npm-exec.js";
-import { notify } from "../utils/notify.js";
+import { type BrowseAction, type NpmPackage } from "../types/index.js";
+import { parseChoiceByLabel, splitCommandArgs } from "../utils/command.js";
+import { dynamicTruncate, formatBytes, truncate } from "../utils/format.js";
 import { requireCustomUI, runCustomUI } from "../utils/mode.js";
+import { notify } from "../utils/notify.js";
+import { execNpm } from "../utils/npm-exec.js";
 import { runTaskWithLoader } from "./async-task.js";
 
 interface PackageInfoCacheEntry {

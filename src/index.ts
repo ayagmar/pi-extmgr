@@ -3,21 +3,12 @@
  *
  * Entry point - exports the main extension function
  */
-import type {
-  ExtensionAPI,
-  ExtensionCommandContext,
-  ExtensionContext,
-} from "@mariozechner/pi-coding-agent";
-import { isPackageSource } from "./utils/format.js";
-import { installPackage } from "./packages/install.js";
-import { tokenizeArgs } from "./utils/command.js";
-import { updateExtmgrStatus } from "./utils/status.js";
 import {
-  startAutoUpdateTimer,
-  stopAutoUpdateTimer,
-  type ContextProvider,
-} from "./utils/auto-update.js";
-import { hydrateAutoUpdateConfig, getAutoUpdateConfig } from "./utils/settings.js";
+  type ExtensionAPI,
+  type ExtensionCommandContext,
+  type ExtensionContext,
+} from "@mariozechner/pi-coding-agent";
+import { createAutoUpdateNotificationHandler } from "./commands/auto-update.js";
 import {
   getExtensionsAutocompleteItems,
   resolveCommand,
@@ -25,7 +16,16 @@ import {
   showNonInteractiveHelp,
   showUnknownCommandMessage,
 } from "./commands/registry.js";
-import { createAutoUpdateNotificationHandler } from "./commands/auto-update.js";
+import { installPackage } from "./packages/install.js";
+import {
+  type ContextProvider,
+  startAutoUpdateTimer,
+  stopAutoUpdateTimer,
+} from "./utils/auto-update.js";
+import { tokenizeArgs } from "./utils/command.js";
+import { isPackageSource } from "./utils/format.js";
+import { getAutoUpdateConfig, hydrateAutoUpdateConfig } from "./utils/settings.js";
+import { updateExtmgrStatus } from "./utils/status.js";
 
 async function executeExtensionsCommand(
   args: string,

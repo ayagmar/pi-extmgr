@@ -18,7 +18,7 @@ export function tokenizeArgs(input: string): string[] {
   };
 
   for (let i = 0; i < input.length; i++) {
-    const char = input[i]!;
+    const char = input.charAt(i);
     const next = input[i + 1];
 
     if (inSingleQuote) {

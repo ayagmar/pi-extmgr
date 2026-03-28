@@ -1,25 +1,25 @@
 /**
  * Auto-update logic and background checker
  */
-import type {
-  ExtensionAPI,
-  ExtensionCommandContext,
-  ExtensionContext,
+import {
+  type ExtensionAPI,
+  type ExtensionCommandContext,
+  type ExtensionContext,
 } from "@mariozechner/pi-coding-agent";
 import { getPackageCatalog } from "../packages/catalog.js";
-import { notify } from "./notify.js";
-import {
-  getAutoUpdateConfig,
-  saveAutoUpdateConfig,
-  getScheduleInterval,
-  calculateNextCheck,
-  parseDuration,
-  type AutoUpdateConfig,
-} from "./settings.js";
-import { normalizePackageIdentity } from "./package-source.js";
 import { logAutoUpdateConfig } from "./history.js";
+import { notify } from "./notify.js";
+import { normalizePackageIdentity } from "./package-source.js";
+import {
+  type AutoUpdateConfig,
+  calculateNextCheck,
+  getAutoUpdateConfig,
+  getScheduleInterval,
+  parseDuration,
+  saveAutoUpdateConfig,
+} from "./settings.js";
 
-import { startTimer, stopTimer, isTimerRunning } from "./timer.js";
+import { isTimerRunning, startTimer, stopTimer } from "./timer.js";
 
 // Context provider for safe session handling
 export type ContextProvider = () => (ExtensionCommandContext | ExtensionContext) | undefined;

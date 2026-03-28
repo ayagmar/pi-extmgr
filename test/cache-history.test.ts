@@ -1,6 +1,6 @@
-import test from "node:test";
 import assert from "node:assert/strict";
-import type { ExtensionAPI, ExtensionCommandContext } from "@mariozechner/pi-coding-agent";
+import test from "node:test";
+import { type ExtensionAPI, type ExtensionCommandContext } from "@mariozechner/pi-coding-agent";
 import { clearMetadataCacheCommand } from "../src/commands/cache.js";
 import { getSearchCache, setSearchCache } from "../src/packages/discovery.js";
 import {
@@ -56,6 +56,10 @@ void test("history records local extension deletion and auto-update config chang
     changes.map((change) => change.action),
     ["extension_delete", "auto_update_config"]
   );
-  assert.match(formatChangeEntry(changes[0]!), /Deleted/);
-  assert.match(formatChangeEntry(changes[1]!), /Auto-update set to weekly/);
+
+  const [firstChange, secondChange] = changes;
+  assert.ok(firstChange);
+  assert.ok(secondChange);
+  assert.match(formatChangeEntry(firstChange), /Deleted/);
+  assert.match(formatChangeEntry(secondChange), /Auto-update set to weekly/);
 });

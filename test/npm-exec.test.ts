@@ -1,5 +1,5 @@
-import test from "node:test";
 import assert from "node:assert/strict";
+import test from "node:test";
 import { resolveNpmCommand } from "../src/utils/npm-exec.js";
 
 void test("resolveNpmCommand uses npm directly on non-windows", () => {

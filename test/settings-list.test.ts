@@ -1,5 +1,5 @@
-import test from "node:test";
 import assert from "node:assert/strict";
+import test from "node:test";
 import { getSettingsListSelectedIndex } from "../src/utils/settings-list.js";
 
 void test("getSettingsListSelectedIndex only accepts integer indices", () => {

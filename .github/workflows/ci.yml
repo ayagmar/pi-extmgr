@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [master]
+    branches: [main, master]
   pull_request:
-    branches: [master]
+    branches: [main, master]
 
 jobs:
   check:
@@ -28,17 +28,17 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Typecheck
+      - name: Type check
         run: pnpm run typecheck
 
       - name: Smoke test
         run: pnpm run smoke-test
 
-      - name: Test
+      - name: Run tests
         run: pnpm run test
 
-      - name: Lint
+      - name: Lint (Biome)
         run: pnpm run lint
 
-      - name: Format check
+      - name: Check formatting (Biome)
         run: pnpm run format:check

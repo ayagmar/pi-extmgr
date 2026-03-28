@@ -1,4 +1,4 @@
-import type { ExtensionAPI, ExtensionCommandContext } from "@mariozechner/pi-coding-agent";
+import { type ExtensionAPI, type ExtensionCommandContext } from "@mariozechner/pi-coding-agent";
 import { clearSearchCache } from "../packages/discovery.js";
 import { clearRemotePackageInfoCache } from "../ui/remote.js";
 import { clearCache } from "../utils/cache.js";

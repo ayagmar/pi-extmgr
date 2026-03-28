@@ -1,10 +1,10 @@
-import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, readFile, writeFile, rm } from "node:fs/promises";
-import { join } from "node:path";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
+import { join } from "node:path";
+import test from "node:test";
 import { discoverPackageExtensions, setPackageExtensionState } from "../src/packages/extensions.js";
-import type { InstalledPackage } from "../src/types/index.js";
+import { type InstalledPackage } from "../src/types/index.js";
 
 void test("discoverPackageExtensions expands manifest glob entrypoints", async () => {
   const cwd = await mkdtemp(join(tmpdir(), "pi-extmgr-cwd-"));

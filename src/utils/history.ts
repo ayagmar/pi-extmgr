@@ -2,10 +2,12 @@
  * Extension change history tracking using pi.appendEntry()
  * This persists extension management actions to the session
  */
-import type { ExtensionAPI, ExtensionCommandContext } from "@mariozechner/pi-coding-agent";
+
+import { type Dirent } from "node:fs";
 import { readdir, readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { type ExtensionAPI, type ExtensionCommandContext } from "@mariozechner/pi-coding-agent";
 
 export type ChangeAction =
   | "extension_toggle"
@@ -278,7 +280,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 async function walkSessionFiles(dir: string): Promise<string[]> {
   const result: string[] = [];
 
-  let entries;
+  let entries: Dirent<string>[];
   try {
     entries = await readdir(dir, { withFileTypes: true, encoding: "utf8" });
   } catch {

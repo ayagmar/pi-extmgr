@@ -1,5 +1,5 @@
-import type { ExtensionAPI, ExtensionCommandContext } from "@mariozechner/pi-coding-agent";
-import { installPackage, type InstallScope } from "../packages/install.js";
+import { type ExtensionAPI, type ExtensionCommandContext } from "@mariozechner/pi-coding-agent";
+import { type InstallScope, installPackage } from "../packages/install.js";
 import { notify } from "../utils/notify.js";
 
 export const INSTALL_USAGE = "Usage: /extensions install <source> [--project|--global]";
