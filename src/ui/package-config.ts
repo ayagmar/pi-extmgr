@@ -1,31 +1,37 @@
 /**
  * Package extension configuration panel.
  */
-import type { ExtensionAPI, ExtensionCommandContext, Theme } from "@mariozechner/pi-coding-agent";
-import { DynamicBorder, getSettingsListTheme } from "@mariozechner/pi-coding-agent";
+import {
+  DynamicBorder,
+  type ExtensionAPI,
+  type ExtensionCommandContext,
+  getSettingsListTheme,
+  type Theme,
+} from "@mariozechner/pi-coding-agent";
 import {
   Container,
   Key,
   matchesKey,
+  type SettingItem,
   SettingsList,
   Spacer,
   Text,
-  type SettingItem,
 } from "@mariozechner/pi-tui";
-import type { InstalledPackage, PackageExtensionEntry, State } from "../types/index.js";
+import { UI } from "../constants.js";
 import {
   applyPackageExtensionStateChanges,
   discoverPackageExtensions,
   validatePackageExtensionSettings,
 } from "../packages/extensions.js";
-import { notify } from "../utils/notify.js";
+import { type InstalledPackage, type PackageExtensionEntry, type State } from "../types/index.js";
+import { fileExists } from "../utils/fs.js";
 import { logExtensionToggle } from "../utils/history.js";
 import { requireCustomUI, runCustomUI } from "../utils/mode.js";
-import { runTaskWithLoader } from "./async-task.js";
+import { notify } from "../utils/notify.js";
 import { getPackageSourceKind } from "../utils/package-source.js";
 import { getSettingsListSelectedIndex } from "../utils/settings-list.js";
-import { fileExists } from "../utils/fs.js";
-import { UI } from "../constants.js";
+import { confirmReload } from "../utils/ui-helpers.js";
+import { runTaskWithLoader } from "./async-task.js";
 import { getChangeMarker, getPackageIcon, getScopeIcon, getStatusIcon } from "./theme.js";
 
 export interface PackageConfigRow {
@@ -168,10 +174,14 @@ async function showConfigurePanel(
         getSettingsListTheme(),
         (id: string, newValue: string) => {
           const row = rowById.get(id);
-          if (!row || !row.available) return;
+          if (!row?.available) return;
 
           const state = newValue as State;
-          staged.set(id, state);
+          if (state === row.originalState) {
+            staged.delete(id);
+          } else {
+            staged.set(id, state);
+          }
 
           const settingsItem = settingsItems.find((item) => item.id === id);
           if (settingsItem) {
@@ -286,35 +296,6 @@ export async function applyPackageExtensionChanges(
   return { changed: changedRows.length, errors };
 }
 
-async function promptRestartForPackageConfig(ctx: ExtensionCommandContext): Promise<boolean> {
-  if (!ctx.hasUI) {
-    notify(
-      ctx,
-      "Restart pi to apply package extension configuration changes. /reload may not be enough.",
-      "warning"
-    );
-    return false;
-  }
-
-  const restartNow = await ctx.ui.confirm(
-    "Restart Required",
-    "Package extension configuration changed.\nA full pi restart is required to apply it.\nExit pi now?"
-  );
-
-  if (!restartNow) {
-    notify(
-      ctx,
-      "Restart pi manually to apply package extension configuration changes. /reload may not be enough.",
-      "warning"
-    );
-    return false;
-  }
-
-  notify(ctx, "Shutting down pi. Start it again to apply changes.", "info");
-  ctx.shutdown();
-  return true;
-}
-
 export async function configurePackageExtensions(
   pkg: InstalledPackage,
   ctx: ExtensionCommandContext,
@@ -393,24 +374,31 @@ export async function configurePackageExtensions(
 
     const apply = await applyPackageExtensionChanges(rows, staged, pkg, ctx.cwd, pi);
 
+    if (apply.changed === 0) {
+      if (apply.errors.length > 0) {
+        notify(
+          ctx,
+          `Applied ${apply.changed} change(s), ${apply.errors.length} failed.\n${apply.errors.join("\n")}`,
+          "warning"
+        );
+        continue;
+      }
+
+      notify(ctx, "No changes to apply.", "info");
+      return { changed: 0, reloaded: false };
+    }
+
     if (apply.errors.length > 0) {
       notify(
         ctx,
         `Applied ${apply.changed} change(s), ${apply.errors.length} failed.\n${apply.errors.join("\n")}`,
         "warning"
       );
-    } else if (apply.changed === 0) {
-      notify(ctx, "No changes to apply.", "info");
-      return { changed: 0, reloaded: false };
     } else {
       notify(ctx, `Applied ${apply.changed} package extension change(s).`, "info");
     }
 
-    if (apply.changed === 0) {
-      return { changed: 0, reloaded: false };
-    }
-
-    const restarted = await promptRestartForPackageConfig(ctx);
-    return { changed: apply.changed, reloaded: restarted };
+    const reloaded = await confirmReload(ctx, "Package extension configuration changed.");
+    return { changed: apply.changed, reloaded };
   }
 }

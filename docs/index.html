@@ -6,7 +6,7 @@
     <title>pi-extmgr — Extension Manager for Pi</title>
     <meta
       name="description"
-      content="A better way to manage Pi extensions. Browse, install, enable/disable, and remove extensions from one place."
+      content="A better way to manage Pi extensions. Browse, install, enable/disable, and remove extensions from one place with Pi's native package flows underneath."
     />
 
     <!-- Compiled Tailwind CSS -->
@@ -70,8 +70,8 @@
               class="text-neutral-300 hover:text-white underline underline-offset-4"
               >Pi</a
             >
-            extensions from a unified interface. No more digging through directories or editing
-            config files.
+            extensions from a unified interface. Built on Pi's native package flows, without the
+            extra directory spelunking or config-file editing.
           </p>
 
           <!-- Live Stats -->
@@ -369,15 +369,9 @@
             <code class="font-mono text-sm text-neutral-300">pi install npm:pi-extmgr</code>
           </div>
           <p class="text-neutral-400 mb-8">
-            Then reload
-            <a
-              href="https://pi.dev"
-              target="_blank"
-              rel="noopener"
-              class="text-neutral-300 hover:text-white underline underline-offset-4"
-              >Pi</a
-            >
-            and type
+            If Pi is already running, use
+            <code class="text-white bg-neutral-800 px-1.5 py-0.5 rounded text-sm">/reload</code>,
+            then type
             <code class="text-white bg-neutral-800 px-1.5 py-0.5 rounded text-sm">/extensions</code>
             to open the manager.
           </p>

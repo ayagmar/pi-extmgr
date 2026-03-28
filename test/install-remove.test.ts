@@ -1,9 +1,9 @@
-import test from "node:test";
 import assert from "node:assert/strict";
 import { access, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { ExtensionAPI, ExtensionCommandContext } from "@mariozechner/pi-coding-agent";
+import test from "node:test";
+import { type ExtensionAPI, type ExtensionCommandContext } from "@mariozechner/pi-coding-agent";
 import { installFromUrl, installPackage, installPackageLocally } from "../src/packages/install.js";
 import { removePackage, updatePackage, updatePackages } from "../src/packages/management.js";
 import { createMockHarness } from "./helpers/mocks.js";
@@ -208,6 +208,33 @@ void test("removePackage keeps case-sensitive local paths distinct", async () =>
   }
 
   assert.deepEqual(removals, [{ source: "/opt/extensions/foo/index.ts", scope: "global" }]);
+});
+
+void test("removePackage resolves equivalent absolute local paths against cwd", async () => {
+  const removals: { source: string; scope: "global" | "project" }[] = [];
+  const cwd = "/workspace/project";
+  const restoreCatalog = mockPackageCatalog({
+    packages: [
+      {
+        source: "./vendor/demo",
+        name: "demo",
+        scope: "project",
+        resolvedPath: "/workspace/project/vendor/demo",
+      },
+    ],
+    removeImpl: (source, scope) => {
+      removals.push({ source, scope });
+    },
+  });
+
+  try {
+    const { pi, ctx } = createMockHarness({ cwd });
+    await removePackage("/workspace/project/vendor/demo", ctx, pi);
+  } finally {
+    restoreCatalog();
+  }
+
+  assert.deepEqual(removals, [{ source: "./vendor/demo", scope: "project" }]);
 });
 
 void test("updatePackage treats missing available updates as a no-op", async () => {

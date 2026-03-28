@@ -1,6 +1,9 @@
 /**
  * Package source parsing helpers shared across discovery/management flows.
  */
+import { homedir } from "node:os";
+import { join, resolve as resolvePath } from "node:path";
+import { fileURLToPath } from "node:url";
 import { parseNpmSource } from "./format.js";
 
 export type PackageSourceKind = "npm" | "git" | "local" | "unknown";
@@ -61,9 +64,35 @@ export function stripGitSourcePrefix(source: string): string {
   return withoutGitPlus.startsWith("git:") ? withoutGitPlus.slice(4) : withoutGitPlus;
 }
 
+function resolveLocalSourceForIdentity(source: string, cwd?: string): string {
+  if (source.startsWith("file://")) {
+    try {
+      return fileURLToPath(source);
+    } catch {
+      return source;
+    }
+  }
+
+  if (source.startsWith("~/")) {
+    return join(homedir(), source.slice(2));
+  }
+
+  if (
+    cwd &&
+    (source.startsWith("./") ||
+      source.startsWith("../") ||
+      source.startsWith(".\\") ||
+      source.startsWith("..\\"))
+  ) {
+    return resolvePath(cwd, source);
+  }
+
+  return source;
+}
+
 export function normalizePackageIdentity(
   source: string,
-  options?: { resolvedPath?: string }
+  options?: { resolvedPath?: string; cwd?: string }
 ): string {
   const normalized = sanitizeSource(source);
   const kind = getPackageSourceKind(normalized);
@@ -80,7 +109,9 @@ export function normalizePackageIdentity(
   }
 
   if (kind === "local") {
-    return `local:${normalizeLocalSourceIdentity(options?.resolvedPath ?? normalized)}`;
+    const localSource =
+      options?.resolvedPath ?? resolveLocalSourceForIdentity(normalized, options?.cwd);
+    return `local:${normalizeLocalSourceIdentity(localSource)}`;
   }
 
   return `raw:${normalized.replace(/\\/g, "/").toLowerCase()}`;

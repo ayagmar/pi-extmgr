@@ -1,8 +1,9 @@
-import test from "node:test";
 import assert from "node:assert/strict";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import test from "node:test";
+import { getAgentDir } from "@mariozechner/pi-coding-agent";
 import { getInstalledPackages, isSourceInstalled } from "../src/packages/discovery.js";
 import { isPackageSource, normalizePackageSource, parseNpmSource } from "../src/utils/format.js";
 import { getPackageSourceKind, normalizePackageIdentity } from "../src/utils/package-source.js";
@@ -114,6 +115,67 @@ void test("isSourceInstalled keeps case-sensitive local paths distinct", async (
     const { ctx } = createMockHarness();
     assert.equal(await isSourceInstalled("/opt/extensions/Foo/index.ts", ctx), true);
     assert.equal(await isSourceInstalled("/opt/extensions/foo/index.ts", ctx), false);
+  } finally {
+    restoreCatalog();
+  }
+});
+
+void test("isSourceInstalled resolves project-relative local paths against cwd", async () => {
+  const cwd = "/workspace/project";
+  const restoreCatalog = mockPackageCatalog({
+    packages: [
+      {
+        source: "./vendor/demo",
+        name: "demo",
+        scope: "project",
+        resolvedPath: "/workspace/project/vendor/demo",
+      },
+    ],
+  });
+
+  try {
+    const { ctx } = createMockHarness({ cwd });
+    assert.equal(await isSourceInstalled("./vendor/demo", ctx), true);
+    assert.equal(await isSourceInstalled("/workspace/project/vendor/demo", ctx), true);
+  } finally {
+    restoreCatalog();
+  }
+});
+
+void test("isSourceInstalled resolves project-relative local paths without resolvedPath metadata", async () => {
+  const cwd = "/workspace/project";
+  const restoreCatalog = mockPackageCatalog({
+    packages: [
+      {
+        source: "./vendor/demo",
+        name: "demo",
+        scope: "project",
+      },
+    ],
+  });
+
+  try {
+    const { ctx } = createMockHarness({ cwd });
+    assert.equal(await isSourceInstalled("/workspace/project/vendor/demo", ctx), true);
+  } finally {
+    restoreCatalog();
+  }
+});
+
+void test("isSourceInstalled resolves global-relative local paths against agent dir", async () => {
+  const restoreCatalog = mockPackageCatalog({
+    packages: [
+      {
+        source: "./vendor/demo",
+        name: "demo",
+        scope: "global",
+      },
+    ],
+  });
+
+  try {
+    const { ctx } = createMockHarness({ cwd: "/workspace/project" });
+    assert.equal(await isSourceInstalled(`${getAgentDir()}/vendor/demo`, ctx), true);
   } finally {
     restoreCatalog();
   }

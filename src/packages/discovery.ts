@@ -3,19 +3,20 @@
  */
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import type {
-  ExtensionAPI,
-  ExtensionCommandContext,
-  ExtensionContext,
+import {
+  type ExtensionAPI,
+  type ExtensionCommandContext,
+  type ExtensionContext,
+  getAgentDir,
 } from "@mariozechner/pi-coding-agent";
-import type { InstalledPackage, NpmPackage, SearchCache } from "../types/index.js";
 import { CACHE_TTL, TIMEOUTS } from "../constants.js";
-import { readSummary } from "../utils/fs.js";
+import { type InstalledPackage, type NpmPackage, type SearchCache } from "../types/index.js";
 import { parseNpmSource } from "../utils/format.js";
+import { readSummary } from "../utils/fs.js";
+import { fetchWithTimeout } from "../utils/network.js";
+import { execNpm } from "../utils/npm-exec.js";
 import { normalizePackageIdentity } from "../utils/package-source.js";
 import { getPackageCatalog } from "./catalog.js";
-import { execNpm } from "../utils/npm-exec.js";
-import { fetchWithTimeout } from "../utils/network.js";
 
 const NPM_SEARCH_API = "https://registry.npmjs.org/-/v1/search";
 const NPM_SEARCH_PAGE_SIZE = 250;
@@ -69,13 +70,13 @@ export function isCacheValid(query: string): boolean {
 
 // Import persistent cache
 import {
-  getCachedSearch,
-  setCachedSearch,
   getCachedPackage,
-  setCachedPackage,
-  getPackageDescriptions,
   getCachedPackageSize,
+  getCachedSearch,
+  getPackageDescriptions,
+  setCachedPackage,
   setCachedPackageSize,
+  setCachedSearch,
 } from "../utils/cache.js";
 
 function toNpmPackage(entry: NpmSearchResultObject): NpmPackage | undefined {
@@ -201,11 +202,13 @@ export async function getInstalledPackages(
   return packages;
 }
 
-function getInstalledPackageIdentity(pkg: InstalledPackage): string {
-  return normalizePackageIdentity(
-    pkg.source,
-    pkg.resolvedPath ? { resolvedPath: pkg.resolvedPath } : undefined
-  );
+function getInstalledPackageIdentity(pkg: InstalledPackage, options?: { cwd?: string }): string {
+  const baseCwd = pkg.scope === "project" ? options?.cwd : getAgentDir();
+
+  return normalizePackageIdentity(pkg.source, {
+    ...(pkg.resolvedPath ? { resolvedPath: pkg.resolvedPath } : {}),
+    ...(baseCwd ? { cwd: baseCwd } : {}),
+  });
 }
 
 export async function isSourceInstalled(
@@ -214,10 +217,10 @@ export async function isSourceInstalled(
   options?: { scope?: "global" | "project" }
 ): Promise<boolean> {
   const installed = await getPackageCatalog(ctx.cwd).listInstalledPackages({ dedupe: false });
-  const expected = normalizePackageIdentity(source);
+  const expected = normalizePackageIdentity(source, { cwd: ctx.cwd });
 
   return installed.some((pkg) => {
-    if (getInstalledPackageIdentity(pkg) !== expected) {
+    if (getInstalledPackageIdentity(pkg, { cwd: ctx.cwd }) !== expected) {
       return false;
     }
     return options?.scope ? pkg.scope === options.scope : true;

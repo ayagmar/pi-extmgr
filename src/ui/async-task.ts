@@ -1,9 +1,9 @@
-import type {
-  ExtensionCommandContext,
-  ExtensionContext,
-  Theme,
+import {
+  DynamicBorder,
+  type ExtensionCommandContext,
+  type ExtensionContext,
+  type Theme,
 } from "@mariozechner/pi-coding-agent";
-import { DynamicBorder } from "@mariozechner/pi-coding-agent";
 import { CancellableLoader, Container, Loader, Spacer, Text, type TUI } from "@mariozechner/pi-tui";
 import { hasCustomUI } from "../utils/mode.js";
 
@@ -11,6 +11,8 @@ type AnyContext = ExtensionCommandContext | ExtensionContext;
 
 const TASK_ABORTED = Symbol("task-aborted");
 const TASK_FAILED = Symbol("task-failed");
+
+type TaskSuccess<T> = { type: "ok"; value: T };
 
 export interface TaskControls {
   signal: AbortSignal;
@@ -21,6 +23,7 @@ interface LoaderConfig {
   title: string;
   message: string;
   cancellable?: boolean;
+  fallbackWithoutLoader?: boolean;
 }
 
 function createLoaderComponent(
@@ -69,82 +72,115 @@ function createLoaderComponent(
   return { container, loader, signal };
 }
 
+function runTaskWithoutLoader<T>(task: (controls: TaskControls) => Promise<T>): Promise<T> {
+  return Promise.resolve().then(() =>
+    task({
+      signal: new AbortController().signal,
+      setMessage: () => undefined,
+    })
+  );
+}
+
 export async function runTaskWithLoader<T>(
   ctx: AnyContext,
   config: LoaderConfig,
   task: (controls: TaskControls) => Promise<T>
 ): Promise<T | undefined> {
   if (!hasCustomUI(ctx)) {
-    return task({
-      signal: new AbortController().signal,
-      setMessage: () => undefined,
-    });
+    return runTaskWithoutLoader(task);
   }
 
   let taskError: unknown;
+  let startedTask: Promise<T> | undefined;
+  let cleanupStartedTaskUI: (() => void) | undefined;
 
-  const result = await ctx.ui.custom<T | typeof TASK_ABORTED | typeof TASK_FAILED>(
-    (tui, theme, _keybindings, done) => {
-      let finished = false;
-      const finish = (value: T | typeof TASK_ABORTED | typeof TASK_FAILED): void => {
-        if (finished) {
-          return;
-        }
-        finished = true;
-        done(value);
-      };
+  const result = await ctx.ui.custom<
+    TaskSuccess<T> | typeof TASK_ABORTED | typeof TASK_FAILED | undefined
+  >((tui, theme, _keybindings, done) => {
+    let finished = false;
+    const finish = (
+      value: TaskSuccess<T> | typeof TASK_ABORTED | typeof TASK_FAILED | undefined
+    ): void => {
+      if (finished) {
+        return;
+      }
+      finished = true;
+      done(value);
+    };
 
-      const { container, loader, signal } = createLoaderComponent(
-        tui,
-        theme,
-        config.title,
-        config.message,
-        config.cancellable ?? true,
-        () => finish(TASK_ABORTED)
-      );
+    const { container, loader, signal } = createLoaderComponent(
+      tui,
+      theme,
+      config.title,
+      config.message,
+      config.cancellable ?? true,
+      () => finish(TASK_ABORTED)
+    );
 
-      void task({
+    cleanupStartedTaskUI = () => {
+      if (loader instanceof CancellableLoader) {
+        loader.dispose();
+        return;
+      }
+
+      loader.stop();
+    };
+
+    startedTask = Promise.resolve().then(() =>
+      task({
         signal,
         setMessage: (message) => {
           loader.setMessage(message);
           tui.requestRender();
         },
       })
-        .then((value) => finish(value))
-        .catch((error) => {
-          if (signal.aborted) {
-            finish(TASK_ABORTED);
-            return;
-          }
+    );
 
-          taskError = error;
-          finish(TASK_FAILED);
-        });
+    void startedTask
+      .then((value) => finish({ type: "ok", value }))
+      .catch((error) => {
+        if (signal.aborted) {
+          finish(TASK_ABORTED);
+          return;
+        }
 
-      return {
-        render(width: number) {
-          return container.render(width);
-        },
-        invalidate() {
-          container.invalidate();
-        },
-        handleInput(data: string) {
-          if (loader instanceof CancellableLoader) {
-            loader.handleInput(data);
-            tui.requestRender();
-          }
-        },
-        dispose() {
-          if (loader instanceof CancellableLoader) {
-            loader.dispose();
-            return;
-          }
+        taskError = error;
+        finish(TASK_FAILED);
+      });
 
-          loader.stop();
-        },
-      };
+    return {
+      render(width: number) {
+        return container.render(width);
+      },
+      invalidate() {
+        container.invalidate();
+      },
+      handleInput(data: string) {
+        if (loader instanceof CancellableLoader) {
+          loader.handleInput(data);
+          tui.requestRender();
+        }
+      },
+      dispose() {
+        if (loader instanceof CancellableLoader) {
+          loader.dispose();
+          return;
+        }
+
+        loader.stop();
+      },
+    };
+  });
+
+  if (result === undefined) {
+    if (startedTask) {
+      return startedTask.finally(() => cleanupStartedTaskUI?.());
     }
-  );
+    if (config.fallbackWithoutLoader) {
+      return runTaskWithoutLoader(task);
+    }
+    return undefined;
+  }
 
   if (result === TASK_ABORTED) {
     return undefined;
@@ -154,5 +190,5 @@ export async function runTaskWithLoader<T>(
     throw taskError;
   }
 
-  return result;
+  return result.value;
 }

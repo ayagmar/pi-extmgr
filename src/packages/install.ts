@@ -1,30 +1,30 @@
 /**
  * Package installation logic
  */
-import { mkdir, rm, writeFile, cp } from "node:fs/promises";
-import { join } from "node:path";
+import { cp, mkdir, rm, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
-import type {
-  ExtensionAPI,
-  ExtensionCommandContext,
-  ProgressEvent,
+import { join } from "node:path";
+import {
+  type ExtensionAPI,
+  type ExtensionCommandContext,
+  type ProgressEvent,
 } from "@mariozechner/pi-coding-agent";
+import { TIMEOUTS } from "../constants.js";
+import { runTaskWithLoader } from "../ui/async-task.js";
 import { normalizePackageSource } from "../utils/format.js";
 import { fileExists } from "../utils/fs.js";
-import { clearSearchCache } from "./discovery.js";
-import { getPackageCatalog } from "./catalog.js";
-import { discoverPackageExtensionEntrypoints, readPackageManifest } from "./extensions.js";
 import { logPackageInstall } from "../utils/history.js";
-import { clearUpdatesAvailable } from "../utils/settings.js";
-import { notify, error as notifyError, success } from "../utils/notify.js";
-import { confirmAction, confirmReload, showProgress } from "../utils/ui-helpers.js";
 import { tryOperation } from "../utils/mode.js";
-import { runTaskWithLoader } from "../ui/async-task.js";
-import { updateExtmgrStatus } from "../utils/status.js";
+import { fetchWithTimeout } from "../utils/network.js";
+import { notify, error as notifyError, success } from "../utils/notify.js";
 import { execNpm } from "../utils/npm-exec.js";
 import { normalizePackageIdentity } from "../utils/package-source.js";
-import { fetchWithTimeout } from "../utils/network.js";
-import { TIMEOUTS } from "../constants.js";
+import { clearUpdatesAvailable } from "../utils/settings.js";
+import { updateExtmgrStatus } from "../utils/status.js";
+import { confirmAction, confirmReload, showProgress } from "../utils/ui-helpers.js";
+import { getPackageCatalog } from "./catalog.js";
+import { clearSearchCache } from "./discovery.js";
+import { discoverPackageExtensionEntrypoints, readPackageManifest } from "./extensions.js";
 
 export type InstallScope = "global" | "project";
 
@@ -171,7 +171,7 @@ export async function installPackage(
 
   // Check if it's a GitHub URL to a .ts file - handle as direct download
   const githubTsMatch = source.match(
-    /^https:\/\/github\.com\/([^\/]+)\/([^\/]+)\/blob\/([^\/]+)\/(.+\.ts)$/
+    /^https:\/\/github\.com\/([^/]+)\/([^/]+)\/blob\/([^/]+)\/(.+\.ts)$/
   );
   const githubInfo = safeExtractGithubMatch(githubTsMatch);
   if (githubInfo) {
@@ -211,6 +211,7 @@ export async function installPackage(
         title: "Install Package",
         message: `Installing ${normalized}...`,
         cancellable: false,
+        fallbackWithoutLoader: true,
       },
       async ({ setMessage }) => {
         await getPackageCatalog(ctx.cwd).install(normalized, scope, (event) => {
@@ -231,7 +232,7 @@ export async function installPackage(
   clearSearchCache();
   logPackageInstall(pi, normalized, normalized, undefined, scope, true);
   success(ctx, `Installed ${normalized} (${scope})`);
-  clearUpdatesAvailable(pi, ctx, [normalizePackageIdentity(normalized)]);
+  clearUpdatesAvailable(pi, ctx, [normalizePackageIdentity(normalized, { cwd: ctx.cwd })]);
 
   const reloaded = await confirmReload(ctx, "Package installed.");
   if (!reloaded) {

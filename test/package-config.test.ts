@@ -1,17 +1,74 @@
-import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import type { InstalledPackage, State } from "../src/types/index.js";
+import { join } from "node:path";
+import test from "node:test";
+import { type ExtensionAPI, initTheme, type Theme } from "@mariozechner/pi-coding-agent";
 import { discoverPackageExtensions } from "../src/packages/extensions.js";
+import { type InstalledPackage, type State } from "../src/types/index.js";
 import {
   applyPackageExtensionChanges,
   buildPackageConfigRows,
   configurePackageExtensions,
 } from "../src/ui/package-config.js";
 import { createMockHarness } from "./helpers/mocks.js";
+
+initTheme();
+
+const noop = (): undefined => undefined;
+
+async function captureCustomComponent(
+  factory: unknown,
+  ctxTheme: Theme,
+  matcher: (lines: string[]) => boolean,
+  onMatch: (
+    component: {
+      render(width: number): string[];
+      handleInput?(data: string): void;
+      dispose?(): void;
+    },
+    lines: string[],
+    completion: Promise<unknown>
+  ) => unknown
+): Promise<unknown> {
+  let resolveCompletion: (value: unknown) => void = () => undefined;
+  const completion = new Promise<unknown>((resolve) => {
+    resolveCompletion = resolve;
+  });
+
+  const component = await (
+    factory as (
+      tui: unknown,
+      theme: unknown,
+      keybindings: unknown,
+      done: (result: unknown) => void
+    ) =>
+      | Promise<{
+          render(width: number): string[];
+          handleInput?(data: string): void;
+          dispose?(): void;
+        }>
+      | {
+          render(width: number): string[];
+          handleInput?(data: string): void;
+          dispose?(): void;
+        }
+  )({ requestRender: noop, terminal: { rows: 40, columns: 120 } }, ctxTheme, {}, resolveCompletion);
+
+  try {
+    const lines = component.render(120);
+    if (!matcher(lines)) {
+      return await Promise.race([
+        completion,
+        new Promise<unknown>((resolve) => setTimeout(() => resolve(undefined), 50)),
+      ]);
+    }
+
+    return await onMatch(component, lines, completion);
+  } finally {
+    component.dispose?.();
+  }
+}
 
 function createPiRecorder() {
   const entries: { customType: string; data: unknown }[] = [];
@@ -216,8 +273,12 @@ void test("applyPackageExtensionChanges batches multiple row changes in one save
     const rows = await buildPackageConfigRows(discovered);
 
     const staged = new Map<string, State>();
-    staged.set(rows.find((entry) => entry.extensionPath === "extensions/a.ts")!.id, "disabled");
-    staged.set(rows.find((entry) => entry.extensionPath === "extensions/b.ts")!.id, "enabled");
+    const firstRow = rows.find((entry) => entry.extensionPath === "extensions/a.ts");
+    const secondRow = rows.find((entry) => entry.extensionPath === "extensions/b.ts");
+    assert.ok(firstRow);
+    assert.ok(secondRow);
+    staged.set(firstRow.id, "disabled");
+    staged.set(secondRow.id, "enabled");
 
     const { pi } = createPiRecorder();
     const result = await applyPackageExtensionChanges(rows, staged, pkg, cwd, pi);
@@ -317,6 +378,63 @@ void test("configurePackageExtensions surfaces invalid settings before rendering
     assert.deepEqual(result, { changed: 0, reloaded: false });
     assert.equal(customCallCount(), 0);
     assert.ok(notifications.some((entry) => /Invalid JSON/.test(entry.message)));
+  } finally {
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
+
+void test("configurePackageExtensions reloads after saving changes", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "pi-extmgr-package-config-"));
+  const pkgRoot = join(cwd, "vendor", "demo");
+
+  try {
+    await mkdir(pkgRoot, { recursive: true });
+    await writeFile(
+      join(pkgRoot, "package.json"),
+      JSON.stringify({ name: "demo", pi: { extensions: ["./index.ts"] } }, null, 2),
+      "utf8"
+    );
+    await writeFile(join(pkgRoot, "index.ts"), "// demo extension\n", "utf8");
+
+    const { pi, ctx, confirmPrompts, reloadCount } = createMockHarness({
+      cwd,
+      hasUI: true,
+      hasCustomUI: true,
+      confirmResult: true,
+    });
+
+    (ctx.ui as { custom: (factory: unknown) => Promise<unknown> }).custom = async (factory) =>
+      captureCustomComponent(
+        factory,
+        ctx.ui.theme,
+        (lines) => lines.some((line) => line.includes("Configure extensions: demo")),
+        async (component, _lines, completion) => {
+          component.handleInput?.(" ");
+          component.handleInput?.("s");
+          return await completion;
+        }
+      );
+
+    const result = await configurePackageExtensions(
+      {
+        source: "./vendor/demo",
+        name: "demo",
+        scope: "project",
+        resolvedPath: pkgRoot,
+      },
+      ctx,
+      pi
+    );
+
+    assert.deepEqual(result, { changed: 1, reloaded: true });
+    assert.deepEqual(confirmPrompts, ["Reload Required"]);
+    assert.equal(reloadCount(), 1);
+
+    const saved = JSON.parse(await readFile(join(cwd, ".pi", "settings.json"), "utf8")) as {
+      packages: { source: string; extensions: string[] }[];
+    };
+
+    assert.deepEqual(saved.packages[0]?.extensions, ["-index.ts"]);
   } finally {
     await rm(cwd, { recursive: true, force: true });
   }

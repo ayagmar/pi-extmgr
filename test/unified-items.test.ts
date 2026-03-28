@@ -1,9 +1,9 @@
-import test from "node:test";
 import assert from "node:assert/strict";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { ExtensionEntry, InstalledPackage } from "../src/types/index.js";
+import test from "node:test";
+import { type ExtensionEntry, type InstalledPackage } from "../src/types/index.js";
 import { buildUnifiedItems } from "../src/ui/unified.js";
 
 function createPackage(source: string, name: string): InstalledPackage {
@@ -96,6 +96,26 @@ void test("buildUnifiedItems keeps case-sensitive POSIX paths distinct", () => {
       name: "foo",
       scope: "global",
       resolvedPath: "/opt/extensions/foo",
+    },
+  ];
+
+  const items = buildUnifiedItems(localEntries, installedPackages, new Set());
+
+  assert.equal(items.length, 2);
+  assert.deepEqual(
+    items.map((item) => item.type),
+    ["local", "package"]
+  );
+});
+
+void test("buildUnifiedItems does not treat longer path prefixes as duplicates", () => {
+  const localEntries = [createLocalEntry("/tmp/vendor/demo/index.ts", "demo/index.ts")];
+  const installedPackages: InstalledPackage[] = [
+    {
+      source: "npm:demo-addon",
+      name: "demo-addon",
+      scope: "global",
+      resolvedPath: "/tmp/vendor/demo/index.ts-addon",
     },
   ];
 

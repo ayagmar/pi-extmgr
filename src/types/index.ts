@@ -46,24 +46,31 @@ export interface PackageExtensionEntry {
   state: State;
 }
 
-export interface UnifiedItem {
-  type: "local" | "package";
+export interface LocalUnifiedItem {
+  type: "local";
   id: string;
   displayName: string;
   summary: string;
   scope: Scope;
-  // Local extension fields
-  state?: State | undefined;
-  activePath?: string | undefined;
-  disabledPath?: string | undefined;
-  originalState?: State | undefined;
-  // Package fields
-  source?: string | undefined;
+  state: State;
+  activePath: string;
+  disabledPath: string;
+  originalState: State;
+}
+
+export interface PackageUnifiedItem {
+  type: "package";
+  id: string;
+  displayName: string;
+  scope: Scope;
+  source: string;
   version?: string | undefined;
   description?: string | undefined;
   size?: number | undefined; // Package size in bytes
   updateAvailable?: boolean | undefined;
 }
+
+export type UnifiedItem = LocalUnifiedItem | PackageUnifiedItem;
 
 export interface SearchCache {
   query: string;

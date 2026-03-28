@@ -1,4 +1,4 @@
-import type { ExtensionAPI, ExtensionCommandContext } from "@mariozechner/pi-coding-agent";
+import { type ExtensionAPI, type ExtensionCommandContext } from "@mariozechner/pi-coding-agent";
 
 export interface ExecResult {
   code: number;
@@ -43,6 +43,7 @@ export function createMockHarness(options: MockHarnessOptions = {}): {
   selectPrompts: string[];
   confirmPrompts: string[];
   customCallCount: () => number;
+  reloadCount: () => number;
 } {
   const calls: ExecCall[] = [];
   const entries: { type: "custom"; customType: string; data: unknown }[] = [];
@@ -52,6 +53,7 @@ export function createMockHarness(options: MockHarnessOptions = {}): {
   const selectPrompts: string[] = [];
   const confirmPrompts: string[] = [];
   let customCalls = 0;
+  let reloadCalls = 0;
 
   const installedRecords: { source: string; scope: "global" | "project" }[] = [];
   const customExecImpl = options.execImpl;
@@ -170,6 +172,10 @@ export function createMockHarness(options: MockHarnessOptions = {}): {
     hasUI: options.hasUI ?? false,
     cwd: options.cwd ?? "/tmp",
     ui,
+    reload: () => {
+      reloadCalls += 1;
+      return Promise.resolve();
+    },
     sessionManager: {
       getEntries: () => entries,
     },
@@ -186,5 +192,6 @@ export function createMockHarness(options: MockHarnessOptions = {}): {
     selectPrompts,
     confirmPrompts,
     customCallCount: () => customCalls,
+    reloadCount: () => reloadCalls,
   };
 }
