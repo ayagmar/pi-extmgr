@@ -237,6 +237,50 @@ void test("removePackage resolves equivalent absolute local paths against cwd", 
   assert.deepEqual(removals, [{ source: "./vendor/demo", scope: "project" }]);
 });
 
+void test("removePackage keeps remaining project-relative installs visible after scoped removal", async () => {
+  const removals: { source: string; scope: "global" | "project" }[] = [];
+  const cwd = "/workspace/project";
+  const restoreCatalog = mockPackageCatalog({
+    packages: [
+      {
+        source: "./vendor/demo",
+        name: "demo",
+        scope: "project",
+        resolvedPath: "/workspace/project/vendor/demo",
+      },
+      {
+        source: "/workspace/project/vendor/demo",
+        name: "demo",
+        scope: "global",
+      },
+    ],
+    removeImpl: (source, scope) => {
+      removals.push({ source, scope });
+    },
+  });
+
+  try {
+    const { pi, ctx, notifications, reloadCount } = createMockHarness({
+      cwd,
+      hasUI: true,
+      selectResult: "Global only",
+      confirmImpl: (title) => title === "Remove Package",
+    });
+
+    await removePackage("/workspace/project/vendor/demo", ctx, pi);
+
+    assert.deepEqual(removals, [{ source: "/workspace/project/vendor/demo", scope: "global" }]);
+    assert.equal(reloadCount(), 0);
+    assert.ok(
+      notifications.some((entry) =>
+        entry.message.includes("Removed from selected scope(s). Still installed in: project.")
+      )
+    );
+  } finally {
+    restoreCatalog();
+  }
+});
+
 void test("updatePackage treats missing available updates as a no-op", async () => {
   const output: string[] = [];
   const originalLog = console.log;

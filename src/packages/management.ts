@@ -398,7 +398,11 @@ async function removePackageInternal(
     .map((result) => result.target);
 
   const remaining = (await getInstalledPackagesAllScopesForRemoval(ctx)).filter(
-    (p) => packageIdentity(p.source) === identity
+    (p) =>
+      packageIdentity(p.source, {
+        ...(p.resolvedPath ? { resolvedPath: p.resolvedPath } : {}),
+        cwd: p.scope === "project" ? ctx.cwd : getAgentDir(),
+      }) === identity
   );
   notifyRemovalSummary(source, remaining, failures, ctx);
 
