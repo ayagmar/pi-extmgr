@@ -196,6 +196,26 @@ function packageIdentity(
   return normalizePackageIdentity(source, options);
 }
 
+function packageSourceIdentities(source: string, ctx: ExtensionCommandContext): Set<string> {
+  return new Set([
+    packageIdentity(source, { cwd: ctx.cwd }),
+    packageIdentity(source, { cwd: getAgentDir() }),
+  ]);
+}
+
+function installedPackageMatchesSource(
+  pkg: InstalledPackage,
+  identities: Set<string>,
+  ctx: ExtensionCommandContext
+): boolean {
+  return identities.has(
+    packageIdentity(pkg.source, {
+      ...(pkg.resolvedPath ? { resolvedPath: pkg.resolvedPath } : {}),
+      cwd: pkg.scope === "project" ? ctx.cwd : getAgentDir(),
+    })
+  );
+}
+
 async function getInstalledPackagesAllScopesForRemoval(
   ctx: ExtensionCommandContext
 ): Promise<InstalledPackage[]> {
@@ -344,14 +364,8 @@ async function removePackageInternal(
   pi: ExtensionAPI
 ): Promise<PackageMutationOutcome> {
   const installed = await getInstalledPackagesAllScopesForRemoval(ctx);
-  const identity = packageIdentity(source, { cwd: ctx.cwd });
-  const matching = installed.filter(
-    (p) =>
-      packageIdentity(p.source, {
-        ...(p.resolvedPath ? { resolvedPath: p.resolvedPath } : {}),
-        cwd: p.scope === "project" ? ctx.cwd : getAgentDir(),
-      }) === identity
-  );
+  const identities = packageSourceIdentities(source, ctx);
+  const matching = installed.filter((pkg) => installedPackageMatchesSource(pkg, identities, ctx));
 
   const hasBothScopes =
     matching.some((pkg) => pkg.scope === "global") &&
@@ -397,17 +411,13 @@ async function removePackageInternal(
     .filter((result) => result.success)
     .map((result) => result.target);
 
-  const remaining = (await getInstalledPackagesAllScopesForRemoval(ctx)).filter(
-    (p) =>
-      packageIdentity(p.source, {
-        ...(p.resolvedPath ? { resolvedPath: p.resolvedPath } : {}),
-        cwd: p.scope === "project" ? ctx.cwd : getAgentDir(),
-      }) === identity
+  const remaining = (await getInstalledPackagesAllScopesForRemoval(ctx)).filter((pkg) =>
+    installedPackageMatchesSource(pkg, identities, ctx)
   );
   notifyRemovalSummary(source, remaining, failures, ctx);
 
   if (failures.length === 0 && remaining.length === 0) {
-    clearUpdatesAvailable(pi, ctx, [identity]);
+    clearUpdatesAvailable(pi, ctx, identities);
   }
 
   const successfulRemovalCount = successfulTargets.length;

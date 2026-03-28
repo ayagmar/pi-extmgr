@@ -8,7 +8,9 @@ if ! command -v node >/dev/null 2>&1; then
 fi
 
 if command -v corepack >/dev/null 2>&1; then
-  exec corepack pnpm run check
+  if corepack pnpm --version >/dev/null 2>&1; then
+    exec corepack pnpm run check
+  fi
 fi
 
 if command -v pnpm >/dev/null 2>&1; then

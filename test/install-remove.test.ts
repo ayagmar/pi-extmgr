@@ -281,6 +281,51 @@ void test("removePackage keeps remaining project-relative installs visible after
   }
 });
 
+void test("removePackage keeps remaining global-relative installs visible after scoped removal", async () => {
+  const removals: { source: string; scope: "global" | "project" }[] = [];
+  const cwd = "/workspace/project";
+  const restoreCatalog = mockPackageCatalog({
+    packages: [
+      {
+        source: "./vendor/demo",
+        name: "demo",
+        scope: "global",
+      },
+      {
+        source: "./vendor/demo",
+        name: "demo",
+        scope: "project",
+        resolvedPath: "/workspace/project/vendor/demo",
+      },
+    ],
+    removeImpl: (source, scope) => {
+      removals.push({ source, scope });
+    },
+  });
+
+  try {
+    const { pi, ctx, notifications, reloadCount, selectPrompts } = createMockHarness({
+      cwd,
+      hasUI: true,
+      selectResult: "Project only",
+      confirmImpl: (title) => title === "Remove Package",
+    });
+
+    await removePackage("./vendor/demo", ctx, pi);
+
+    assert.deepEqual(selectPrompts, ["Remove scope"]);
+    assert.deepEqual(removals, [{ source: "./vendor/demo", scope: "project" }]);
+    assert.equal(reloadCount(), 0);
+    assert.ok(
+      notifications.some((entry) =>
+        entry.message.includes("Removed from selected scope(s). Still installed in: global.")
+      )
+    );
+  } finally {
+    restoreCatalog();
+  }
+});
+
 void test("updatePackage treats missing available updates as a no-op", async () => {
   const output: string[] = [];
   const originalLog = console.log;
