@@ -69,6 +69,23 @@ void test("buildUnifiedItems omits package rows that duplicate local extension p
   assert.equal(items[0]?.type, "local");
 });
 
+void test("buildUnifiedItems omits package rows that exactly match enabled local file sources", () => {
+  const localPath = "/tmp/extensions/demo.ts";
+  const localEntries = [createLocalEntry(localPath, "demo.ts")];
+  const installedPackages: InstalledPackage[] = [
+    {
+      source: localPath,
+      name: "demo",
+      scope: "global",
+    },
+  ];
+
+  const items = buildUnifiedItems(localEntries, installedPackages, new Set());
+
+  assert.equal(items.length, 1);
+  assert.equal(items[0]?.type, "local");
+});
+
 void test("buildUnifiedItems omits duplicate package rows with mixed path separators", () => {
   const localEntries = [
     createLocalEntry("C:\\repo\\.pi\\extensions\\demo\\index.ts", "demo/index.ts"),
@@ -79,6 +96,32 @@ void test("buildUnifiedItems omits duplicate package rows with mixed path separa
       name: "demo",
       scope: "global",
       resolvedPath: "C:/repo/.pi/extensions/demo",
+    },
+  ];
+
+  const items = buildUnifiedItems(localEntries, installedPackages, new Set());
+
+  assert.equal(items.length, 1);
+  assert.equal(items[0]?.type, "local");
+});
+
+void test("buildUnifiedItems omits package rows that duplicate disabled local file paths", () => {
+  const localEntries: ExtensionEntry[] = [
+    {
+      id: "project:/tmp/demo.ts",
+      scope: "project",
+      state: "disabled",
+      activePath: "/tmp/demo.ts",
+      disabledPath: "/tmp/demo.ts.disabled",
+      displayName: "demo.ts",
+      summary: "local extension",
+    },
+  ];
+  const installedPackages: InstalledPackage[] = [
+    {
+      source: "/tmp/demo.ts.disabled",
+      name: "demo",
+      scope: "project",
     },
   ];
 

@@ -143,6 +143,42 @@ void test("discoverPackageExtensions ignores manifest entrypoints with leading s
   }
 });
 
+void test("discoverPackageExtensions ignores manifest exact entrypoints that are missing", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "pi-extmgr-cwd-"));
+  const pkgRoot = join(cwd, "vendor", "missing-manifest-file");
+
+  try {
+    await mkdir(pkgRoot, { recursive: true });
+    await writeFile(
+      join(pkgRoot, "package.json"),
+      JSON.stringify(
+        { name: "missing-manifest-file", pi: { extensions: ["./index.ts", "./missing.ts"] } },
+        null,
+        2
+      ),
+      "utf8"
+    );
+    await writeFile(join(pkgRoot, "index.ts"), "// index\n", "utf8");
+
+    const installed: InstalledPackage[] = [
+      {
+        source: "./vendor/missing-manifest-file",
+        name: "missing-manifest-file",
+        scope: "project",
+        resolvedPath: pkgRoot,
+      },
+    ];
+
+    const discovered = await discoverPackageExtensions(installed, cwd);
+    assert.deepEqual(
+      discovered.map((entry) => entry.extensionPath),
+      ["index.ts"]
+    );
+  } finally {
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
+
 void test("discoverPackageExtensions falls back to convention extensions directory", async () => {
   const cwd = await mkdtemp(join(tmpdir(), "pi-extmgr-cwd-"));
   const pkgRoot = join(cwd, "vendor", "convention-package");

@@ -155,91 +155,108 @@ async function showInteractiveOnce(
   // Staged changes tracking for local extensions.
   const staged = new Map<string, State>();
   const byId = new Map(items.map((item) => [item.id, item]));
+  let managerState: UnifiedManagerViewState | undefined;
 
-  const result = await runCustomUI(
-    ctx,
-    "The unified extensions manager",
-    () =>
-      ctx.ui.custom<UnifiedAction>((tui, theme, _keybindings, done) => {
-        const container = new Container();
+  while (true) {
+    let nextManagerState = managerState;
 
-        const titleText = new Text("", 2, 0);
-        const statsText = new Text("", 2, 0);
-        const footerText = new Text("", 2, 0);
-        const browser = new UnifiedManagerBrowser(
-          items,
-          staged,
-          theme,
-          ctx.cwd,
-          Math.max(4, Math.min(UI.maxListHeight, tui.terminal.rows - 12)),
-          done
-        );
-        let lastWidth = tui.terminal.columns;
+    const result = await runCustomUI(
+      ctx,
+      "The unified extensions manager",
+      () =>
+        ctx.ui.custom<UnifiedAction>((tui, theme, _keybindings, done) => {
+          const container = new Container();
 
-        container.addChild(new DynamicBorder((s: string) => theme.fg("accent", s)));
-        container.addChild(titleText);
-        container.addChild(statsText);
-        container.addChild(new Spacer(1));
-        container.addChild(browser);
-        container.addChild(new Spacer(1));
-        container.addChild(footerText);
-        container.addChild(new DynamicBorder((s: string) => theme.fg("accent", s)));
-
-        const syncThemedContent = (width = lastWidth): void => {
-          lastWidth = width;
-          titleText.setText(theme.fg("accent", theme.bold("Extensions Manager")));
-          statsText.setText(
-            buildManagerSummary(items, staged, byId, theme, {
-              visibleItems: browser.getVisibleItems(),
-              filter: browser.getFilter(),
-              searchQuery: browser.getSearchQuery(),
-            })
+          const titleText = new Text("", 2, 0);
+          const statsText = new Text("", 2, 0);
+          const footerText = new Text("", 2, 0);
+          let browser!: UnifiedManagerBrowser;
+          const complete = (action: UnifiedAction): void => {
+            nextManagerState = browser.getViewState();
+            done(action);
+          };
+          browser = new UnifiedManagerBrowser(
+            items,
+            staged,
+            theme,
+            ctx.cwd,
+            Math.max(4, Math.min(UI.maxListHeight, tui.terminal.rows - 12)),
+            complete,
+            managerState
           );
-          footerText.setText(
-            theme.fg(
-              "dim",
-              buildFooterShortcuts(buildFooterState(staged, byId, browser.getSelectedItem()))
-            )
-          );
-        };
+          let lastWidth = tui.terminal.columns;
 
-        syncThemedContent();
+          container.addChild(new DynamicBorder((s: string) => theme.fg("accent", s)));
+          container.addChild(titleText);
+          container.addChild(statsText);
+          container.addChild(new Spacer(1));
+          container.addChild(browser);
+          container.addChild(new Spacer(1));
+          container.addChild(footerText);
+          container.addChild(new DynamicBorder((s: string) => theme.fg("accent", s)));
 
-        let focused = false;
+          const syncThemedContent = (width = lastWidth): void => {
+            lastWidth = width;
+            titleText.setText(theme.fg("accent", theme.bold("Extensions Manager")));
+            statsText.setText(
+              buildManagerSummary(items, staged, byId, theme, {
+                visibleItems: browser.getVisibleItems(),
+                filter: browser.getFilter(),
+                searchQuery: browser.getSearchQuery(),
+              })
+            );
+            footerText.setText(
+              theme.fg(
+                "dim",
+                buildFooterShortcuts(buildFooterState(staged, byId, browser.getSelectedItem()))
+              )
+            );
+          };
 
-        return {
-          get focused() {
-            return focused;
-          },
-          set focused(value: boolean) {
-            focused = value;
-            browser.focused = value;
-          },
-          render(width: number) {
-            syncThemedContent(width);
-            return container.render(width);
-          },
-          invalidate() {
-            container.invalidate();
-            browser.invalidate();
-            syncThemedContent(lastWidth);
-          },
-          handleInput(data: string) {
-            if (browser.handleManagerInput(data)) {
-              tui.requestRender();
-            }
-          },
-        };
-      }),
-    "Showing read-only local and installed package lists instead."
-  );
+          syncThemedContent();
 
-  if (!result) {
-    await showInteractiveFallback(ctx, pi);
-    return true;
+          let focused = false;
+
+          return {
+            get focused() {
+              return focused;
+            },
+            set focused(value: boolean) {
+              focused = value;
+              browser.focused = value;
+            },
+            render(width: number) {
+              syncThemedContent(width);
+              return container.render(width);
+            },
+            invalidate() {
+              container.invalidate();
+              browser.invalidate();
+              syncThemedContent(lastWidth);
+            },
+            handleInput(data: string) {
+              if (browser.handleManagerInput(data)) {
+                tui.requestRender();
+              }
+            },
+          };
+        }),
+      "Showing read-only local and installed package lists instead."
+    );
+
+    if (!result) {
+      await showInteractiveFallback(ctx, pi);
+      return true;
+    }
+
+    const outcome = await handleUnifiedAction(result, items, staged, byId, ctx, pi);
+    if (outcome === "resume") {
+      managerState = nextManagerState;
+      continue;
+    }
+
+    return outcome;
   }
-
-  return await handleUnifiedAction(result, items, staged, byId, ctx, pi);
 }
 
 export function buildUnifiedItems(
@@ -252,7 +269,8 @@ export function buildUnifiedItems(
 
   // Add local extensions
   for (const entry of localEntries) {
-    localPaths.add(normalizePathIdentity(entry.activePath));
+    const currentPath = entry.state === "disabled" ? entry.disabledPath : entry.activePath;
+    localPaths.add(normalizePathIdentity(currentPath));
     items.push({
       type: "local",
       id: entry.id,
@@ -358,6 +376,12 @@ function buildManagerSummary(
 }
 
 type UnifiedFilter = "all" | "local" | "packages" | "updates" | "disabled";
+
+interface UnifiedManagerViewState {
+  filter: UnifiedFilter;
+  searchQuery: string;
+  selectedItemId?: string;
+}
 
 const UNIFIED_FILTER_OPTIONS: Array<{ id: UnifiedFilter; key: string; label: string }> = [
   { id: "all", key: "1", label: "All" },
@@ -614,8 +638,16 @@ class UnifiedManagerBrowser implements Focusable {
     private readonly theme: Theme,
     private readonly cwd: string,
     private readonly maxVisibleItems: number,
-    private readonly onAction: (action: UnifiedAction) => void
+    private readonly onAction: (action: UnifiedAction) => void,
+    initialState?: UnifiedManagerViewState
   ) {
+    if (initialState) {
+      this.filter = initialState.filter;
+      this.searchInput.setValue(initialState.searchQuery);
+      this.refreshVisibleItems(initialState.selectedItemId);
+      return;
+    }
+
     this.refreshVisibleItems();
   }
 
@@ -642,6 +674,15 @@ class UnifiedManagerBrowser implements Focusable {
 
   getSearchQuery(): string {
     return this.searchInput.getValue().trim();
+  }
+
+  getViewState(): UnifiedManagerViewState {
+    const selectedItemId = this.getSelectedItem()?.id;
+    return {
+      filter: this.filter,
+      searchQuery: this.getSearchQuery(),
+      ...(selectedItemId ? { selectedItemId } : {}),
+    };
   }
 
   invalidate(): void {
@@ -678,6 +719,12 @@ class UnifiedManagerBrowser implements Focusable {
     if (data === "/" || matchesKey(data, Key.ctrl("f"))) {
       this.searchActive = true;
       this.searchInput.focused = this._focused;
+      return true;
+    }
+
+    if (matchesKey(data, Key.escape) && this.getSearchQuery()) {
+      this.searchInput.setValue("");
+      this.refreshVisibleItems();
       return true;
     }
 
@@ -1173,7 +1220,7 @@ async function navigateWithPendingGuard(
   byId: Map<string, UnifiedItem>,
   ctx: ExtensionCommandContext,
   pi: ExtensionAPI
-): Promise<"done" | "stay" | "exit"> {
+): Promise<"reload" | "resume" | "stay" | "exit"> {
   const pending = await resolvePendingChangesBeforeLeave(
     items,
     staged,
@@ -1187,16 +1234,16 @@ async function navigateWithPendingGuard(
   switch (destination) {
     case "install":
       await showRemote("install", ctx, pi);
-      return "done";
+      return "reload";
     case "search":
       await showRemote("search", ctx, pi);
-      return "done";
+      return "reload";
     case "browse":
       await showRemote("", ctx, pi);
-      return "done";
+      return "reload";
     case "update-all": {
       const outcome = await updatePackagesWithOutcome(ctx, pi);
-      return outcome.reloaded ? "exit" : "done";
+      return outcome.reloaded ? "exit" : "reload";
     }
     case "auto-update":
       await promptAutoUpdateWizard(pi, ctx, (packages) => {
@@ -1206,10 +1253,10 @@ async function navigateWithPendingGuard(
         );
       });
       void updateExtmgrStatus(ctx, pi);
-      return "done";
+      return "resume";
     case "help":
       showHelp(ctx);
-      return "done";
+      return "resume";
   }
 }
 
@@ -1220,7 +1267,7 @@ async function handleUnifiedAction(
   byId: Map<string, UnifiedItem>,
   ctx: ExtensionCommandContext,
   pi: ExtensionAPI
-): Promise<boolean> {
+): Promise<boolean | "resume"> {
   if (result.type === "cancel") {
     const pendingCount = getPendingToggleChangeCount(staged, byId);
     if (pendingCount > 0) {
@@ -1231,13 +1278,13 @@ async function handleUnifiedAction(
       ]);
 
       if (!choice || choice === "Stay in manager") {
-        return false;
+        return "resume";
       }
 
       if (choice === "Save and exit") {
         const apply = await applyToggleChangesFromManager(items, staged, ctx, pi);
         if (apply.reloaded) return true;
-        if (apply.changed === 0 && apply.hasErrors) return false;
+        if (apply.changed === 0 && apply.hasErrors) return "resume";
       }
     }
 
@@ -1246,7 +1293,7 @@ async function handleUnifiedAction(
 
   if (result.type === "remote") {
     const pending = await resolvePendingChangesBeforeLeave(items, staged, byId, ctx, pi, "Remote");
-    if (pending === "stay") return false;
+    if (pending === "stay") return "resume";
 
     await showRemote("", ctx, pi);
     return false;
@@ -1254,10 +1301,10 @@ async function handleUnifiedAction(
 
   if (result.type === "help") {
     const pending = await resolvePendingChangesBeforeLeave(items, staged, byId, ctx, pi, "Help");
-    if (pending === "stay") return false;
+    if (pending === "stay") return "resume";
 
     showHelp(ctx);
-    return false;
+    return "resume";
   }
 
   if (result.type === "menu") {
@@ -1277,10 +1324,11 @@ async function handleUnifiedAction(
 
     const destination = choice ? destinationByAction[choice] : undefined;
     if (!destination) {
-      return false;
+      return "resume";
     }
 
     const outcome = await navigateWithPendingGuard(destination, items, staged, byId, ctx, pi);
+    if (outcome === "stay" || outcome === "resume") return "resume";
     return outcome === "exit";
   }
 
@@ -1294,6 +1342,7 @@ async function handleUnifiedAction(
 
     const destination = quickDestinationMap[result.action];
     const outcome = await navigateWithPendingGuard(destination, items, staged, byId, ctx, pi);
+    if (outcome === "stay" || outcome === "resume") return "resume";
     return outcome === "exit";
   }
 
@@ -1308,16 +1357,16 @@ async function handleUnifiedAction(
           : result.action;
 
       if (selection === "cancel") {
-        return false;
+        return "resume";
       }
 
       if (selection === "details") {
         showUnifiedItemDetails(item, ctx, staged.get(item.id) ?? item.state);
-        return false;
+        return "resume";
       }
 
       if (selection !== "remove") {
-        return false;
+        return "resume";
       }
 
       const pending = await resolvePendingChangesBeforeLeave(
@@ -1328,13 +1377,13 @@ async function handleUnifiedAction(
         pi,
         "remove extension"
       );
-      if (pending === "stay") return false;
+      if (pending === "stay") return "resume";
 
       const confirmed = await ctx.ui.confirm(
         "Delete Local Extension",
         `Delete ${item.displayName} from disk?\n\nThis cannot be undone.`
       );
-      if (!confirmed) return false;
+      if (!confirmed) return "resume";
 
       const removal = await removeLocalExtension(
         { activePath: item.activePath, disabledPath: item.disabledPath },
@@ -1343,7 +1392,7 @@ async function handleUnifiedAction(
       if (!removal.ok) {
         logExtensionDelete(pi, item.id, false, removal.error);
         ctx.ui.notify(`Failed to remove extension: ${removal.error}`, "error");
-        return false;
+        return "resume";
       }
 
       logExtensionDelete(pi, item.id, true);
@@ -1370,12 +1419,12 @@ async function handleUnifiedAction(
         : result.action;
 
     if (selection === "cancel") {
-      return false;
+      return "resume";
     }
 
     if (selection === "details") {
       showUnifiedItemDetails(item, ctx);
-      return false;
+      return "resume";
     }
 
     const pendingDestinationBySelection = {
@@ -1392,7 +1441,7 @@ async function handleUnifiedAction(
       pi,
       pendingDestinationBySelection[selection]
     );
-    if (pending === "stay") return false;
+    if (pending === "stay") return "resume";
 
     switch (selection) {
       case "configure": {
@@ -1411,7 +1460,7 @@ async function handleUnifiedAction(
   }
 
   const apply = await applyToggleChangesFromManager(items, staged, ctx, pi);
-  return apply.reloaded;
+  return apply.reloaded ? true : "resume";
 }
 
 async function applyStagedChanges(

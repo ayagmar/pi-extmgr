@@ -22,6 +22,7 @@ import {
 } from "@mariozechner/pi-tui";
 import { CACHE_LIMITS, PAGE_SIZE, TIMEOUTS, UI } from "../constants.js";
 import {
+  clearSearchCache,
   getSearchCache,
   isCacheValid,
   searchNpmPackages,
@@ -120,31 +121,27 @@ export function clearRemotePackageInfoCache(): void {
   clearCommunityBrowseCache();
 }
 
-let communityBrowseCache: SearchCache | null = null;
-
 function getCommunityBrowseCache(): SearchCache | null {
-  if (!communityBrowseCache) {
+  const cache = getSearchCache();
+  if (!cache || cache.query !== COMMUNITY_BROWSE_QUERY) {
     return null;
   }
 
-  if (Date.now() - communityBrowseCache.timestamp >= CACHE_LIMITS.searchTTL) {
-    communityBrowseCache = null;
-    return null;
-  }
-
-  return communityBrowseCache;
+  return isCacheValid(COMMUNITY_BROWSE_QUERY) ? cache : null;
 }
 
 function setCommunityBrowseCache(results: NpmPackage[]): void {
-  communityBrowseCache = {
+  setSearchCache({
     query: COMMUNITY_BROWSE_QUERY,
     results,
     timestamp: Date.now(),
-  };
+  });
 }
 
 function clearCommunityBrowseCache(): void {
-  communityBrowseCache = null;
+  if (getSearchCache()?.query === COMMUNITY_BROWSE_QUERY) {
+    clearSearchCache();
+  }
 }
 
 const REMOTE_MENU_CHOICES = {
@@ -904,15 +901,10 @@ export async function browseRemotePackages(
     if (cache) {
       allPackages = filterCommunityBrowseResults(cache.results, plan.displayQuery);
     }
-  }
-
-  if (!allPackages && isCacheValid(cacheQuery)) {
+  } else if (isCacheValid(cacheQuery)) {
     const cache = getSearchCache();
     if (cache?.query === cacheQuery) {
-      allPackages =
-        browseSource === "community"
-          ? filterCommunityBrowseResults(cache.results, plan.displayQuery)
-          : cache.results;
+      allPackages = cache.results;
     }
   }
 
@@ -944,11 +936,6 @@ export async function browseRemotePackages(
 
     if (browseSource === "community") {
       setCommunityBrowseCache(results);
-      setSearchCache({
-        query: COMMUNITY_BROWSE_QUERY,
-        results,
-        timestamp: Date.now(),
-      });
       allPackages = filterCommunityBrowseResults(results, plan.displayQuery);
     } else {
       allPackages = filterRemoteBrowseResults(plan, results);
@@ -1010,9 +997,10 @@ export async function browseRemotePackages(
       await browseRemotePackages(ctx, reloadQuery, pi, offset + PAGE_SIZE, browseSource);
       return;
     case "refresh":
-      setSearchCache(null);
       if (browseSource === "community") {
         clearCommunityBrowseCache();
+      } else {
+        clearSearchCache();
       }
       await browseRemotePackages(ctx, reloadQuery, pi, 0, browseSource);
       return;

@@ -382,7 +382,7 @@ export async function queryGlobalHistory(
   }
 
   matchedEntries.sort((a, b) => a.change.timestamp - b.change.timestamp);
-  return limit && limit > 0 ? matchedEntries.slice(-limit) : matchedEntries;
+  return matchedEntries;
 }
 
 /**

@@ -18,7 +18,7 @@ pi install npm:pi-extmgr
 
 If Pi is already running, use `/reload`.
 
-Requires Node.js `>=22`.
+Requires Node.js `>=22.20.0`.
 
 ## Features
 

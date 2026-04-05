@@ -99,15 +99,14 @@ function getNpmPackageAuthor(
     return publisher.email.trim();
   }
 
-  const maintainer = pkg.maintainers?.find(
-    (entry) => entry.username?.trim() || entry.email?.trim()
-  );
-  if (maintainer?.username?.trim()) {
-    return maintainer.username.trim();
+  const maintainerWithUsername = pkg.maintainers?.find((entry) => entry.username?.trim());
+  if (maintainerWithUsername?.username?.trim()) {
+    return maintainerWithUsername.username.trim();
   }
 
-  if (maintainer?.email?.trim()) {
-    return maintainer.email.trim();
+  const maintainerWithEmail = pkg.maintainers?.find((entry) => entry.email?.trim());
+  if (maintainerWithEmail?.email?.trim()) {
+    return maintainerWithEmail.email.trim();
   }
 
   return undefined;
