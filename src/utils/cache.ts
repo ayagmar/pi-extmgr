@@ -18,6 +18,9 @@ interface CachedPackageData {
   name: string;
   description?: string | undefined;
   version?: string | undefined;
+  author?: string | undefined;
+  keywords?: string[] | undefined;
+  date?: string | undefined;
   size?: number | undefined;
   timestamp: number;
 }
@@ -62,6 +65,21 @@ function normalizeCachedPackageEntry(key: string, value: unknown): CachedPackage
 
   if (typeof value.version === "string") {
     entry.version = value.version;
+  }
+
+  if (typeof value.author === "string") {
+    entry.author = value.author;
+  }
+
+  if (Array.isArray(value.keywords)) {
+    const keywords = value.keywords.filter((item): item is string => typeof item === "string");
+    if (keywords.length > 0) {
+      entry.keywords = keywords;
+    }
+  }
+
+  if (typeof value.date === "string") {
+    entry.date = value.date;
   }
 
   if (typeof value.size === "number" && Number.isFinite(value.size) && value.size >= 0) {
@@ -234,6 +252,22 @@ async function enqueueCacheSave(): Promise<void> {
   return cacheWriteQueue;
 }
 
+function mergeCachedPackageData(
+  existing: CachedPackageData | undefined,
+  next: Omit<CachedPackageData, "timestamp">
+): CachedPackageData {
+  return {
+    name: next.name || existing?.name || "",
+    description: next.description ?? existing?.description,
+    version: next.version ?? existing?.version,
+    author: next.author ?? existing?.author,
+    keywords: next.keywords ?? existing?.keywords,
+    date: next.date ?? existing?.date,
+    size: next.size ?? existing?.size,
+    timestamp: Date.now(),
+  };
+}
+
 /**
  * Check if cached data is still valid (within TTL)
  */
@@ -263,10 +297,7 @@ export async function setCachedPackage(
   data: Omit<CachedPackageData, "timestamp">
 ): Promise<void> {
   const cache = await loadCache();
-  cache.packages.set(name, {
-    ...data,
-    timestamp: Date.now(),
-  });
+  cache.packages.set(name, mergeCachedPackageData(cache.packages.get(name), data));
   await enqueueCacheSave();
 }
 
@@ -297,6 +328,10 @@ export async function getCachedSearch(query: string): Promise<NpmPackage[] | nul
         name: pkg.name,
         description: pkg.description ?? undefined,
         version: pkg.version ?? undefined,
+        author: pkg.author ?? undefined,
+        keywords: pkg.keywords ?? undefined,
+        date: pkg.date ?? undefined,
+        size: pkg.size ?? undefined,
       });
     }
   }
@@ -312,12 +347,18 @@ export async function setCachedSearch(query: string, packages: NpmPackage[]): Pr
 
   // Update cache with new packages
   for (const pkg of packages) {
-    cache.packages.set(pkg.name, {
-      name: pkg.name,
-      description: pkg.description ?? undefined,
-      version: pkg.version ?? undefined,
-      timestamp: Date.now(),
-    });
+    cache.packages.set(
+      pkg.name,
+      mergeCachedPackageData(cache.packages.get(pkg.name), {
+        name: pkg.name,
+        description: pkg.description ?? undefined,
+        version: pkg.version ?? undefined,
+        author: pkg.author ?? undefined,
+        keywords: pkg.keywords ?? undefined,
+        date: pkg.date ?? undefined,
+        size: pkg.size ?? undefined,
+      })
+    );
   }
 
   // Store search results

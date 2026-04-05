@@ -28,6 +28,14 @@ interface NpmSearchResultObject {
     description?: string;
     keywords?: string[];
     date?: string;
+    publisher?: {
+      username?: string;
+      email?: string;
+    };
+    maintainers?: Array<{
+      username?: string;
+      email?: string;
+    }>;
   };
 }
 
@@ -79,6 +87,32 @@ import {
   setCachedSearch,
 } from "../utils/cache.js";
 
+function getNpmPackageAuthor(
+  pkg: NonNullable<NpmSearchResultObject["package"]>
+): string | undefined {
+  const publisher = pkg.publisher;
+  if (publisher?.username?.trim()) {
+    return publisher.username.trim();
+  }
+
+  if (publisher?.email?.trim()) {
+    return publisher.email.trim();
+  }
+
+  const maintainer = pkg.maintainers?.find(
+    (entry) => entry.username?.trim() || entry.email?.trim()
+  );
+  if (maintainer?.username?.trim()) {
+    return maintainer.username.trim();
+  }
+
+  if (maintainer?.email?.trim()) {
+    return maintainer.email.trim();
+  }
+
+  return undefined;
+}
+
 function toNpmPackage(entry: NpmSearchResultObject): NpmPackage | undefined {
   const pkg = entry.package;
   if (!pkg) return undefined;
@@ -90,6 +124,7 @@ function toNpmPackage(entry: NpmSearchResultObject): NpmPackage | undefined {
     name,
     version: pkg.version,
     description: pkg.description,
+    author: getNpmPackageAuthor(pkg),
     keywords: Array.isArray(pkg.keywords) ? pkg.keywords : undefined,
     date: pkg.date,
   };

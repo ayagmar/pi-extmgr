@@ -19,6 +19,7 @@ export interface NpmPackage {
   name: string;
   version?: string | undefined;
   description?: string | undefined;
+  author?: string | undefined;
   keywords?: string[] | undefined;
   date?: string | undefined;
   size?: number | undefined; // Package size in bytes
@@ -97,7 +98,7 @@ export type BrowseAction =
   | { type: "prev" }
   | { type: "next" }
   | { type: "refresh" }
+  | { type: "search"; query: string }
+  | { type: "install" }
   | { type: "menu" }
-  | { type: "main" }
-  | { type: "help" }
   | { type: "cancel" };
