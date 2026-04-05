@@ -11,6 +11,7 @@ import {
 } from "@mariozechner/pi-coding-agent";
 import { TIMEOUTS } from "../constants.js";
 import { runTaskWithLoader } from "../ui/async-task.js";
+import { parseChoiceByLabel } from "../utils/command.js";
 import { normalizePackageSource } from "../utils/format.js";
 import { fileExists } from "../utils/fs.js";
 import { logPackageInstall } from "../utils/history.js";
@@ -32,6 +33,17 @@ export interface InstallOptions {
   scope?: InstallScope;
 }
 
+export interface InstallOutcome {
+  installed: boolean;
+  reloaded: boolean;
+}
+
+const INSTALL_SCOPE_CHOICES = {
+  global: "Global (~/.pi/agent/settings.json)",
+  project: "Project (.pi/settings.json)",
+  cancel: "Cancel",
+} as const;
+
 function getProgressMessage(event: ProgressEvent, fallback: string): string {
   return event.message?.trim() || fallback;
 }
@@ -44,14 +56,12 @@ async function resolveInstallScope(
 
   if (!ctx.hasUI) return "global";
 
-  const choice = await ctx.ui.select("Install scope", [
-    "Global (~/.pi/agent/settings.json)",
-    "Project (.pi/settings.json)",
-    "Cancel",
-  ]);
+  const choice = parseChoiceByLabel(
+    INSTALL_SCOPE_CHOICES,
+    await ctx.ui.select("Install scope", Object.values(INSTALL_SCOPE_CHOICES))
+  );
 
-  if (!choice || choice === "Cancel") return undefined;
-  return choice.startsWith("Project") ? "project" : "global";
+  return choice === "cancel" ? undefined : choice;
 }
 
 function getExtensionInstallDir(ctx: ExtensionCommandContext, scope: InstallScope): string {
@@ -59,28 +69,6 @@ function getExtensionInstallDir(ctx: ExtensionCommandContext, scope: InstallScop
     return join(ctx.cwd, ".pi", "extensions");
   }
   return join(homedir(), ".pi", "agent", "extensions");
-}
-
-interface GithubUrlInfo {
-  owner: string;
-  repo: string;
-  branch: string;
-  filePath: string;
-}
-
-/**
- * Safely extracts regex match groups with validation
- */
-function safeExtractGithubMatch(match: RegExpMatchArray | null): GithubUrlInfo | undefined {
-  if (!match) return undefined;
-
-  const [, owner, repo, branch, filePath] = match;
-
-  if (!owner || !repo || !branch || !filePath) {
-    return undefined;
-  }
-
-  return { owner, repo, branch, filePath };
 }
 
 async function ensureTarAvailable(
@@ -157,36 +145,35 @@ async function cleanupStandaloneTempArtifacts(tempDir: string, extractDir?: stri
   );
 }
 
-export async function installPackage(
+async function installPackageInternal(
   source: string,
   ctx: ExtensionCommandContext,
   pi: ExtensionAPI,
   options?: InstallOptions
-): Promise<void> {
+): Promise<InstallOutcome> {
   const scope = await resolveInstallScope(ctx, options?.scope);
   if (!scope) {
     notify(ctx, "Installation cancelled.", "info");
-    return;
+    return { installed: false, reloaded: false };
   }
 
   // Check if it's a GitHub URL to a .ts file - handle as direct download
   const githubTsMatch = source.match(
     /^https:\/\/github\.com\/([^/]+)\/([^/]+)\/blob\/([^/]+)\/(.+\.ts)$/
   );
-  const githubInfo = safeExtractGithubMatch(githubTsMatch);
-  if (githubInfo) {
-    const rawUrl = `https://raw.githubusercontent.com/${githubInfo.owner}/${githubInfo.repo}/${githubInfo.branch}/${githubInfo.filePath}`;
-    const fileName =
-      githubInfo.filePath.split("/").pop() || `${githubInfo.owner}-${githubInfo.repo}.ts`;
-    await installFromUrl(rawUrl, fileName, ctx, pi, { scope });
-    return;
+  if (githubTsMatch) {
+    const [, owner, repo, branch, filePath] = githubTsMatch;
+    if (owner && repo && branch && filePath) {
+      const rawUrl = `https://raw.githubusercontent.com/${owner}/${repo}/${branch}/${filePath}`;
+      const fileName = filePath.split("/").pop() || `${owner}-${repo}.ts`;
+      return await installFromUrl(rawUrl, fileName, ctx, pi, { scope });
+    }
   }
 
   // Check if it's already a raw URL to a .ts file
   if (source.match(/^https:\/\/raw\.githubusercontent\.com\/.*\.ts$/)) {
     const fileName = source.split("/").pop() || "extension.ts";
-    await installFromUrl(source, fileName, ctx, pi, { scope });
-    return;
+    return await installFromUrl(source, fileName, ctx, pi, { scope });
   }
 
   const normalized = normalizePackageSource(source);
@@ -199,7 +186,7 @@ export async function installPackage(
   );
   if (!confirmed) {
     notify(ctx, "Installation cancelled.", "info");
-    return;
+    return { installed: false, reloaded: false };
   }
 
   showProgress(ctx, "Installing", normalized);
@@ -226,7 +213,7 @@ export async function installPackage(
     logPackageInstall(pi, normalized, normalized, undefined, scope, false, errorMsg);
     notifyError(ctx, errorMsg);
     void updateExtmgrStatus(ctx, pi);
-    return;
+    return { installed: false, reloaded: false };
   }
 
   clearSearchCache();
@@ -238,6 +225,26 @@ export async function installPackage(
   if (!reloaded) {
     void updateExtmgrStatus(ctx, pi);
   }
+
+  return { installed: true, reloaded };
+}
+
+export async function installPackage(
+  source: string,
+  ctx: ExtensionCommandContext,
+  pi: ExtensionAPI,
+  options?: InstallOptions
+): Promise<void> {
+  await installPackageInternal(source, ctx, pi, options);
+}
+
+export async function installPackageWithOutcome(
+  source: string,
+  ctx: ExtensionCommandContext,
+  pi: ExtensionAPI,
+  options?: InstallOptions
+): Promise<InstallOutcome> {
+  return installPackageInternal(source, ctx, pi, options);
 }
 
 export async function installFromUrl(
@@ -246,11 +253,11 @@ export async function installFromUrl(
   ctx: ExtensionCommandContext,
   pi: ExtensionAPI,
   options?: InstallOptions
-): Promise<void> {
+): Promise<InstallOutcome> {
   const scope = await resolveInstallScope(ctx, options?.scope);
   if (!scope) {
     notify(ctx, "Installation cancelled.", "info");
-    return;
+    return { installed: false, reloaded: false };
   }
 
   const extensionDir = getExtensionInstallDir(ctx, scope);
@@ -263,7 +270,7 @@ export async function installFromUrl(
   );
   if (!confirmed) {
     notify(ctx, "Installation cancelled.", "info");
-    return;
+    return { installed: false, reloaded: false };
   }
 
   const result = await tryOperation(
@@ -289,7 +296,7 @@ export async function installFromUrl(
   if (!result) {
     logPackageInstall(pi, url, fileName, undefined, scope, false, "Installation failed");
     void updateExtmgrStatus(ctx, pi);
-    return;
+    return { installed: false, reloaded: false };
   }
 
   const { fileName: name, destPath } = result;
@@ -300,6 +307,8 @@ export async function installFromUrl(
   if (!reloaded) {
     void updateExtmgrStatus(ctx, pi);
   }
+
+  return { installed: true, reloaded };
 }
 
 /**
@@ -324,16 +333,16 @@ function parsePackageInfo(viewOutput: string): { version: string; tarballUrl: st
   }
 }
 
-export async function installPackageLocally(
+async function installPackageLocallyInternal(
   packageName: string,
   ctx: ExtensionCommandContext,
   pi: ExtensionAPI,
   options?: InstallOptions
-): Promise<void> {
+): Promise<InstallOutcome> {
   const scope = await resolveInstallScope(ctx, options?.scope);
   if (!scope) {
     notify(ctx, "Installation cancelled.", "info");
-    return;
+    return { installed: false, reloaded: false };
   }
 
   const extensionDir = getExtensionInstallDir(ctx, scope);
@@ -346,7 +355,7 @@ export async function installPackageLocally(
   );
   if (!confirmed) {
     notify(ctx, "Installation cancelled.", "info");
-    return;
+    return { installed: false, reloaded: false };
   }
 
   const result = await tryOperation(
@@ -384,7 +393,7 @@ export async function installPackageLocally(
       "Failed to fetch package info"
     );
     void updateExtmgrStatus(ctx, pi);
-    return;
+    return { installed: false, reloaded: false };
   }
   const { version, tarballUrl } = result;
 
@@ -401,7 +410,7 @@ export async function installPackageLocally(
       tarAvailability.error
     );
     void updateExtmgrStatus(ctx, pi);
-    return;
+    return { installed: false, reloaded: false };
   }
 
   // Download and extract
@@ -439,7 +448,7 @@ export async function installPackageLocally(
       "Download failed"
     );
     void updateExtmgrStatus(ctx, pi);
-    return;
+    return { installed: false, reloaded: false };
   }
   const { tarballPath } = extractResult;
 
@@ -496,7 +505,7 @@ export async function installPackageLocally(
       "Extraction failed"
     );
     void updateExtmgrStatus(ctx, pi);
-    return;
+    return { installed: false, reloaded: false };
   }
 
   // Copy to extensions dir
@@ -527,7 +536,7 @@ export async function installPackageLocally(
       "Failed to copy extension"
     );
     void updateExtmgrStatus(ctx, pi);
-    return;
+    return { installed: false, reloaded: false };
   }
 
   clearSearchCache();
@@ -538,4 +547,24 @@ export async function installPackageLocally(
   if (!reloaded) {
     void updateExtmgrStatus(ctx, pi);
   }
+
+  return { installed: true, reloaded };
+}
+
+export async function installPackageLocally(
+  packageName: string,
+  ctx: ExtensionCommandContext,
+  pi: ExtensionAPI,
+  options?: InstallOptions
+): Promise<void> {
+  await installPackageLocallyInternal(packageName, ctx, pi, options);
+}
+
+export async function installPackageLocallyWithOutcome(
+  packageName: string,
+  ctx: ExtensionCommandContext,
+  pi: ExtensionAPI,
+  options?: InstallOptions
+): Promise<InstallOutcome> {
+  return installPackageLocallyInternal(packageName, ctx, pi, options);
 }
