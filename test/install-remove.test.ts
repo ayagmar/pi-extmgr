@@ -4,7 +4,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { type ExtensionAPI, type ExtensionCommandContext } from "@mariozechner/pi-coding-agent";
-import { installFromUrl, installPackage, installPackageLocally } from "../src/packages/install.js";
+import {
+  installFromUrl,
+  installPackage,
+  installPackageWithOutcome,
+  installPackageLocally,
+} from "../src/packages/install.js";
 import { removePackage, updatePackage, updatePackages } from "../src/packages/management.js";
 import { createMockHarness } from "./helpers/mocks.js";
 import { mockPackageCatalog } from "./helpers/package-catalog.js";
@@ -42,6 +47,36 @@ void test("installPackage normalizes git@ sources to git: prefix", async () => {
     assert.deepEqual(installs, [{ source: "git:git@github.com:user/repo.git", scope: "global" }]);
   } finally {
     restoreCatalog();
+  }
+});
+
+void test("installPackageWithOutcome reports successful direct URL installs", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "pi-extmgr-url-outcome-"));
+  const originalFetch = globalThis.fetch;
+
+  try {
+    globalThis.fetch = (async () =>
+      new Response("// demo extension\n", {
+        status: 200,
+        headers: { "content-type": "text/plain" },
+      })) as typeof fetch;
+
+    const { pi, ctx } = createMockHarness({ cwd, confirmResult: false });
+    const result = await installPackageWithOutcome(
+      "https://raw.githubusercontent.com/demo/ext/main/demo.ts",
+      ctx,
+      pi,
+      { scope: "project" }
+    );
+
+    assert.deepEqual(result, { installed: true, reloaded: false });
+    const saved = await access(join(cwd, ".pi", "extensions", "demo.ts"))
+      .then(() => true)
+      .catch(() => false);
+    assert.equal(saved, true);
+  } finally {
+    globalThis.fetch = originalFetch;
+    await rm(cwd, { recursive: true, force: true });
   }
 });
 

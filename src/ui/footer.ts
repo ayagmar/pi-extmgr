@@ -4,18 +4,23 @@
 import { type State, type UnifiedItem } from "../types/index.js";
 
 export interface FooterState {
-  hasLocals: boolean;
-  hasPackages: boolean;
+  selectedType?: UnifiedItem["type"];
+  pendingChanges: number;
 }
 
-/**
- * Build footer state from visible items.
- */
-export function buildFooterState(items: UnifiedItem[]): FooterState {
-  return {
-    hasLocals: items.some((i) => i.type === "local"),
-    hasPackages: items.some((i) => i.type === "package"),
-  };
+export function buildFooterState(
+  staged: Map<string, State>,
+  byId: Map<string, UnifiedItem>,
+  selectedItem?: UnifiedItem
+): FooterState {
+  return selectedItem
+    ? {
+        selectedType: selectedItem.type,
+        pendingChanges: getPendingToggleChangeCount(staged, byId),
+      }
+    : {
+        pendingChanges: getPendingToggleChangeCount(staged, byId),
+      };
 }
 
 export function getPendingToggleChangeCount(
@@ -37,27 +42,41 @@ export function getPendingToggleChangeCount(
 }
 
 /**
- * Build keyboard shortcuts text for the footer.
+ * Build contextual keyboard shortcuts text for the footer.
  */
 export function buildFooterShortcuts(state: FooterState): string {
   const parts: string[] = [];
-  parts.push("↑↓ Navigate");
 
-  if (state.hasLocals) parts.push("Space/Enter Toggle");
-  if (state.hasLocals) parts.push("S Save");
-  if (state.hasPackages) parts.push("Enter/A Actions");
-  if (state.hasPackages) parts.push("c Configure");
-  if (state.hasPackages) parts.push("u Update");
-  if (state.hasPackages || state.hasLocals) parts.push("X Remove");
+  if (state.selectedType === "local") {
+    parts.push("Space toggle");
+    parts.push("Enter/A actions");
+    parts.push("V details");
+    parts.push("X remove");
+  }
 
-  parts.push("i Install");
-  parts.push("f Search");
-  parts.push("U Update all");
-  parts.push("t Auto-update");
-  parts.push("P Palette");
-  parts.push("R Browse");
-  parts.push("? Help");
-  parts.push("Esc Cancel");
+  if (state.selectedType === "package") {
+    parts.push("Enter/A actions");
+    parts.push("V details");
+    parts.push("c configure");
+    parts.push("u update");
+    parts.push("X remove");
+  }
 
-  return parts.join(" | ");
+  if (state.pendingChanges > 0) {
+    parts.push(`S save (${state.pendingChanges})`);
+  }
+
+  parts.push("/ search");
+  parts.push("Tab filters");
+  parts.push("1-5 filters");
+  parts.push("i install");
+  parts.push("f remote search");
+  parts.push("U update all");
+  parts.push("t auto-update");
+  parts.push("P palette");
+  parts.push("R browse");
+  parts.push("? help");
+  parts.push("Esc clear/cancel");
+
+  return parts.join(" · ");
 }

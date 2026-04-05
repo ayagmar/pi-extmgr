@@ -66,7 +66,7 @@ export async function runCustomUI<T>(
   }
 
   const suffix = fallbackMessage ? ` ${fallbackMessage}` : "";
-  notify(ctx, `${featureName} requires the full interactive TUI.${suffix}`, "warning");
+  notify(ctx, `${featureName} is unavailable in the current UI mode.${suffix}`, "warning");
   return undefined;
 }
 

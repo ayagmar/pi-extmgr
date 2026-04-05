@@ -7,6 +7,7 @@ import {
   type ExtensionContext,
 } from "@mariozechner/pi-coding-agent";
 import { getPackageCatalog } from "../packages/catalog.js";
+import { parseChoiceByLabel } from "./command.js";
 import { logAutoUpdateConfig } from "./history.js";
 import { notify } from "./notify.js";
 import { normalizePackageIdentity } from "./package-source.js";
@@ -20,6 +21,15 @@ import {
 } from "./settings.js";
 
 import { isTimerRunning, startTimer, stopTimer } from "./timer.js";
+
+const AUTO_UPDATE_WIZARD_CHOICES = {
+  off: "Off",
+  hour: "Every hour",
+  daily: "Daily",
+  weekly: "Weekly",
+  custom: "Custom...",
+  cancel: "Cancel",
+} as const;
 
 // Context provider for safe session handling
 export type ContextProvider = () => (ExtensionCommandContext | ExtensionContext) | undefined;
@@ -148,35 +158,30 @@ export async function promptAutoUpdateWizard(
   }
 
   const current = getAutoUpdateConfig(ctx);
-  const choice = await ctx.ui.select(`Auto-update (${current.displayText})`, [
-    "Off",
-    "Every hour",
-    "Daily",
-    "Weekly",
-    "Custom...",
-    "Cancel",
-  ]);
+  const choice = parseChoiceByLabel(
+    AUTO_UPDATE_WIZARD_CHOICES,
+    await ctx.ui.select(
+      `Auto-update (${current.displayText})`,
+      Object.values(AUTO_UPDATE_WIZARD_CHOICES)
+    )
+  );
 
-  if (!choice || choice === "Cancel") return;
-
-  if (choice === "Off") {
-    disableAutoUpdate(pi, ctx);
-    return;
-  }
-
-  if (choice === "Every hour") {
-    enableAutoUpdate(pi, ctx, 60 * 60 * 1000, "1 hour", onUpdateAvailable);
-    return;
-  }
-
-  if (choice === "Daily") {
-    enableAutoUpdate(pi, ctx, 24 * 60 * 60 * 1000, "daily", onUpdateAvailable);
-    return;
-  }
-
-  if (choice === "Weekly") {
-    enableAutoUpdate(pi, ctx, 7 * 24 * 60 * 60 * 1000, "weekly", onUpdateAvailable);
-    return;
+  switch (choice) {
+    case "off":
+      disableAutoUpdate(pi, ctx);
+      return;
+    case "hour":
+      enableAutoUpdate(pi, ctx, 60 * 60 * 1000, "1 hour", onUpdateAvailable);
+      return;
+    case "daily":
+      enableAutoUpdate(pi, ctx, 24 * 60 * 60 * 1000, "daily", onUpdateAvailable);
+      return;
+    case "weekly":
+      enableAutoUpdate(pi, ctx, 7 * 24 * 60 * 60 * 1000, "weekly", onUpdateAvailable);
+      return;
+    case "cancel":
+    case undefined:
+      return;
   }
 
   const input = await ctx.ui.input("Auto-update interval", current.displayText || "1d");
@@ -184,7 +189,7 @@ export async function promptAutoUpdateWizard(
 
   const parsed = parseDuration(input.trim());
   if (!parsed) {
-    notify(ctx, "Invalid duration. Examples: 1h, 1d, 1w, 1m, never", "warning");
+    notify(ctx, "Invalid duration. Examples: 1h, 1d, 1w, 1mo, never", "warning");
     return;
   }
 

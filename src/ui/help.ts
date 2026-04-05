@@ -2,6 +2,7 @@
  * Help display
  */
 import { type ExtensionCommandContext } from "@mariozechner/pi-coding-agent";
+import { notify } from "../utils/notify.js";
 
 export function showHelp(ctx: ExtensionCommandContext): void {
   const lines = [
@@ -9,25 +10,33 @@ export function showHelp(ctx: ExtensionCommandContext): void {
     "",
     "Unified View:",
     "  Local extensions and npm/git packages are displayed together",
+    "  The list is grouped into Local extensions and Installed packages sections",
+    "  Rows stay compact; details for the selected item appear below the list",
     "  Local extensions show ● enabled / ○ disabled with G/P scope",
-    "  Packages show 📦 with name@version and G/P scope",
+    "  Packages show a source-type icon with name@version, scope, and size when known",
     "",
     "Navigation:",
     "  ↑↓           Navigate list",
-    "  Space/Enter  Toggle local extension enabled/disabled",
+    "  PageUp/Down  Jump through longer lists",
+    "  Home/End     Jump to top or bottom",
+    "  Space        Toggle selected local extension enabled/disabled",
     "  S            Save changes to local extensions",
-    "  Enter/A      Open actions for selected package",
+    "  Enter/A      Open actions for the selected item",
+    "  / or Ctrl+F  Search visible items",
+    "  Tab/Shift+Tab Cycle filters",
+    "  1-5          Quick filters: All / Local / Packages / Updates / Disabled",
     "  c            Configure selected package extensions (reload after save)",
     "  u            Update selected package",
+    "  V            View full details for the selected item",
     "  X            Remove selected item (package or local extension)",
     "  i            Quick install by source",
-    "  f            Quick search",
+    "  f            Remote package search",
     "  U            Update all packages",
     "  t            Auto-update wizard",
     "  P/M          Quick actions palette",
     "  R            Browse remote packages",
     "  ?/H          Show this help",
-    "  Esc          Cancel",
+    "  Esc          Clear search or cancel",
     "",
     "Extension Sources:",
     "  - ~/.pi/agent/extensions/ (global - G)",
@@ -49,10 +58,5 @@ export function showHelp(ctx: ExtensionCommandContext): void {
     "  /extensions auto-update  Show or change update schedule",
   ];
 
-  const output = lines.join("\n");
-  if (ctx.hasUI) {
-    ctx.ui.notify(output, "info");
-  } else {
-    console.log(output);
-  }
+  notify(ctx, lines.join("\n"), "info");
 }

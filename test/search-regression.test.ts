@@ -3,66 +3,14 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { initTheme, type Theme } from "@mariozechner/pi-coding-agent";
+import { initTheme } from "@mariozechner/pi-coding-agent";
 import { configurePackageExtensions } from "../src/ui/package-config.js";
 import { showInteractive } from "../src/ui/unified.js";
+import { captureCustomComponent } from "./helpers/custom-component.js";
 import { createMockHarness } from "./helpers/mocks.js";
+import { mockPackageCatalog } from "./helpers/package-catalog.js";
 
 initTheme();
-
-const noop = (): undefined => undefined;
-
-async function captureCustomComponent(
-  factory: unknown,
-  ctxTheme: Theme,
-  matcher: (lines: string[]) => boolean,
-  onMatch: (
-    component: {
-      render(width: number): string[];
-      handleInput?(data: string): void;
-      dispose?(): void;
-    },
-    lines: string[]
-  ) => unknown
-): Promise<unknown> {
-  let resolveCompletion: (value: unknown) => void = () => undefined;
-  const completion = new Promise<unknown>((resolve) => {
-    resolveCompletion = resolve;
-  });
-
-  const component = await (
-    factory as (
-      tui: unknown,
-      theme: unknown,
-      keybindings: unknown,
-      done: (result: unknown) => void
-    ) =>
-      | Promise<{
-          render(width: number): string[];
-          handleInput?(data: string): void;
-          dispose?(): void;
-        }>
-      | {
-          render(width: number): string[];
-          handleInput?(data: string): void;
-          dispose?(): void;
-        }
-  )({ requestRender: noop, terminal: { rows: 40, columns: 120 } }, ctxTheme, {}, resolveCompletion);
-
-  try {
-    const lines = component.render(120);
-    if (!matcher(lines)) {
-      return await Promise.race([
-        completion,
-        new Promise<unknown>((resolve) => setTimeout(() => resolve(undefined), 50)),
-      ]);
-    }
-
-    return await onMatch(component, lines);
-  } finally {
-    component.dispose?.();
-  }
-}
 
 async function createPackageWithExtensions(root: string, count: number): Promise<void> {
   await mkdir(join(root, "extensions"), { recursive: true });
@@ -146,7 +94,7 @@ void test("/extensions manager does not start filtering on plain typing", async 
       captureCustomComponent(
         factory,
         ctx.ui.theme,
-        (lines) => lines.some((line) => line.includes("Space/Enter toggle local")),
+        (lines) => lines.some((line) => line.includes("i install")),
         (component, lines) => {
           beforeTyping = lines;
           component.handleInput?.("z");
@@ -162,6 +110,58 @@ void test("/extensions manager does not start filtering on plain typing", async 
     assert.ok(!afterTyping.some((line) => line.includes("No matching settings")));
     assert.ok(!afterTyping.some((line) => line.includes("Type to search")));
   } finally {
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
+
+void test("/extensions manager slash search hides unrelated fuzzy description matches", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "pi-extmgr-search-slash-"));
+  const restoreCatalog = mockPackageCatalog({
+    packages: [
+      {
+        source: "npm:pi-anycopy",
+        name: "pi-anycopy",
+        version: "0.2.3",
+        description: "Copy any tree node to the clipboard.",
+        scope: "global",
+      },
+      {
+        source: "npm:pi-bash-live-view",
+        name: "pi-bash-live-view",
+        version: "0.1.1",
+        description:
+          "A pi extension that adds optional PTY-backed live terminal rendering to the bash tool via usePTY=true.",
+        scope: "global",
+      },
+    ],
+  });
+
+  try {
+    const { pi, ctx } = createMockHarness({ cwd, hasUI: true });
+    let afterSearch: string[] = [];
+
+    (ctx.ui as { custom: (factory: unknown) => Promise<unknown> }).custom = async (factory) =>
+      captureCustomComponent(
+        factory,
+        ctx.ui.theme,
+        (lines) => lines.some((line) => line.includes("i install")),
+        (component) => {
+          component.handleInput?.("/");
+          for (const char of "anycopy") {
+            component.handleInput?.(char);
+          }
+          afterSearch = component.render(120);
+          return { type: "cancel" };
+        }
+      );
+
+    await showInteractive(ctx, pi);
+
+    assert.ok(afterSearch.some((line) => line.includes("anycopy")));
+    assert.ok(!afterSearch.some((line) => line.includes("pi-bash-live-view")));
+    assert.ok(afterSearch.some((line) => line.includes("showing 1 of")));
+  } finally {
+    restoreCatalog();
     await rm(cwd, { recursive: true, force: true });
   }
 });
