@@ -26,14 +26,6 @@ export const TIMEOUTS = {
   npmView: 10_000,
   /** Full package installation timeout (3 minutes) */
   packageInstall: 180_000,
-  /** Package update timeout (2 minutes) */
-  packageUpdate: 120_000,
-  /** Bulk package update timeout (5 minutes) */
-  packageUpdateAll: 300_000,
-  /** Package removal timeout (1 minute) */
-  packageRemove: 60_000,
-  /** Package listing timeout */
-  listPackages: 10_000,
   /** Package metadata fetch timeout */
   fetchPackageInfo: 30_000,
   /** Package extraction timeout */

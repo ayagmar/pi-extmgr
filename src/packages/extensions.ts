@@ -2,7 +2,7 @@ import { execFile } from "node:child_process";
 import { type Dirent } from "node:fs";
 import { mkdir, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
-import { dirname, join, matchesGlob, relative, resolve } from "node:path";
+import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { getAgentDir } from "@mariozechner/pi-coding-agent";
@@ -14,6 +14,11 @@ import {
 } from "../types/index.js";
 import { parseNpmSource } from "../utils/format.js";
 import { fileExists, readSummary } from "../utils/fs.js";
+import {
+  matchesFilterPattern,
+  normalizeRelativePath,
+  resolveRelativePathSelection,
+} from "../utils/relative-path-selection.js";
 import { resolveNpmCommand } from "../utils/npm-exec.js";
 
 interface PackageSettingsObject {
@@ -35,11 +40,6 @@ export interface PackageManifest {
 
 const execFileAsync = promisify(execFile);
 let globalNpmRootCache: string | null | undefined;
-
-function normalizeRelativePath(value: string): string {
-  const normalized = value.replace(/\\/g, "/").replace(/^\.\//, "").replace(/^\/+/, "");
-  return normalized;
-}
 
 function normalizeSource(source: string): string {
   return source
@@ -238,17 +238,17 @@ function toPackageSettingsObject(
   packageSource: string
 ): PackageSettingsObject {
   if (typeof existing === "string") {
-    return { source: existing, extensions: [] };
+    return { source: existing };
   }
 
   if (existing && typeof existing.source === "string") {
     return {
       source: existing.source,
-      extensions: Array.isArray(existing.extensions) ? [...existing.extensions] : [],
+      ...(Array.isArray(existing.extensions) ? { extensions: [...existing.extensions] } : {}),
     };
   }
 
-  return { source: packageSource, extensions: [] };
+  return { source: packageSource };
 }
 
 function updateExtensionMarkers(
@@ -276,7 +276,16 @@ function updateExtensionMarkers(
   for (const [extensionPath, target] of Array.from(changes.entries()).sort((a, b) =>
     a[0].localeCompare(b[0])
   )) {
-    nextTokens.push(`${target === "enabled" ? "+" : "-"}${extensionPath}`);
+    const baseFilters =
+      nextTokens.length > 0
+        ? nextTokens
+        : existingTokens && existingTokens.length === 0
+          ? []
+          : undefined;
+    const baseState = getPackageFilterState(baseFilters, extensionPath);
+    if (target !== baseState) {
+      nextTokens.push(`${target === "enabled" ? "+" : "-"}${extensionPath}`);
+    }
   }
 
   return nextTokens;
@@ -322,10 +331,13 @@ export async function applyPackageExtensionStateChanges(
 
     packageEntry.extensions = updateExtensionMarkers(packageEntry.extensions, normalizedChanges);
 
+    const normalizedPackageEntry =
+      packageEntry.extensions.length > 0 ? packageEntry : packageEntry.source;
+
     if (index === -1) {
-      packages.push(packageEntry);
+      packages.push(normalizedPackageEntry);
     } else {
-      packages[index] = packageEntry;
+      packages[index] = normalizedPackageEntry;
     }
 
     settings.packages = packages;
@@ -338,22 +350,6 @@ export async function applyPackageExtensionStateChanges(
       error: error instanceof Error ? error.message : String(error),
     };
   }
-}
-
-function safeMatchesGlob(targetPath: string, pattern: string): boolean {
-  try {
-    return matchesGlob(targetPath, pattern);
-  } catch {
-    return false;
-  }
-}
-
-function matchesFilterPattern(targetPath: string, pattern: string): boolean {
-  const normalizedPattern = normalizeRelativePath(pattern.trim());
-  if (!normalizedPattern) return false;
-  if (targetPath === normalizedPattern) return true;
-
-  return safeMatchesGlob(targetPath, normalizedPattern);
 }
 
 function getPackageFilterState(filters: string[] | undefined, extensionPath: string): State {
@@ -415,56 +411,35 @@ function getPackageFilterState(filters: string[] | undefined, extensionPath: str
   return enabled ? "enabled" : "disabled";
 }
 
-async function getPackageExtensionState(
-  packageSource: string,
-  extensionPath: string,
+async function readPackageFilterMap(
   scope: Scope,
   cwd: string
-): Promise<State> {
-  const settingsPath = getSettingsPath(scope, cwd);
-  const settings = await readSettingsFile(settingsPath);
+): Promise<Map<string, string[] | undefined>> {
+  const settings = await readSettingsFile(getSettingsPath(scope, cwd));
   const packages = settings.packages ?? [];
-  const normalizedSource = normalizeSource(packageSource);
+  const filterMap = new Map<string, string[] | undefined>();
 
-  const entry = packages.find((pkg) => {
-    if (typeof pkg === "string") {
-      return normalizeSource(pkg) === normalizedSource;
+  for (const entry of packages) {
+    if (typeof entry === "string") {
+      filterMap.set(normalizeSource(entry), undefined);
+      continue;
     }
-    return normalizeSource(pkg.source) === normalizedSource;
-  });
 
-  if (!entry || typeof entry === "string") {
-    return "enabled";
+    if (typeof entry.source !== "string") {
+      continue;
+    }
+
+    filterMap.set(
+      normalizeSource(entry.source),
+      Array.isArray(entry.extensions) ? entry.extensions : undefined
+    );
   }
 
-  return getPackageFilterState(entry.extensions, extensionPath);
+  return filterMap;
 }
 
 function isExtensionEntrypointPath(path: string): boolean {
   return /\.(ts|js)$/i.test(path);
-}
-
-function hasGlobMagic(path: string): boolean {
-  return /[*?{}[\]]/.test(path);
-}
-
-function isSafeRelativePath(path: string): boolean {
-  return path !== "" && path !== ".." && !path.startsWith("../") && !path.includes("/../");
-}
-
-function selectDirectoryFiles(allFiles: string[], directoryPath: string): string[] {
-  const prefix = `${directoryPath}/`;
-  return allFiles.filter((file) => file.startsWith(prefix));
-}
-
-function applySelection(selected: Set<string>, files: Iterable<string>, exclude: boolean): void {
-  for (const file of files) {
-    if (exclude) {
-      selected.delete(file);
-    } else {
-      selected.add(file);
-    }
-  }
 }
 
 async function collectExtensionFilesFromDir(
@@ -505,38 +480,8 @@ async function resolveManifestExtensionEntries(
   packageRoot: string,
   entries: string[]
 ): Promise<string[]> {
-  const selected = new Set<string>();
   const allFiles = await collectExtensionFilesFromDir(packageRoot, packageRoot);
-
-  for (const rawToken of entries) {
-    const token = rawToken.trim();
-    if (!token) continue;
-
-    const exclude = token.startsWith("!");
-    const normalizedToken = normalizeRelativePath(exclude ? token.slice(1) : token);
-    const pattern = normalizedToken.replace(/[\\/]+$/g, "");
-    if (!isSafeRelativePath(pattern)) {
-      continue;
-    }
-
-    if (hasGlobMagic(pattern)) {
-      const matchedFiles = allFiles.filter((file) => matchesFilterPattern(file, pattern));
-      applySelection(selected, matchedFiles, exclude);
-      continue;
-    }
-
-    const directoryFiles = selectDirectoryFiles(allFiles, pattern);
-    if (directoryFiles.length > 0) {
-      applySelection(selected, directoryFiles, exclude);
-      continue;
-    }
-
-    if (isExtensionEntrypointPath(pattern)) {
-      applySelection(selected, [pattern], exclude);
-    }
-  }
-
-  return Array.from(selected).sort((a, b) => a.localeCompare(b));
+  return resolveRelativePathSelection(allFiles, entries, (path) => isExtensionEntrypointPath(path));
 }
 
 export async function readPackageManifest(
@@ -617,11 +562,19 @@ export async function discoverPackageExtensions(
   cwd: string
 ): Promise<PackageExtensionEntry[]> {
   const entries: PackageExtensionEntry[] = [];
+  const [globalFilterMap, projectFilterMap] = await Promise.all([
+    readPackageFilterMap("global", cwd),
+    readPackageFilterMap("project", cwd),
+  ]);
 
   for (const pkg of packages) {
     const packageRoot = await toPackageRoot(pkg, cwd);
     if (!packageRoot) continue;
 
+    const packageFilters =
+      (pkg.scope === "global" ? globalFilterMap : projectFilterMap).get(
+        normalizeSource(pkg.source)
+      ) ?? undefined;
     const extensionPaths = await discoverPackageExtensionEntrypoints(packageRoot);
     for (const extensionPath of extensionPaths) {
       const normalizedPath = normalizeRelativePath(extensionPath);
@@ -629,7 +582,7 @@ export async function discoverPackageExtensions(
       const summary = (await fileExists(absolutePath))
         ? await readSummary(absolutePath)
         : "package extension";
-      const state = await getPackageExtensionState(pkg.source, normalizedPath, pkg.scope, cwd);
+      const state = getPackageFilterState(packageFilters, normalizedPath);
 
       entries.push({
         id: `pkg-ext:${pkg.scope}:${pkg.source}:${normalizedPath}`,

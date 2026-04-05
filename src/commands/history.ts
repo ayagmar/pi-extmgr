@@ -6,6 +6,7 @@ import {
   queryGlobalHistory,
   querySessionChanges,
 } from "../utils/history.js";
+import { parseLookbackDuration } from "../utils/duration.js";
 import { notify } from "../utils/notify.js";
 import { formatListOutput } from "../utils/ui-helpers.js";
 
@@ -36,36 +37,6 @@ interface HistoryParseState {
 type HistoryOptionHandler = (tokens: string[], index: number, state: HistoryParseState) => number;
 
 const HISTORY_ACTION_SET = new Set<ChangeAction>(HISTORY_ACTIONS);
-
-function parseHistorySinceDuration(input: string): number | undefined {
-  const normalized = input.toLowerCase().trim();
-  const match = normalized.match(
-    /^(\d+)\s*(m|min|mins|minute|minutes|h|hr|hrs|hour|hours|d|day|days|w|wk|wks|week|weeks|mo|mos|month|months)$/
-  );
-  if (!match) return undefined;
-
-  const value = Number.parseInt(match[1] ?? "", 10);
-  if (!Number.isFinite(value) || value <= 0) return undefined;
-
-  const unit = match[2] ?? "";
-  if (unit.startsWith("m") && !unit.startsWith("mo")) {
-    return value * 60 * 1000;
-  }
-  if (unit.startsWith("h")) {
-    return value * 60 * 60 * 1000;
-  }
-  if (unit.startsWith("d")) {
-    return value * 24 * 60 * 60 * 1000;
-  }
-  if (unit.startsWith("w")) {
-    return value * 7 * 24 * 60 * 60 * 1000;
-  }
-  if (unit.startsWith("mo")) {
-    return value * 30 * 24 * 60 * 60 * 1000;
-  }
-
-  return undefined;
-}
 
 const HISTORY_OPTION_HANDLERS: Record<string, HistoryOptionHandler> = {
   "--help": (_tokens, _index, state) => {
@@ -142,7 +113,7 @@ const HISTORY_OPTION_HANDLERS: Record<string, HistoryOptionHandler> = {
       return 0;
     }
 
-    const ms = parseHistorySinceDuration(value);
+    const ms = parseLookbackDuration(value);
     if (!ms) {
       state.errors.push(`Invalid --since duration: ${value}`);
     } else {
