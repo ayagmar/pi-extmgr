@@ -5,6 +5,7 @@ import { homedir } from "node:os";
 import { join, resolve as resolvePath } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseNpmSource } from "./format.js";
+import { normalizePathIdentity } from "./path-identity.js";
 
 export type PackageSourceKind = "npm" | "git" | "local" | "unknown";
 
@@ -52,11 +53,7 @@ export function getPackageSourceKind(source: string): PackageSourceKind {
 }
 
 export function normalizeLocalSourceIdentity(source: string): string {
-  const normalized = source.replace(/\\/g, "/");
-  const looksWindowsPath =
-    /^[a-zA-Z]:\//.test(normalized) || normalized.startsWith("//") || source.includes("\\");
-
-  return looksWindowsPath ? normalized.toLowerCase() : normalized;
+  return normalizePathIdentity(source);
 }
 
 export function stripGitSourcePrefix(source: string): string {

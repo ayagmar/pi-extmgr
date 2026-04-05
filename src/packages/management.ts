@@ -10,6 +10,7 @@ import {
 import { UI } from "../constants.js";
 import { type InstalledPackage } from "../types/index.js";
 import { runTaskWithLoader } from "../ui/async-task.js";
+import { parseChoiceByLabel } from "../utils/command.js";
 import { formatInstalledPackageLabel } from "../utils/format.js";
 import { logPackageRemove, logPackageUpdate } from "../utils/history.js";
 import { requireUI } from "../utils/mode.js";
@@ -34,17 +35,13 @@ export interface PackageMutationOutcome {
   reloaded: boolean;
 }
 
-const NO_PACKAGE_MUTATION_OUTCOME: PackageMutationOutcome = {
-  reloaded: false,
-};
-
 const BULK_UPDATE_LABEL = "all packages";
-
-function packageMutationOutcome(
-  overrides: Partial<PackageMutationOutcome>
-): PackageMutationOutcome {
-  return { ...NO_PACKAGE_MUTATION_OUTCOME, ...overrides };
-}
+const REMOVAL_SCOPE_CHOICES = {
+  both: "Both global + project",
+  global: "Global only",
+  project: "Project only",
+  cancel: "Cancel",
+} as const;
 
 function getProgressMessage(event: ProgressEvent, fallback: string): string {
   return event.message?.trim() || fallback;
@@ -70,7 +67,7 @@ async function updatePackageInternal(
       logPackageUpdate(pi, source, source, undefined, true);
       clearUpdatesAvailable(pi, ctx, [updateIdentity]);
       void updateExtmgrStatus(ctx, pi);
-      return NO_PACKAGE_MUTATION_OUTCOME;
+      return { reloaded: false };
     }
 
     await runTaskWithLoader(
@@ -94,7 +91,7 @@ async function updatePackageInternal(
     logPackageUpdate(pi, source, source, undefined, false, errorMsg);
     notifyError(ctx, errorMsg);
     void updateExtmgrStatus(ctx, pi);
-    return NO_PACKAGE_MUTATION_OUTCOME;
+    return { reloaded: false };
   }
 
   logPackageUpdate(pi, source, source, undefined, true);
@@ -105,7 +102,7 @@ async function updatePackageInternal(
   if (!reloaded) {
     void updateExtmgrStatus(ctx, pi);
   }
-  return packageMutationOutcome({ reloaded });
+  return { reloaded };
 }
 
 async function updatePackagesInternal(
@@ -121,7 +118,7 @@ async function updatePackagesInternal(
       logPackageUpdate(pi, BULK_UPDATE_LABEL, BULK_UPDATE_LABEL, undefined, true);
       clearUpdatesAvailable(pi, ctx);
       void updateExtmgrStatus(ctx, pi);
-      return NO_PACKAGE_MUTATION_OUTCOME;
+      return { reloaded: false };
     }
 
     await runTaskWithLoader(
@@ -145,7 +142,7 @@ async function updatePackagesInternal(
     logPackageUpdate(pi, BULK_UPDATE_LABEL, BULK_UPDATE_LABEL, undefined, false, errorMsg);
     notifyError(ctx, errorMsg);
     void updateExtmgrStatus(ctx, pi);
-    return NO_PACKAGE_MUTATION_OUTCOME;
+    return { reloaded: false };
   }
 
   logPackageUpdate(pi, BULK_UPDATE_LABEL, BULK_UPDATE_LABEL, undefined, true);
@@ -156,7 +153,7 @@ async function updatePackagesInternal(
   if (!reloaded) {
     void updateExtmgrStatus(ctx, pi);
   }
-  return packageMutationOutcome({ reloaded });
+  return { reloaded };
 }
 
 export async function updatePackage(
@@ -230,25 +227,15 @@ interface RemovalTarget {
   name: string;
 }
 
-function scopeChoiceFromLabel(choice: string | undefined): RemovalScopeChoice {
-  if (!choice || choice === "Cancel") return "cancel";
-  if (choice.includes("Both")) return "both";
-  if (choice.includes("Global")) return "global";
-  if (choice.includes("Project")) return "project";
-  return "cancel";
-}
-
 async function selectRemovalScope(ctx: ExtensionCommandContext): Promise<RemovalScopeChoice> {
   if (!ctx.hasUI) return "global";
 
-  const choice = await ctx.ui.select("Remove scope", [
-    "Both global + project",
-    "Global only",
-    "Project only",
-    "Cancel",
-  ]);
-
-  return scopeChoiceFromLabel(choice);
+  return (
+    parseChoiceByLabel(
+      REMOVAL_SCOPE_CHOICES,
+      await ctx.ui.select("Remove scope", Object.values(REMOVAL_SCOPE_CHOICES))
+    ) ?? "cancel"
+  );
 }
 
 function buildRemovalTargets(
@@ -374,18 +361,18 @@ async function removePackageInternal(
 
   if (scopeChoice === "cancel") {
     notify(ctx, "Removal cancelled.", "info");
-    return NO_PACKAGE_MUTATION_OUTCOME;
+    return { reloaded: false };
   }
 
   if (matching.length === 0) {
     notify(ctx, `${source} is not installed.`, "info");
-    return NO_PACKAGE_MUTATION_OUTCOME;
+    return { reloaded: false };
   }
 
   const targets = buildRemovalTargets(matching, ctx.hasUI, scopeChoice);
   if (targets.length === 0) {
     notify(ctx, "Nothing to remove.", "info");
-    return NO_PACKAGE_MUTATION_OUTCOME;
+    return { reloaded: false };
   }
 
   const confirmed = await confirmAction(
@@ -396,7 +383,7 @@ async function removePackageInternal(
   );
   if (!confirmed) {
     notify(ctx, "Removal cancelled.", "info");
-    return NO_PACKAGE_MUTATION_OUTCOME;
+    return { reloaded: false };
   }
 
   const results = await executeRemovalTargets(targets, ctx, pi);
@@ -424,7 +411,7 @@ async function removePackageInternal(
 
   if (successfulRemovalCount === 0) {
     void updateExtmgrStatus(ctx, pi);
-    return NO_PACKAGE_MUTATION_OUTCOME;
+    return { reloaded: false };
   }
 
   const reloaded = await confirmReload(ctx, "Removal complete.");
@@ -432,7 +419,7 @@ async function removePackageInternal(
     void updateExtmgrStatus(ctx, pi);
   }
 
-  return packageMutationOutcome({ reloaded });
+  return { reloaded };
 }
 
 export async function removePackage(

@@ -53,3 +53,43 @@ void test("fetchNpmRegistrySearchResults paginates npm registry results beyond 2
     globalThis.fetch = originalFetch;
   }
 });
+
+void test("fetchNpmRegistrySearchResults prefers maintainer usernames over earlier email-only entries", async () => {
+  const originalFetch = globalThis.fetch;
+
+  globalThis.fetch = ((input: string | URL | Request) => {
+    const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+    assert.ok(url.includes("registry.npmjs.org/-/v1/search"));
+
+    return Promise.resolve(
+      new Response(
+        JSON.stringify({
+          total: 1,
+          objects: [
+            {
+              package: {
+                name: "demo-author",
+                version: "1.0.0",
+                maintainers: [
+                  { email: "fallback@example.com" },
+                  { username: "preferred-user", email: "preferred@example.com" },
+                ],
+              },
+            },
+          ],
+        }),
+        {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }
+      )
+    );
+  }) as typeof fetch;
+
+  try {
+    const results = await fetchNpmRegistrySearchResults("demo-author");
+    assert.equal(results[0]?.author, "preferred-user");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});

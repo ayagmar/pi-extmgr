@@ -13,13 +13,27 @@ const CACHE_DIR = process.env.PI_EXTMGR_CACHE_DIR
   : join(homedir(), ".pi", "agent", ".extmgr-cache");
 const CACHE_FILE = join(CACHE_DIR, "metadata.json");
 const CURRENT_SEARCH_CACHE_STRATEGY = "npm-registry-v1-paginated";
+const CACHED_PACKAGE_FIELDS = [
+  "description",
+  "version",
+  "author",
+  "keywords",
+  "date",
+  "size",
+] as const;
+
+type CachedPackageField = (typeof CACHED_PACKAGE_FIELDS)[number];
 
 interface CachedPackageData {
   name: string;
   description?: string | undefined;
   version?: string | undefined;
+  author?: string | undefined;
+  keywords?: string[] | undefined;
+  date?: string | undefined;
   size?: number | undefined;
   timestamp: number;
+  fieldTimestamps?: Partial<Record<CachedPackageField, number>> | undefined;
 }
 
 interface CacheData {
@@ -55,17 +69,66 @@ function normalizeCachedPackageEntry(key: string, value: unknown): CachedPackage
     name,
     timestamp,
   };
+  const rawFieldTimestamps = isRecord(value.fieldTimestamps) ? value.fieldTimestamps : undefined;
+
+  const getFieldTimestamp = (field: CachedPackageField): number => {
+    const fieldTimestamp = rawFieldTimestamps?.[field];
+    return typeof fieldTimestamp === "number" &&
+      Number.isFinite(fieldTimestamp) &&
+      fieldTimestamp > 0
+      ? fieldTimestamp
+      : timestamp;
+  };
 
   if (typeof value.description === "string") {
     entry.description = value.description;
+    entry.fieldTimestamps = {
+      ...entry.fieldTimestamps,
+      description: getFieldTimestamp("description"),
+    };
   }
 
   if (typeof value.version === "string") {
     entry.version = value.version;
+    entry.fieldTimestamps = {
+      ...entry.fieldTimestamps,
+      version: getFieldTimestamp("version"),
+    };
+  }
+
+  if (typeof value.author === "string") {
+    entry.author = value.author;
+    entry.fieldTimestamps = {
+      ...entry.fieldTimestamps,
+      author: getFieldTimestamp("author"),
+    };
+  }
+
+  if (Array.isArray(value.keywords)) {
+    const keywords = value.keywords.filter((item): item is string => typeof item === "string");
+    if (keywords.length > 0) {
+      entry.keywords = keywords;
+      entry.fieldTimestamps = {
+        ...entry.fieldTimestamps,
+        keywords: getFieldTimestamp("keywords"),
+      };
+    }
+  }
+
+  if (typeof value.date === "string") {
+    entry.date = value.date;
+    entry.fieldTimestamps = {
+      ...entry.fieldTimestamps,
+      date: getFieldTimestamp("date"),
+    };
   }
 
   if (typeof value.size === "number" && Number.isFinite(value.size) && value.size >= 0) {
     entry.size = value.size;
+    entry.fieldTimestamps = {
+      ...entry.fieldTimestamps,
+      size: getFieldTimestamp("size"),
+    };
   }
 
   return entry;
@@ -234,11 +297,117 @@ async function enqueueCacheSave(): Promise<void> {
   return cacheWriteQueue;
 }
 
+function setCachedPackageField(
+  data: CachedPackageData,
+  field: CachedPackageField,
+  value: CachedPackageData[CachedPackageField],
+  timestamp: number
+): void {
+  switch (field) {
+    case "description":
+      data.description = value as string | undefined;
+      break;
+    case "version":
+      data.version = value as string | undefined;
+      break;
+    case "author":
+      data.author = value as string | undefined;
+      break;
+    case "keywords":
+      data.keywords = value as string[] | undefined;
+      break;
+    case "date":
+      data.date = value as string | undefined;
+      break;
+    case "size":
+      data.size = value as number | undefined;
+      break;
+  }
+
+  data.fieldTimestamps = {
+    ...data.fieldTimestamps,
+    [field]: timestamp,
+  };
+}
+
+function getCachedFieldTimestamp(data: CachedPackageData, field: CachedPackageField): number {
+  return data.fieldTimestamps?.[field] ?? data.timestamp;
+}
+
+function mergeCachedPackageData(
+  existing: CachedPackageData | undefined,
+  next: Omit<CachedPackageData, "timestamp" | "fieldTimestamps">
+): CachedPackageData {
+  const timestamp = Date.now();
+  const merged: CachedPackageData = {
+    name: next.name || existing?.name || "",
+    timestamp,
+  };
+
+  for (const field of CACHED_PACKAGE_FIELDS) {
+    const nextValue = next[field];
+    if (nextValue !== undefined) {
+      setCachedPackageField(merged, field, nextValue, timestamp);
+      continue;
+    }
+
+    const existingValue = existing?.[field];
+    if (existingValue !== undefined && existing) {
+      setCachedPackageField(merged, field, existingValue, getCachedFieldTimestamp(existing, field));
+    }
+  }
+
+  return merged;
+}
+
 /**
  * Check if cached data is still valid (within TTL)
  */
-function isCacheValid(timestamp: number): boolean {
-  return Date.now() - timestamp < CACHE_LIMITS.metadataTTL;
+function isCacheValid(timestamp: number | undefined): boolean {
+  return typeof timestamp === "number" && Date.now() - timestamp < CACHE_LIMITS.metadataTTL;
+}
+
+function getFreshCachedField(
+  data: CachedPackageData,
+  field: CachedPackageField
+): CachedPackageData[CachedPackageField] | undefined {
+  const value = data[field];
+  if (value === undefined) {
+    return undefined;
+  }
+
+  return isCacheValid(getCachedFieldTimestamp(data, field)) ? value : undefined;
+}
+
+function hasFreshCachedField(data: CachedPackageData): boolean {
+  return CACHED_PACKAGE_FIELDS.some((field) => {
+    const value = data[field];
+    return value !== undefined && isCacheValid(getCachedFieldTimestamp(data, field));
+  });
+}
+
+function toFreshCachedPackage(data: CachedPackageData | undefined): CachedPackageData | null {
+  if (!data) {
+    return null;
+  }
+
+  const fresh: CachedPackageData = {
+    name: data.name,
+    timestamp: data.timestamp,
+  };
+  let hasFreshField = false;
+
+  for (const field of CACHED_PACKAGE_FIELDS) {
+    const value = getFreshCachedField(data, field);
+    if (value === undefined) {
+      continue;
+    }
+
+    hasFreshField = true;
+    setCachedPackageField(fresh, field, value, getCachedFieldTimestamp(data, field));
+  }
+
+  return hasFreshField ? fresh : null;
 }
 
 /**
@@ -246,13 +415,7 @@ function isCacheValid(timestamp: number): boolean {
  */
 export async function getCachedPackage(name: string): Promise<CachedPackageData | null> {
   const cache = await loadCache();
-  const data = cache.packages.get(name);
-
-  if (!data || !isCacheValid(data.timestamp)) {
-    return null;
-  }
-
-  return data;
+  return toFreshCachedPackage(cache.packages.get(name));
 }
 
 /**
@@ -260,13 +423,10 @@ export async function getCachedPackage(name: string): Promise<CachedPackageData 
  */
 export async function setCachedPackage(
   name: string,
-  data: Omit<CachedPackageData, "timestamp">
+  data: Omit<CachedPackageData, "timestamp" | "fieldTimestamps">
 ): Promise<void> {
   const cache = await loadCache();
-  cache.packages.set(name, {
-    ...data,
-    timestamp: Date.now(),
-  });
+  cache.packages.set(name, mergeCachedPackageData(cache.packages.get(name), data));
   await enqueueCacheSave();
 }
 
@@ -295,8 +455,12 @@ export async function getCachedSearch(query: string): Promise<NpmPackage[] | nul
     if (pkg) {
       packages.push({
         name: pkg.name,
-        description: pkg.description ?? undefined,
-        version: pkg.version ?? undefined,
+        description: getFreshCachedField(pkg, "description") as string | undefined,
+        version: getFreshCachedField(pkg, "version") as string | undefined,
+        author: getFreshCachedField(pkg, "author") as string | undefined,
+        keywords: getFreshCachedField(pkg, "keywords") as string[] | undefined,
+        date: getFreshCachedField(pkg, "date") as string | undefined,
+        size: getFreshCachedField(pkg, "size") as number | undefined,
       });
     }
   }
@@ -312,12 +476,18 @@ export async function setCachedSearch(query: string, packages: NpmPackage[]): Pr
 
   // Update cache with new packages
   for (const pkg of packages) {
-    cache.packages.set(pkg.name, {
-      name: pkg.name,
-      description: pkg.description ?? undefined,
-      version: pkg.version ?? undefined,
-      timestamp: Date.now(),
-    });
+    cache.packages.set(
+      pkg.name,
+      mergeCachedPackageData(cache.packages.get(pkg.name), {
+        name: pkg.name,
+        description: pkg.description ?? undefined,
+        version: pkg.version ?? undefined,
+        author: pkg.author ?? undefined,
+        keywords: pkg.keywords ?? undefined,
+        date: pkg.date ?? undefined,
+        size: pkg.size ?? undefined,
+      })
+    );
   }
 
   // Store search results
@@ -355,7 +525,7 @@ export async function getCacheStats(): Promise<{
   let expired = 0;
 
   for (const [, data] of cache.packages) {
-    if (isCacheValid(data.timestamp)) {
+    if (hasFreshCachedField(data)) {
       valid++;
     } else {
       expired++;
@@ -383,8 +553,9 @@ export async function getPackageDescriptions(
     if (!npmSource?.name) continue;
 
     const cached = cache.packages.get(npmSource.name);
-    if (cached?.description && isCacheValid(cached.timestamp)) {
-      descriptions.set(pkg.source, cached.description);
+    const description = cached ? getFreshCachedField(cached, "description") : undefined;
+    if (typeof description === "string") {
+      descriptions.set(pkg.source, description);
     }
   }
 
@@ -397,12 +568,7 @@ export async function getPackageDescriptions(
 export async function getCachedPackageSize(name: string): Promise<number | undefined> {
   const cache = await loadCache();
   const data = cache.packages.get(name);
-
-  if (data && isCacheValid(data.timestamp)) {
-    return data.size;
-  }
-
-  return undefined;
+  return data ? (getFreshCachedField(data, "size") as number | undefined) : undefined;
 }
 
 /**
@@ -412,14 +578,19 @@ export async function setCachedPackageSize(name: string, size: number): Promise<
   const cache = await loadCache();
   const existing = cache.packages.get(name);
 
+  const timestamp = Date.now();
+
   if (existing) {
-    existing.size = size;
-    existing.timestamp = Date.now();
+    existing.timestamp = timestamp;
+    setCachedPackageField(existing, "size", size, timestamp);
   } else {
     cache.packages.set(name, {
       name,
       size,
-      timestamp: Date.now(),
+      timestamp,
+      fieldTimestamps: {
+        size: timestamp,
+      },
     });
   }
 

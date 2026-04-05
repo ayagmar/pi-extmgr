@@ -1,0 +1,27 @@
+{
+  "git": {
+    "commitMessage": "chore(release): v${version}",
+    "tagName": "v${version}",
+    "requireCleanWorkingDir": true,
+    "requireUpstream": true,
+    "addUntrackedFiles": true,
+    "commit": true,
+    "tag": true,
+    "push": true
+  },
+  "github": {
+    "release": true
+  },
+  "npm": {
+    "publish": true
+  },
+  "plugins": {
+    "@release-it/conventional-changelog": {
+      "preset": "conventionalcommits",
+      "infile": "CHANGELOG.md"
+    }
+  },
+  "hooks": {
+    "before:init": "pnpm run check"
+  }
+}

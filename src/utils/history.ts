@@ -299,6 +299,41 @@ async function walkSessionFiles(dir: string): Promise<string[]> {
   return result;
 }
 
+function pushGlobalHistoryEntry(
+  entries: GlobalHistoryEntry[],
+  nextEntry: GlobalHistoryEntry,
+  limit: number | undefined
+): void {
+  if (!limit || limit <= 0) {
+    entries.push(nextEntry);
+    return;
+  }
+
+  if (entries.length < limit) {
+    entries.push(nextEntry);
+    return;
+  }
+
+  let oldestIndex = 0;
+  let oldestEntry = entries[oldestIndex];
+  if (!oldestEntry) {
+    entries.push(nextEntry);
+    return;
+  }
+
+  for (let index = 1; index < entries.length; index++) {
+    const entry = entries[index];
+    if (entry && entry.change.timestamp < oldestEntry.change.timestamp) {
+      oldestIndex = index;
+      oldestEntry = entry;
+    }
+  }
+
+  if (oldestEntry.change.timestamp <= nextEntry.change.timestamp) {
+    entries[oldestIndex] = nextEntry;
+  }
+}
+
 /**
  * Query change history across all persisted pi sessions.
  */
@@ -307,7 +342,8 @@ export async function queryGlobalHistory(
   sessionDir = DEFAULT_SESSION_DIR
 ): Promise<GlobalHistoryEntry[]> {
   const files = await walkSessionFiles(sessionDir);
-  const all: GlobalHistoryEntry[] = [];
+  const matchedEntries: GlobalHistoryEntry[] = [];
+  const limit = filters.limit ?? 20;
 
   for (const file of files) {
     let text: string;
@@ -337,16 +373,16 @@ export async function queryGlobalHistory(
       }
 
       const change = asChangeEntry(parsed.data);
-      if (change) {
-        all.push({ change, sessionFile: file });
+      if (!change || !matchesHistoryFilters(change, filters)) {
+        continue;
       }
+
+      pushGlobalHistoryEntry(matchedEntries, { change, sessionFile: file }, limit);
     }
   }
 
-  all.sort((a, b) => a.change.timestamp - b.change.timestamp);
-
-  const filtered = all.filter((entry) => matchesHistoryFilters(entry.change, filters));
-  return applyHistoryLimit(filtered, filters);
+  matchedEntries.sort((a, b) => a.change.timestamp - b.change.timestamp);
+  return matchedEntries;
 }
 
 /**

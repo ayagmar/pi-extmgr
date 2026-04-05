@@ -18,25 +18,29 @@ pi install npm:pi-extmgr
 
 If Pi is already running, use `/reload`.
 
-Requires Node.js `>=22`.
+Requires Node.js `>=22.20.0`.
 
 ## Features
 
 - **Unified manager UI**
   - Local extensions (`~/.pi/agent/extensions`, `.pi/extensions`) and installed packages in one list
-  - Scope indicators (global/project), status indicators, update badges
+  - Grouped sections for local extensions vs installed packages
+  - Compact rows with selected-item details below the list, so large extension sets stay scannable
+  - Built-in search and filter shortcuts for large extension sets
+  - Scope indicators (global/project), status indicators, update badges, and package sizes when known
 - **Package extension configuration panel**
   - Configure individual extension entrypoints inside an installed package (`c` on package row)
   - Works with manifest-declared entrypoints and conventional `extensions/` package layouts
   - Persists to package filters in `settings.json` (no manual JSON editing)
 - **Safe staged local extension toggles**
-  - Toggle with `Space/Enter`, apply with `S`
+  - Toggle with `Space`, apply with `S`
   - Unsaved-change guard when leaving (save/discard/stay)
 - **Package management**
   - Install, update, remove from UI and command line
   - Quick actions (`A`, `u`, `X`) and bulk update (`U`)
 - **Remote discovery and install**
-  - npm search/browse with pagination
+  - npm search/browse with pagination, inline browse search, and keyboard page navigation
+  - Path- and git-like queries are handled explicitly instead of surfacing unrelated npm results
   - Install by source (`npm:`, `git:`, `https://`, `ssh://`, `git@...`, local path)
   - Supports direct GitHub `.ts` installs and standalone local install for self-contained packages
   - Long-running discovery/detail screens now show dedicated loading UI, and cancellable reads can be aborted with `Esc`
@@ -66,20 +70,26 @@ Open the manager:
 | Key           | Action                                                |
 | ------------- | ----------------------------------------------------- |
 | `↑↓`          | Navigate                                              |
-| `Space/Enter` | Toggle local extension on/off                         |
+| `PageUp/Down` | Jump through longer lists                             |
+| `Home/End`    | Jump to top or bottom                                 |
+| `Space`       | Toggle selected local extension on/off                |
 | `S`           | Save local extension changes                          |
-| `Enter` / `A` | Actions on selected package (configure/update/remove) |
+| `Enter` / `A` | Actions on selected item                              |
+| `/` / `Ctrl+F`| Search visible items                                  |
+| `Tab` / `Shift+Tab` | Cycle filters                                  |
+| `1-5`         | Filters: All / Local / Packages / Updates / Disabled  |
 | `c`           | Configure selected package extensions                 |
 | `u`           | Update selected package directly                      |
+| `V`           | View full details for selected item                   |
 | `X`           | Remove selected item (package/local extension)        |
 | `i`           | Quick install by source                               |
-| `f`           | Quick search                                          |
+| `f`           | Remote package search                                 |
 | `U`           | Update all packages                                   |
 | `t`           | Auto-update wizard                                    |
 | `P` / `M`     | Quick actions palette                                 |
 | `R`           | Browse remote packages                                |
 | `?` / `H`     | Help                                                  |
-| `Esc`         | Exit                                                  |
+| `Esc`         | Clear search or exit                                  |
 
 ### Commands
 
