@@ -10,8 +10,13 @@ import { readdir, rename, rm } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, dirname, join, relative } from "node:path";
 import { DISABLED_SUFFIX } from "../constants.js";
+import { readPackageManifest } from "../packages/extensions.js";
 import { type ExtensionEntry, type Scope, type State } from "../types/index.js";
 import { fileExists, readSummary } from "../utils/fs.js";
+import {
+  normalizeRelativePath,
+  resolveRelativePathSelection,
+} from "../utils/relative-path-selection.js";
 
 interface RootConfig {
   root: string;
@@ -94,8 +99,7 @@ async function discoverInRoot(
     }
 
     if (item.isDirectory()) {
-      const entry = await parseDirectoryIndex(root, label, scope, name);
-      if (entry) found.push(entry);
+      found.push(...(await parseDirectoryExtensions(root, label, scope, name)));
     }
   }
 
@@ -141,53 +145,131 @@ async function parseTopLevelFile(
   };
 }
 
+function stripDisabledSuffix(path: string): string {
+  return path.replace(/\.(ts|js)\.disabled$/i, ".$1");
+}
+
+function isExtensionEntrypointPath(path: string): boolean {
+  return /\.(ts|js)$/i.test(path);
+}
+
+function isLocalExtensionFile(path: string): boolean {
+  return /\.(ts|js)(?:\.disabled)?$/i.test(path);
+}
+
+async function collectLocalExtensionFiles(rootDir: string, startDir: string): Promise<string[]> {
+  const collected: string[] = [];
+
+  let entries: Dirent[];
+  try {
+    entries = await readdir(startDir, { withFileTypes: true });
+  } catch {
+    return collected;
+  }
+
+  for (const entry of entries) {
+    if (entry.name.startsWith(".")) {
+      continue;
+    }
+
+    const absolutePath = join(startDir, entry.name);
+    if (entry.isDirectory()) {
+      collected.push(...(await collectLocalExtensionFiles(rootDir, absolutePath)));
+      continue;
+    }
+
+    if (!entry.isFile()) {
+      continue;
+    }
+
+    const relativePath = normalizeRelativePath(relative(rootDir, absolutePath));
+    if (isLocalExtensionFile(relativePath)) {
+      collected.push(stripDisabledSuffix(relativePath));
+    }
+  }
+
+  return collected;
+}
+
+async function resolveManifestLocalEntrypoints(dir: string): Promise<string[] | undefined> {
+  const manifest = await readPackageManifest(dir);
+  const extensions = manifest?.pi?.extensions;
+  if (!Array.isArray(extensions)) {
+    return undefined;
+  }
+
+  const entries = extensions.filter((value): value is string => typeof value === "string");
+  const allFiles = await collectLocalExtensionFiles(dir, dir);
+  return resolveRelativePathSelection(
+    allFiles,
+    entries,
+    (path, files) => isExtensionEntrypointPath(path) && files.includes(path)
+  );
+}
+
+async function toDirectoryExtensionEntry(
+  root: string,
+  label: string,
+  scope: Scope,
+  dir: string,
+  extensionPath: string
+): Promise<ExtensionEntry | undefined> {
+  const normalizedPath = normalizeRelativePath(extensionPath);
+  const activePath = join(dir, normalizedPath);
+  const disabledPath = `${activePath}${DISABLED_SUFFIX}`;
+
+  let state: State;
+  let summaryPath: string;
+  if (await fileExists(activePath)) {
+    state = "enabled";
+    summaryPath = activePath;
+  } else if (await fileExists(disabledPath)) {
+    state = "disabled";
+    summaryPath = disabledPath;
+  } else {
+    return undefined;
+  }
+
+  return {
+    id: `${scope}:${activePath}`,
+    scope,
+    state,
+    activePath,
+    disabledPath,
+    displayName: `${label}/${normalizeRelativePath(relative(root, activePath))}`,
+    summary: await readSummary(summaryPath),
+  };
+}
+
 /**
- * Parse a directory containing an index.ts/js file as an extension entry.
- *
- * @param root - Root directory path
- * @param label - Display label for the root
- * @param scope - "global" or "project"
- * @param dirName - Name of the directory to parse
- * @returns ExtensionEntry if index file found, undefined otherwise
+ * Parse a directory containing a manifest-declared entrypoint or index.ts/js file as one or more
+ * extension entries.
  */
-async function parseDirectoryIndex(
+async function parseDirectoryExtensions(
   root: string,
   label: string,
   scope: Scope,
   dirName: string
-): Promise<ExtensionEntry | undefined> {
+): Promise<ExtensionEntry[]> {
   const dir = join(root, dirName);
+  const manifestEntrypoints = await resolveManifestLocalEntrypoints(dir);
 
-  for (const ext of [".ts", ".js"]) {
-    const activePath = join(dir, `index${ext}`);
-    const disabledPath = `${activePath}${DISABLED_SUFFIX}`;
-
-    if (await fileExists(activePath)) {
-      return {
-        id: `${scope}:${activePath}`,
-        scope,
-        state: "enabled",
-        activePath,
-        disabledPath,
-        displayName: `${label}/${dirName}/index${ext}`,
-        summary: await readSummary(activePath),
-      };
-    }
-
-    if (await fileExists(disabledPath)) {
-      return {
-        id: `${scope}:${activePath}`,
-        scope,
-        state: "disabled",
-        activePath,
-        disabledPath,
-        displayName: `${label}/${dirName}/index${ext}`,
-        summary: await readSummary(disabledPath),
-      };
-    }
+  if (manifestEntrypoints !== undefined) {
+    const entries = await Promise.all(
+      manifestEntrypoints.map((extensionPath) =>
+        toDirectoryExtensionEntry(root, label, scope, dir, extensionPath)
+      )
+    );
+    return entries.filter((entry): entry is ExtensionEntry => Boolean(entry));
   }
 
-  return undefined;
+  const fallbackEntries = await Promise.all(
+    ["index.ts", "index.js"].map((extensionPath) =>
+      toDirectoryExtensionEntry(root, label, scope, dir, extensionPath)
+    )
+  );
+
+  return fallbackEntries.filter((entry): entry is ExtensionEntry => Boolean(entry)).slice(0, 1);
 }
 
 /**

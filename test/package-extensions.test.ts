@@ -110,6 +110,39 @@ void test("discoverPackageExtensions resolves directory tokens with trailing sla
   }
 });
 
+void test("discoverPackageExtensions ignores manifest entrypoints with leading slashes", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "pi-extmgr-cwd-"));
+  const pkgRoot = join(cwd, "vendor", "absolute-like-manifest");
+
+  try {
+    await mkdir(join(pkgRoot, "extensions"), { recursive: true });
+    await writeFile(
+      join(pkgRoot, "package.json"),
+      JSON.stringify(
+        { name: "absolute-like-manifest", pi: { extensions: ["/extensions/index.ts"] } },
+        null,
+        2
+      ),
+      "utf8"
+    );
+    await writeFile(join(pkgRoot, "extensions", "index.ts"), "// index\n", "utf8");
+
+    const installed: InstalledPackage[] = [
+      {
+        source: "./vendor/absolute-like-manifest",
+        name: "absolute-like-manifest",
+        scope: "project",
+        resolvedPath: pkgRoot,
+      },
+    ];
+
+    const discovered = await discoverPackageExtensions(installed, cwd);
+    assert.deepEqual(discovered, []);
+  } finally {
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
+
 void test("discoverPackageExtensions falls back to convention extensions directory", async () => {
   const cwd = await mkdtemp(join(tmpdir(), "pi-extmgr-cwd-"));
   const pkgRoot = join(cwd, "vendor", "convention-package");
@@ -385,8 +418,7 @@ void test("setPackageExtensionState converts string package entries and keeps la
     const afterEnable = JSON.parse(await readFile(join(agentDir, "settings.json"), "utf8")) as {
       packages: (string | { source: string; extensions?: string[] })[];
     };
-    const enabledEntry = afterEnable.packages[0] as { source: string; extensions?: string[] };
-    assert.deepEqual(enabledEntry.extensions, ["+extensions/main.ts"]);
+    assert.equal(afterEnable.packages[0], "npm:demo-pkg@1.0.0");
   } finally {
     if (oldAgentDir === undefined) {
       delete process.env.PI_CODING_AGENT_DIR;

@@ -11,6 +11,7 @@ import {
   type ExtensionCommandContext,
   type ExtensionContext,
 } from "@mariozechner/pi-coding-agent";
+import { parseScheduleDuration } from "./duration.js";
 import { fileExists } from "./fs.js";
 import { normalizePackageIdentity } from "./package-source.js";
 
@@ -304,71 +305,11 @@ export function clearUpdatesAvailable(
 }
 
 /**
- * Parse duration string to milliseconds
- * Supports: 1h, 2h, 1d, 7d, 1m, 3m, etc.
- * Also supports: never, off, disable, daily, weekly
+ * Parse schedule duration strings for auto-update settings.
+ * Supports hours/days/weeks/months plus schedule aliases like `daily`, `weekly`, and `never`.
  */
 export function parseDuration(input: string): { ms: number; display: string } | undefined {
-  const normalized = input.toLowerCase().trim();
-
-  // Special cases for disabling
-  if (normalized === "never" || normalized === "off" || normalized === "disable") {
-    return { ms: 0, display: "off" };
-  }
-
-  // Named schedules
-  if (normalized === "daily" || normalized === "day" || normalized === "1d") {
-    return { ms: 24 * 60 * 60 * 1000, display: "daily" };
-  }
-  if (normalized === "weekly" || normalized === "week" || normalized === "1w") {
-    return { ms: 7 * 24 * 60 * 60 * 1000, display: "weekly" };
-  }
-
-  // Parse duration patterns: 1h, 2h, 3d, 7d, 1m, etc.
-  const durationMatch = normalized.match(
-    /^(\d+)\s*(h|hr|hrs|hour|hours|d|day|days|w|wk|wks|week|weeks|m|mo|mos|month|months)$/
-  );
-  if (durationMatch) {
-    const [, rawValue, rawUnit] = durationMatch;
-    if (!rawValue || !rawUnit) {
-      return undefined;
-    }
-
-    const value = Number.parseInt(rawValue, 10);
-    const unit = rawUnit[0];
-    if (!unit) {
-      return undefined;
-    }
-
-    let ms: number;
-    let display: string;
-
-    switch (unit) {
-      case "h":
-        ms = value * 60 * 60 * 1000;
-        display = value === 1 ? "1 hour" : `${value} hours`;
-        break;
-      case "d":
-        ms = value * 24 * 60 * 60 * 1000;
-        display = value === 1 ? "1 day" : `${value} days`;
-        break;
-      case "w":
-        ms = value * 7 * 24 * 60 * 60 * 1000;
-        display = value === 1 ? "1 week" : `${value} weeks`;
-        break;
-      case "m":
-        // Approximate months as 30 days
-        ms = value * 30 * 24 * 60 * 60 * 1000;
-        display = value === 1 ? "1 month" : `${value} months`;
-        break;
-      default:
-        return undefined;
-    }
-
-    return { ms, display };
-  }
-
-  return undefined;
+  return parseScheduleDuration(input);
 }
 
 /**

@@ -22,10 +22,11 @@ void test("parseDuration supports flexible durations", () => {
     ms: 2 * 7 * 24 * 60 * 60 * 1000,
     display: "2 weeks",
   });
-  assert.deepEqual(parseDuration("1m"), {
+  assert.deepEqual(parseDuration("1mo"), {
     ms: 30 * 24 * 60 * 60 * 1000,
     display: "1 month",
   });
+  assert.equal(parseDuration("1m"), undefined);
   assert.deepEqual(parseDuration("never"), { ms: 0, display: "off" });
   assert.equal(parseDuration("nope"), undefined);
 });

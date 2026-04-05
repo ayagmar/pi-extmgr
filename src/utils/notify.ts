@@ -34,17 +34,3 @@ export function success(ctx: ExtensionCommandContext | ExtensionContext, message
 export function error(ctx: ExtensionCommandContext | ExtensionContext, message: string): void {
   notify(ctx, message, "error");
 }
-
-/**
- * Show warning message
- */
-export function warning(ctx: ExtensionCommandContext | ExtensionContext, message: string): void {
-  notify(ctx, message, "warning");
-}
-
-/**
- * Show info message
- */
-export function info(ctx: ExtensionCommandContext | ExtensionContext, message: string): void {
-  notify(ctx, message, "info");
-}

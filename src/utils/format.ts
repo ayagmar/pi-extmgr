@@ -9,36 +9,6 @@ export function truncate(text: string, maxLength: number): string {
   return `${text.slice(0, maxLength - 3)}...`;
 }
 
-/**
- * Get the terminal width, with a minimum fallback
- */
-export function getTerminalWidth(minWidth = 80): number {
-  return Math.max(minWidth, process.stdout.columns || minWidth);
-}
-
-/**
- * Calculate available space for description based on fixed-width elements
- */
-export function getDescriptionWidth(
-  totalWidth: number,
-  reservedSpace: number,
-  minDescWidth = 20
-): number {
-  return Math.max(minDescWidth, totalWidth - reservedSpace);
-}
-
-/**
- * Dynamic truncate that adapts to available terminal width
- * @param text - Text to truncate
- * @param reservedSpace - Space taken by fixed elements (icons, name, version, etc.)
- * @param minWidth - Minimum terminal width to consider
- */
-export function dynamicTruncate(text: string, reservedSpace: number, minWidth = 80): string {
-  const termWidth = getTerminalWidth(minWidth);
-  const maxDescWidth = getDescriptionWidth(termWidth, reservedSpace);
-  return truncate(text, maxDescWidth);
-}
-
 export function formatEntry(entry: ExtensionEntry): string {
   const state = entry.state === "enabled" ? "on " : "off";
   const scope = entry.scope === "global" ? "G" : "P";
