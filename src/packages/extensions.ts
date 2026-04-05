@@ -481,7 +481,11 @@ async function resolveManifestExtensionEntries(
   entries: string[]
 ): Promise<string[]> {
   const allFiles = await collectExtensionFilesFromDir(packageRoot, packageRoot);
-  return resolveRelativePathSelection(allFiles, entries, (path) => isExtensionEntrypointPath(path));
+  return resolveRelativePathSelection(
+    allFiles,
+    entries,
+    (path, files) => isExtensionEntrypointPath(path) && files.includes(path)
+  );
 }
 
 export async function readPackageManifest(

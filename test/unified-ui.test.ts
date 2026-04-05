@@ -104,6 +104,7 @@ void test("/extensions groups local extensions and packages into sections", asyn
 });
 
 void test("/extensions shows package sizes inline when known", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "pi-extmgr-unified-size-"));
   const restoreCatalog = mockPackageCatalog({
     packages: [
       {
@@ -118,7 +119,7 @@ void test("/extensions shows package sizes inline when known", async () => {
   });
 
   try {
-    const { pi, ctx } = createMockHarness({ cwd: "/tmp", hasUI: true });
+    const { pi, ctx } = createMockHarness({ cwd, hasUI: true });
     let renderedLines: string[] = [];
 
     (ctx.ui as { custom: (factory: unknown) => Promise<unknown> }).custom = async (factory) =>
@@ -140,6 +141,7 @@ void test("/extensions shows package sizes inline when known", async () => {
     );
   } finally {
     restoreCatalog();
+    await rm(cwd, { recursive: true, force: true });
   }
 });
 
@@ -214,6 +216,46 @@ void test("/extensions searches visible items only after activating search", asy
 
     assert.ok(afterSearch.some((line) => line.includes("beta-search.ts")));
     assert.ok(!afterSearch.some((line) => line.includes("alpha-search.ts")));
+  } finally {
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
+
+void test("/extensions clears an inactive search with Escape before exiting", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "pi-extmgr-unified-search-escape-"));
+  const projectExtensionsRoot = join(cwd, ".pi", "extensions");
+
+  try {
+    await mkdir(projectExtensionsRoot, { recursive: true });
+    await writeFile(join(projectExtensionsRoot, "alpha-search.ts"), "// alpha\n", "utf8");
+    await writeFile(join(projectExtensionsRoot, "beta-search.ts"), "// beta\n", "utf8");
+
+    const { pi, ctx } = createMockHarness({ cwd, hasUI: true });
+    let afterEscape: string[] = [];
+
+    (ctx.ui as { custom: (factory: unknown) => Promise<unknown> }).custom = async (factory) =>
+      captureCustomComponent(
+        factory,
+        ctx.ui.theme,
+        (lines) => lines.some((line) => line.includes("/ search")),
+        (component) => {
+          component.handleInput?.("/");
+          component.handleInput?.("b");
+          component.handleInput?.("e");
+          component.handleInput?.("t");
+          component.handleInput?.("a");
+          component.handleInput?.("\r");
+          component.handleInput?.("\u001b");
+          afterEscape = component.render(120);
+          return { type: "cancel" };
+        }
+      );
+
+    await showInteractive(ctx, pi);
+
+    assert.ok(afterEscape.some((line) => line.includes("alpha-search.ts")));
+    assert.ok(afterEscape.some((line) => line.includes("beta-search.ts")));
+    assert.ok(!afterEscape.some((line) => line.includes("Search: beta")));
   } finally {
     await rm(cwd, { recursive: true, force: true });
   }
@@ -295,6 +337,168 @@ void test("/extensions still toggles local items with Space", async () => {
     assert.ok(
       afterSpace.some((line) => line.includes("○ [P]") && line.includes("alpha-space.ts")),
       "expected Space to keep local toggling working"
+    );
+  } finally {
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
+
+void test("/extensions keeps staged changes after viewing item details", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "pi-extmgr-unified-details-"));
+  const projectExtensionsRoot = join(cwd, ".pi", "extensions");
+
+  try {
+    await mkdir(projectExtensionsRoot, { recursive: true });
+    await writeFile(join(projectExtensionsRoot, "alpha-details.ts"), "// alpha\n", "utf8");
+
+    const { pi, ctx, notifications, selectPrompts } = createMockHarness({
+      cwd,
+      hasUI: true,
+      selectResult: "Exit without saving",
+    });
+    let managerCallCount = 0;
+    let resumedLines: string[] = [];
+
+    (ctx.ui as { custom: (factory: unknown) => Promise<unknown> }).custom = async (factory) =>
+      captureCustomComponent(
+        factory,
+        ctx.ui.theme,
+        (lines) => lines.some((line) => line.includes("/ search")),
+        (component, lines, completion) => {
+          managerCallCount += 1;
+          if (managerCallCount === 1) {
+            component.handleInput?.(" ");
+            component.handleInput?.("V");
+            return completion;
+          }
+
+          resumedLines = lines;
+          return { type: "cancel" };
+        }
+      );
+
+    await showInteractive(ctx, pi);
+
+    assert.ok(
+      notifications.some((entry) => entry.message.includes("alpha-details.ts")),
+      "expected details notification to be shown"
+    );
+    assert.ok(
+      resumedLines.some((line) => line.includes("○ [P]") && line.includes("alpha-details.ts")),
+      "expected staged toggle to persist after viewing details"
+    );
+    assert.ok(
+      selectPrompts.includes("Unsaved changes (1)"),
+      "expected pending changes to remain after viewing details"
+    );
+  } finally {
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
+
+void test("/extensions keeps staged changes after backing out of the local action menu", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "pi-extmgr-unified-local-back-"));
+  const projectExtensionsRoot = join(cwd, ".pi", "extensions");
+
+  try {
+    await mkdir(projectExtensionsRoot, { recursive: true });
+    await writeFile(join(projectExtensionsRoot, "alpha-menu.ts"), "// alpha\n", "utf8");
+
+    const { pi, ctx, selectPrompts } = createMockHarness({ cwd, hasUI: true });
+    const queuedSelections = ["Back to manager", "Exit without saving"];
+    let managerCallCount = 0;
+    let resumedLines: string[] = [];
+
+    (
+      ctx.ui as { select: (title: string, options?: string[]) => Promise<string | undefined> }
+    ).select = (title) => {
+      selectPrompts.push(title);
+      return Promise.resolve(queuedSelections.shift());
+    };
+    (ctx.ui as { custom: (factory: unknown) => Promise<unknown> }).custom = async (factory) =>
+      captureCustomComponent(
+        factory,
+        ctx.ui.theme,
+        (lines) => lines.some((line) => line.includes("/ search")),
+        (component, lines, completion) => {
+          managerCallCount += 1;
+          if (managerCallCount === 1) {
+            component.handleInput?.(" ");
+            component.handleInput?.("\r");
+            return completion;
+          }
+
+          resumedLines = lines;
+          return { type: "cancel" };
+        }
+      );
+
+    await showInteractive(ctx, pi);
+
+    assert.ok(
+      selectPrompts.some((title) => title.includes("alpha-menu.ts")),
+      "expected the local action menu to open"
+    );
+    assert.ok(
+      resumedLines.some((line) => line.includes("○ [P]") && line.includes("alpha-menu.ts")),
+      "expected staged toggle to persist after backing out of the action menu"
+    );
+    assert.ok(
+      selectPrompts.includes("Unsaved changes (1)"),
+      "expected pending changes to remain after backing out of the action menu"
+    );
+  } finally {
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
+
+void test("/extensions keeps staged changes when staying in the manager", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "pi-extmgr-unified-stay-"));
+  const projectExtensionsRoot = join(cwd, ".pi", "extensions");
+
+  try {
+    await mkdir(projectExtensionsRoot, { recursive: true });
+    await writeFile(join(projectExtensionsRoot, "alpha-stay.ts"), "// alpha\n", "utf8");
+
+    const { pi, ctx, selectPrompts } = createMockHarness({ cwd, hasUI: true });
+    const queuedSelections = ["Stay in manager", "Exit without saving"];
+    let managerCallCount = 0;
+    let resumedLines: string[] = [];
+
+    (
+      ctx.ui as { select: (title: string, options?: string[]) => Promise<string | undefined> }
+    ).select = (title) => {
+      selectPrompts.push(title);
+      return Promise.resolve(queuedSelections.shift());
+    };
+    (ctx.ui as { custom: (factory: unknown) => Promise<unknown> }).custom = async (factory) =>
+      captureCustomComponent(
+        factory,
+        ctx.ui.theme,
+        (lines) => lines.some((line) => line.includes("/ search")),
+        (component, lines, completion) => {
+          managerCallCount += 1;
+          if (managerCallCount === 1) {
+            component.handleInput?.(" ");
+            component.handleInput?.("R");
+            return completion;
+          }
+
+          resumedLines = lines;
+          return { type: "cancel" };
+        }
+      );
+
+    await showInteractive(ctx, pi);
+
+    assert.equal(
+      selectPrompts.filter((title) => title === "Unsaved changes (1)").length,
+      2,
+      "expected stay-in-manager flow to keep pending changes for the next cancel prompt"
+    );
+    assert.ok(
+      resumedLines.some((line) => line.includes("○ [P]") && line.includes("alpha-stay.ts")),
+      "expected staged toggle to persist after choosing to stay in the manager"
     );
   } finally {
     await rm(cwd, { recursive: true, force: true });

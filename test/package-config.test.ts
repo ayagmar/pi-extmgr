@@ -74,7 +74,7 @@ void test("buildPackageConfigRows deduplicates duplicate extension paths", async
   }
 });
 
-void test("buildPackageConfigRows marks missing manifest entrypoints as unavailable", async () => {
+void test("buildPackageConfigRows only includes manifest entrypoints that still exist", async () => {
   const cwd = await mkdtemp(join(tmpdir(), "pi-extmgr-package-config-"));
   const pkgRoot = join(cwd, "vendor", "demo");
 
@@ -97,13 +97,13 @@ void test("buildPackageConfigRows marks missing manifest entrypoints as unavaila
     const discovered = await discoverPackageExtensions([pkg], cwd);
     const rows = await buildPackageConfigRows(discovered);
 
-    assert.equal(rows.length, 2);
+    assert.equal(rows.length, 1);
 
     const indexRow = rows.find((row) => row.extensionPath === "index.ts");
     const missingRow = rows.find((row) => row.extensionPath === "missing.ts");
 
     assert.equal(indexRow?.available, true);
-    assert.equal(missingRow?.available, false);
+    assert.equal(missingRow, undefined);
   } finally {
     await rm(cwd, { recursive: true, force: true });
   }

@@ -9,13 +9,17 @@ export function hasGlobMagic(path: string): boolean {
 }
 
 export function isSafeRelativePath(path: string): boolean {
+  const normalizedPath = path.replace(/\\/g, "/");
+
   return (
-    path !== "" &&
-    path !== ".." &&
-    !path.startsWith("/") &&
-    !path.startsWith("../") &&
-    !path.includes("/../") &&
-    !path.endsWith("/..")
+    normalizedPath !== "" &&
+    normalizedPath !== ".." &&
+    !normalizedPath.startsWith("/") &&
+    !path.startsWith("\\") &&
+    !/^[A-Za-z]:/.test(normalizedPath) &&
+    !normalizedPath.startsWith("../") &&
+    !normalizedPath.includes("/../") &&
+    !normalizedPath.endsWith("/..")
   );
 }
 

@@ -13,14 +13,15 @@ export function buildFooterState(
   byId: Map<string, UnifiedItem>,
   selectedItem?: UnifiedItem
 ): FooterState {
-  return selectedItem
-    ? {
-        selectedType: selectedItem.type,
-        pendingChanges: getPendingToggleChangeCount(staged, byId),
-      }
-    : {
-        pendingChanges: getPendingToggleChangeCount(staged, byId),
-      };
+  const state: FooterState = {
+    pendingChanges: getPendingToggleChangeCount(staged, byId),
+  };
+
+  if (selectedItem) {
+    state.selectedType = selectedItem.type;
+  }
+
+  return state;
 }
 
 export function getPendingToggleChangeCount(
