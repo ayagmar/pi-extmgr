@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 import { type ExtensionAPI, type ExtensionCommandContext } from "@mariozechner/pi-coding-agent";
 import { clearMetadataCacheCommand } from "../src/commands/cache.js";
@@ -7,6 +10,7 @@ import {
   formatChangeEntry,
   logAutoUpdateConfig,
   logExtensionDelete,
+  queryGlobalHistory,
   querySessionChanges,
 } from "../src/utils/history.js";
 import { createMockHarness } from "./helpers/mocks.js";
@@ -30,6 +34,52 @@ void test("clearMetadataCacheCommand clears runtime search cache and records his
     | undefined;
   assert.equal(historyEntry?.action, "cache_clear");
   assert.equal(historyEntry?.success, true);
+});
+
+void test("queryGlobalHistory keeps the latest matching entries without loading more than needed", async () => {
+  const sessionDir = await mkdtemp(join(tmpdir(), "pi-extmgr-history-"));
+
+  try {
+    await mkdir(join(sessionDir, "nested"), { recursive: true });
+    await writeFile(
+      join(sessionDir, "first.jsonl"),
+      [
+        JSON.stringify({ type: "custom", customType: "other", data: {} }),
+        "not json",
+        JSON.stringify({
+          type: "custom",
+          customType: "extmgr-change",
+          data: { action: "cache_clear", timestamp: 10, success: true },
+        }),
+      ].join("\n"),
+      "utf8"
+    );
+    await writeFile(
+      join(sessionDir, "nested", "second.jsonl"),
+      [
+        JSON.stringify({
+          type: "custom",
+          customType: "extmgr-change",
+          data: { action: "package_install", timestamp: 30, success: true, packageName: "demo" },
+        }),
+        JSON.stringify({
+          type: "custom",
+          customType: "extmgr-change",
+          data: { action: "package_update", timestamp: 20, success: true, packageName: "demo" },
+        }),
+      ].join("\n"),
+      "utf8"
+    );
+
+    const changes = await queryGlobalHistory({ limit: 2 }, sessionDir);
+
+    assert.deepEqual(
+      changes.map((entry) => entry.change.timestamp),
+      [20, 30]
+    );
+  } finally {
+    await rm(sessionDir, { recursive: true, force: true });
+  }
 });
 
 void test("history records local extension deletion and auto-update config changes", () => {
