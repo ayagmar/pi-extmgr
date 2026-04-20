@@ -4,6 +4,10 @@
 import { access, readFile } from "node:fs/promises";
 import { truncate } from "./format.js";
 
+function formatSummary(text: string): string {
+  return truncate(text.replace(/\s+/g, " ").trim(), 80);
+}
+
 export async function fileExists(filePath: string): Promise<boolean> {
   try {
     await access(filePath);
@@ -28,7 +32,7 @@ export async function readSummary(filePath: string): Promise<string> {
     for (const pattern of descriptionPatterns) {
       const match = text.match(pattern);
       const value = match?.[1]?.trim();
-      if (value) return truncate(value, 80);
+      if (value) return formatSummary(value);
     }
 
     // Look for block comments
@@ -45,7 +49,7 @@ export async function readSummary(filePath: string): Promise<string> {
         )
         .filter((s): s is string => Boolean(s));
       const firstLine = lines[0];
-      if (firstLine) return truncate(firstLine, 80);
+      if (firstLine) return formatSummary(firstLine);
     }
 
     // Look for line comments
@@ -55,13 +59,13 @@ export async function readSummary(filePath: string): Promise<string> {
         .split("\n")
         .map((line) => line.replace(/^\s*\/\/\s?/, "").trim())
         .filter(Boolean)[0];
-      if (first) return truncate(first, 80);
+      if (first) return formatSummary(first);
     }
 
     // First non-empty line
     for (const line of text.split("\n")) {
       const clean = line.trim();
-      if (clean.length > 0) return truncate(clean, 80);
+      if (clean.length > 0) return formatSummary(clean);
     }
   } catch {
     // ignore

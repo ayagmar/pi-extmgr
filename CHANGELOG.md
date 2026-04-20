@@ -12,7 +12,7 @@
 
 ### Changed
 
-- Release automation now serializes manual runs and only publishes from `main`.
+- Release automation now serializes manual runs and only publishes from the default branch.
 - Community browse caching now follows the shared search-cache path.
 
 ### Fixed
@@ -20,5 +20,6 @@
 - Unified manager interactions keep staged changes, filters, and selection when returning from details, action menus, and stay-in-manager prompts.
 - Disabled local extensions deduplicate correctly, manifest entrypoints only resolve real files, and npm author selection now prefers maintainer usernames before fallback emails.
 - Metadata cache freshness no longer refreshes inherited stale fields.
+- Package extension summaries now flatten multi-line tool descriptions before rendering, preventing TUI layout artifacts in the configure panel.
 - Relative path selection rejects Windows absolute and UNC paths, and unified UI tests now use platform-safe temp directories.
 

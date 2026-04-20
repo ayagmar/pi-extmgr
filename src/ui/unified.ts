@@ -307,6 +307,7 @@ export function buildUnifiedItems(
       displayName: pkg.name,
       scope: pkg.scope,
       source: pkg.source,
+      resolvedPath: pkg.resolvedPath,
       version: pkg.version,
       description: pkg.description,
       size: pkg.size,
@@ -1108,6 +1109,7 @@ async function resolvePendingChangesBeforeLeave(
   }
 
   if (choice === "Discard changes") {
+    staged.clear();
     return "continue";
   }
 
@@ -1409,6 +1411,7 @@ async function handleUnifiedAction(
       name: item.displayName,
       ...(item.version ? { version: item.version } : {}),
       scope: item.scope,
+      ...(item.resolvedPath ? { resolvedPath: item.resolvedPath } : {}),
       ...(item.description ? { description: item.description } : {}),
       ...(item.size !== undefined ? { size: item.size } : {}),
     };

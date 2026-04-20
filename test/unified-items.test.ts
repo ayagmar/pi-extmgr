@@ -3,6 +3,7 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { discoverPackageExtensions } from "../src/packages/extensions.js";
 import { type ExtensionEntry, type InstalledPackage } from "../src/types/index.js";
 import { buildUnifiedItems } from "../src/ui/unified.js";
 
@@ -198,6 +199,58 @@ void test("buildUnifiedItems matches known updates by package identity instead o
   assert.equal(packageRows.length, 2);
   assert.equal(bySource.get("git:https://github.com/user/demo.git@main"), false);
   assert.equal(bySource.get("npm:demo@1.0.0"), true);
+});
+
+void test("buildUnifiedItems preserves resolvedPath for downstream package actions", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "pi-extmgr-unified-package-path-"));
+  const pkgRoot = join(cwd, "fixtures", "demo-git-package");
+
+  try {
+    await mkdir(pkgRoot, { recursive: true });
+    await writeFile(
+      join(pkgRoot, "package.json"),
+      JSON.stringify({ name: "demo-git-package", pi: { extensions: ["./index.ts"] } }, null, 2),
+      "utf8"
+    );
+    await writeFile(join(pkgRoot, "index.ts"), "// demo\n", "utf8");
+
+    const installedPackages: InstalledPackage[] = [
+      {
+        source: "git:https://github.com/user/demo-git-package.git@main",
+        name: "demo-git-package",
+        scope: "global",
+        resolvedPath: pkgRoot,
+      },
+    ];
+
+    const items = buildUnifiedItems([], installedPackages, new Set());
+    const packageItem = items.find(
+      (item): item is Extract<(typeof items)[number], { type: "package" }> =>
+        item.type === "package"
+    );
+
+    assert.ok(packageItem);
+    assert.equal(packageItem.resolvedPath, pkgRoot);
+
+    const discovered = await discoverPackageExtensions(
+      [
+        {
+          source: packageItem.source,
+          name: packageItem.displayName,
+          scope: packageItem.scope,
+          resolvedPath: packageItem.resolvedPath,
+        },
+      ],
+      cwd
+    );
+
+    assert.deepEqual(
+      discovered.map((entry) => entry.extensionPath),
+      ["index.ts"]
+    );
+  } finally {
+    await rm(cwd, { recursive: true, force: true });
+  }
 });
 
 void test("integration: pi list fixture with single-entry npm packages renders package rows once", async () => {
