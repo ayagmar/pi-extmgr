@@ -65,6 +65,7 @@ export interface PackageUnifiedItem {
   displayName: string;
   scope: Scope;
   source: string;
+  resolvedPath?: string | undefined;
   version?: string | undefined;
   description?: string | undefined;
   size?: number | undefined; // Package size in bytes

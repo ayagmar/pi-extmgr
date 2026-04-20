@@ -452,6 +452,67 @@ void test("/extensions keeps staged changes after backing out of the local actio
   }
 });
 
+void test("/extensions discards staged changes before resuming from help", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "pi-extmgr-unified-discard-"));
+  const projectExtensionsRoot = join(cwd, ".pi", "extensions");
+
+  try {
+    await mkdir(projectExtensionsRoot, { recursive: true });
+    await writeFile(join(projectExtensionsRoot, "alpha-discard.ts"), "// alpha\n", "utf8");
+
+    const { pi, ctx, notifications, selectPrompts } = createMockHarness({ cwd, hasUI: true });
+    const queuedSelections = ["Discard changes"];
+    let managerCallCount = 0;
+    let resumedLines: string[] = [];
+
+    (
+      ctx.ui as { select: (title: string, options?: string[]) => Promise<string | undefined> }
+    ).select = (title) => {
+      selectPrompts.push(title);
+      return Promise.resolve(queuedSelections.shift());
+    };
+    (ctx.ui as { custom: (factory: unknown) => Promise<unknown> }).custom = async (factory) =>
+      captureCustomComponent(
+        factory,
+        ctx.ui.theme,
+        (lines) => lines.some((line) => line.includes("/ search")),
+        (component, lines, completion) => {
+          managerCallCount += 1;
+          if (managerCallCount === 1) {
+            component.handleInput?.(" ");
+            component.handleInput?.("?");
+            return completion;
+          }
+
+          resumedLines = lines;
+          return { type: "cancel" };
+        }
+      );
+
+    await showInteractive(ctx, pi);
+
+    assert.ok(
+      notifications.some((entry) => entry.message.includes("Extensions Manager Help")),
+      "expected help to open after discarding changes"
+    );
+    assert.equal(
+      selectPrompts.filter((title) => title === "Unsaved changes (1)").length,
+      1,
+      "expected discard to clear pending changes before the next manager render"
+    );
+    assert.ok(
+      resumedLines.some((line) => line.includes("● [P]") && line.includes("alpha-discard.ts")),
+      "expected discarded toggle to revert to the original enabled state"
+    );
+    assert.ok(
+      !resumedLines.some((line) => line.includes("○ [P]") && line.includes("alpha-discard.ts")),
+      "expected no staged disabled state after discarding changes"
+    );
+  } finally {
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
+
 void test("/extensions keeps staged changes when staying in the manager", async () => {
   const cwd = await mkdtemp(join(tmpdir(), "pi-extmgr-unified-stay-"));
   const projectExtensionsRoot = join(cwd, ".pi", "extensions");
