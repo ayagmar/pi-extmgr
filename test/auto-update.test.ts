@@ -73,7 +73,7 @@ void test("checkForUpdates handles scoped npm packages", async () => {
   }
 });
 
-void test("session switch to disabled auto-update stops existing timer", async () => {
+void test("session start for a replacement session stops existing timer when auto-update is disabled", async () => {
   interface SessionCtx {
     hasUI: true;
     cwd: string;
@@ -142,7 +142,7 @@ void test("session switch to disabled auto-update stops existing timer", async (
     await handlers.session_start?.({}, enabledCtx);
     assert.equal(isAutoUpdateRunning(), true);
 
-    await handlers.session_switch?.({}, disabledCtx);
+    await handlers.session_start?.({ reason: "resume" }, disabledCtx);
     assert.equal(isAutoUpdateRunning(), false);
   } finally {
     restoreCatalog();

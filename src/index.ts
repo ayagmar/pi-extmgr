@@ -94,10 +94,6 @@ export default function extensionsManager(pi: ExtensionAPI) {
     await bootstrapSession(ctx);
   });
 
-  pi.on("session_switch", async (_event, ctx) => {
-    await bootstrapSession(ctx);
-  });
-
   pi.on("session_shutdown", () => {
     stopAutoUpdateTimer();
   });
