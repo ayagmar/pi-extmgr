@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { resolveNpmCommand } from "../src/utils/npm-exec.js";
+import { resolveNpmCommand, resolveNpmRootCommand } from "../src/utils/npm-exec.js";
 
 void test("resolveNpmCommand uses npm directly on non-windows", () => {
   const resolved = resolveNpmCommand(["view", "pi-extmgr", "version", "--json"], {
@@ -24,4 +24,33 @@ void test("resolveNpmCommand uses node + npm-cli.js on windows", () => {
     "--json",
     "pi-extmgr",
   ]);
+});
+
+void test("resolveNpmCommand honors Pi npmCommand settings", () => {
+  const resolved = resolveNpmCommand(["view", "pi-extmgr", "version", "--json"], {
+    npmCommand: ["mise", "exec", "node@22", "--", "npm"],
+  });
+
+  assert.equal(resolved.command, "mise");
+  assert.deepEqual(resolved.args, [
+    "exec",
+    "node@22",
+    "--",
+    "npm",
+    "view",
+    "pi-extmgr",
+    "version",
+    "--json",
+  ]);
+});
+
+void test("resolveNpmRootCommand follows Pi's bun global root convention", () => {
+  const resolved = resolveNpmRootCommand({ npmCommand: ["bun"] });
+
+  assert.equal(resolved.command, "bun");
+  assert.deepEqual(resolved.args, ["pm", "bin", "-g"]);
+  assert.equal(
+    resolved.getRoot("/home/alice/.bun/bin\n"),
+    "/home/alice/.bun/install/global/node_modules"
+  );
 });

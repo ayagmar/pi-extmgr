@@ -3,7 +3,7 @@
  */
 import { type ExtensionCommandContext } from "@mariozechner/pi-coding-agent";
 import { UI } from "../constants.js";
-import { notify } from "./notify.js";
+import { error as notifyError, notify } from "./notify.js";
 
 /**
  * Confirm and trigger reload
@@ -20,12 +20,18 @@ export async function confirmReload(
 
   const confirmed = await ctx.ui.confirm("Reload Required", `${reason}\nReload pi now?`);
 
-  if (confirmed) {
-    await ctx.reload();
-    return true;
+  if (!confirmed) {
+    return false;
   }
 
-  return false;
+  try {
+    await ctx.reload();
+    return true;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    notifyError(ctx, `Reload failed: ${message}`);
+    return false;
+  }
 }
 
 /**
