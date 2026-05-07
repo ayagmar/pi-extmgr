@@ -44,13 +44,40 @@ void test("resolveNpmCommand honors Pi npmCommand settings", () => {
   ]);
 });
 
-void test("resolveNpmRootCommand follows Pi's bun global root convention", () => {
-  const resolved = resolveNpmRootCommand({ npmCommand: ["bun"] });
+void test("resolveNpmRootCommand detects path-qualified bun commands", () => {
+  const oldGlobalDir = process.env.BUN_INSTALL_GLOBAL_DIR;
+  process.env.BUN_INSTALL_GLOBAL_DIR = "/opt/bun/global";
 
-  assert.equal(resolved.command, "bun");
-  assert.deepEqual(resolved.args, ["pm", "bin", "-g"]);
-  assert.equal(
-    resolved.getRoot("/home/alice/.bun/bin\n"),
-    "/home/alice/.bun/install/global/node_modules"
-  );
+  try {
+    const resolved = resolveNpmRootCommand({ npmCommand: ["/usr/local/bin/bun"] });
+
+    assert.equal(resolved.command, "/usr/local/bin/bun");
+    assert.deepEqual(resolved.args, ["pm", "bin", "-g"]);
+    assert.equal(resolved.getRoot("/home/alice/.bun/bin\n"), "/opt/bun/global/node_modules");
+  } finally {
+    if (oldGlobalDir === undefined) {
+      delete process.env.BUN_INSTALL_GLOBAL_DIR;
+    } else {
+      process.env.BUN_INSTALL_GLOBAL_DIR = oldGlobalDir;
+    }
+  }
+});
+
+void test("resolveNpmRootCommand detects bun.cmd commands", () => {
+  const oldGlobalDir = process.env.BUN_INSTALL_GLOBAL_DIR;
+  process.env.BUN_INSTALL_GLOBAL_DIR = "/opt/bun/global";
+
+  try {
+    const resolved = resolveNpmRootCommand({ npmCommand: ["bun.cmd"] });
+
+    assert.equal(resolved.command, "bun.cmd");
+    assert.deepEqual(resolved.args, ["pm", "bin", "-g"]);
+    assert.equal(resolved.getRoot("/home/alice/.bun/bin\n"), "/opt/bun/global/node_modules");
+  } finally {
+    if (oldGlobalDir === undefined) {
+      delete process.env.BUN_INSTALL_GLOBAL_DIR;
+    } else {
+      process.env.BUN_INSTALL_GLOBAL_DIR = oldGlobalDir;
+    }
+  }
 });
