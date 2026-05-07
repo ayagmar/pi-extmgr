@@ -27,6 +27,21 @@ unwritable prefix such as `/usr/local`, install or reload can fail with `EACCES`
 Use a writable npm prefix, configure Pi's `npmCommand` setting for your Node
 version manager, or install project-local with `pi install npm:pi-extmgr -l`.
 
+`npmCommand` examples for `~/.pi/agent/settings.json`:
+
+```jsonc
+{
+  // mise: run npm through Node 22
+  // "npmCommand": ["mise", "exec", "node@22", "--", "npm"]
+
+  // bun: use Bun as Pi's package-manager command
+  // "npmCommand": ["bun"]
+
+  // nvm: start Pi from an nvm-enabled shell and use npm on PATH
+  // "npmCommand": ["npm"]
+}
+```
+
 ## Features
 
 - **Unified manager UI**
