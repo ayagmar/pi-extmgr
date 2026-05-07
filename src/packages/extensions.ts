@@ -19,7 +19,7 @@ import {
   normalizeRelativePath,
   resolveRelativePathSelection,
 } from "../utils/relative-path-selection.js";
-import { resolveNpmCommand } from "../utils/npm-exec.js";
+import { resolveConfiguredNpmRootCommand } from "../utils/npm-exec.js";
 
 interface PackageSettingsObject {
   source: string;
@@ -39,7 +39,7 @@ export interface PackageManifest {
 }
 
 const execFileAsync = promisify(execFile);
-let globalNpmRootCache: string | null | undefined;
+let globalNpmRootCache: { key: string; root: string | null } | undefined;
 
 function normalizeSource(source: string): string {
   return source
@@ -58,24 +58,32 @@ function normalizePackageRootCandidate(candidate: string): string {
   return resolved;
 }
 
-async function getGlobalNpmRoot(): Promise<string | undefined> {
-  if (globalNpmRootCache !== undefined) {
-    return globalNpmRootCache ?? undefined;
+async function getGlobalNpmRoot(cwd: string): Promise<string | undefined> {
+  let npmCommand: ReturnType<typeof resolveConfiguredNpmRootCommand>;
+  try {
+    npmCommand = resolveConfiguredNpmRootCommand(cwd);
+  } catch {
+    return undefined;
+  }
+
+  const cacheKey = [npmCommand.command, ...npmCommand.args].join("\0");
+
+  if (globalNpmRootCache?.key === cacheKey) {
+    return globalNpmRootCache.root ?? undefined;
   }
 
   try {
-    const npmCommand = resolveNpmCommand(["root", "-g"]);
     const { stdout } = await execFileAsync(npmCommand.command, npmCommand.args, {
       timeout: 2_000,
       windowsHide: true,
     });
-    const root = stdout.trim();
-    globalNpmRootCache = root || null;
+    const root = npmCommand.getRoot(stdout);
+    globalNpmRootCache = { key: cacheKey, root: root || null };
   } catch {
-    globalNpmRootCache = null;
+    globalNpmRootCache = { key: cacheKey, root: null };
   }
 
-  return globalNpmRootCache ?? undefined;
+  return globalNpmRootCache.root ?? undefined;
 }
 
 async function resolveNpmPackageRoot(
@@ -96,7 +104,7 @@ async function resolveNpmPackageRoot(
   const packageDir = process.env.PI_PACKAGE_DIR || join(homedir(), ".pi", "agent");
   const globalCandidates = [join(packageDir, "npm", "node_modules", packageName)];
 
-  const npmGlobalRoot = await getGlobalNpmRoot();
+  const npmGlobalRoot = await getGlobalNpmRoot(cwd);
   if (npmGlobalRoot) {
     globalCandidates.unshift(join(npmGlobalRoot, packageName));
   }

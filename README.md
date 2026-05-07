@@ -20,6 +20,13 @@ If Pi is already running, use `/reload`.
 
 Requires Node.js `>=22.20.0`.
 
+### npm prefix permissions
+
+Pi global package installs use `npm install -g`. If `npm_config_prefix` points at an
+unwritable prefix such as `/usr/local`, install or reload can fail with `EACCES`.
+Use a writable npm prefix, configure Pi's `npmCommand` setting for your Node
+version manager, or install project-local with `pi install npm:pi-extmgr -l`.
+
 ## Features
 
 - **Unified manager UI**
