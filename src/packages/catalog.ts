@@ -4,7 +4,7 @@ import {
   type PackageSource,
   type ProgressEvent,
   SettingsManager,
-} from "@mariozechner/pi-coding-agent";
+} from "@earendil-works/pi-coding-agent";
 import { type InstalledPackage, type Scope } from "../types/index.js";
 import { normalizePackageIdentity, parsePackageNameAndVersion } from "../utils/package-source.js";
 

@@ -8,13 +8,13 @@ import {
   DynamicBorder,
   type ExtensionAPI,
   type ExtensionCommandContext,
+  type KeybindingsManager,
   type Theme,
-} from "@mariozechner/pi-coding-agent";
+} from "@earendil-works/pi-coding-agent";
 import {
   Container,
   type Focusable,
   fuzzyMatch,
-  getKeybindings,
   Input,
   Key,
   matchesKey,
@@ -22,7 +22,7 @@ import {
   Text,
   truncateToWidth,
   wrapTextWithAnsi,
-} from "@mariozechner/pi-tui";
+} from "@earendil-works/pi-tui";
 import { UI } from "../constants.js";
 import {
   discoverExtensions,
@@ -164,7 +164,7 @@ async function showInteractiveOnce(
       ctx,
       "The unified extensions manager",
       () =>
-        ctx.ui.custom<UnifiedAction>((tui, theme, _keybindings, done) => {
+        ctx.ui.custom<UnifiedAction>((tui, theme, keybindings, done) => {
           const container = new Container();
 
           const titleText = new Text("", 2, 0);
@@ -179,6 +179,7 @@ async function showInteractiveOnce(
             items,
             staged,
             theme,
+            keybindings,
             ctx.cwd,
             Math.max(4, Math.min(UI.maxListHeight, tui.terminal.rows - 12)),
             complete,
@@ -637,6 +638,7 @@ class UnifiedManagerBrowser implements Focusable {
     private readonly items: UnifiedItem[],
     private readonly staged: Map<string, State>,
     private readonly theme: Theme,
+    private readonly keybindings: KeybindingsManager,
     private readonly cwd: string,
     private readonly maxVisibleItems: number,
     private readonly onAction: (action: UnifiedAction) => void,
@@ -695,8 +697,6 @@ class UnifiedManagerBrowser implements Focusable {
   }
 
   handleManagerInput(data: string): boolean {
-    const kb = getKeybindings();
-
     if (this.searchActive) {
       if (matchesKey(data, Key.enter)) {
         this.searchActive = false;
@@ -745,22 +745,22 @@ class UnifiedManagerBrowser implements Focusable {
       return true;
     }
 
-    if (kb.matches(data, "tui.select.up")) {
+    if (this.keybindings.matches(data, "tui.select.up")) {
       this.moveSelection(-1);
       return true;
     }
 
-    if (kb.matches(data, "tui.select.down")) {
+    if (this.keybindings.matches(data, "tui.select.down")) {
       this.moveSelection(1);
       return true;
     }
 
-    if (kb.matches(data, "tui.select.pageUp")) {
+    if (this.keybindings.matches(data, "tui.select.pageUp")) {
       this.moveSelection(-Math.max(1, this.maxVisibleItems - 1));
       return true;
     }
 
-    if (kb.matches(data, "tui.select.pageDown")) {
+    if (this.keybindings.matches(data, "tui.select.pageDown")) {
       this.moveSelection(Math.max(1, this.maxVisibleItems - 1));
       return true;
     }

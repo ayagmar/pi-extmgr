@@ -8,7 +8,7 @@ import {
   type ExtensionAPI,
   type ExtensionCommandContext,
   type ProgressEvent,
-} from "@mariozechner/pi-coding-agent";
+} from "@earendil-works/pi-coding-agent";
 import { TIMEOUTS } from "../constants.js";
 import { runTaskWithLoader } from "../ui/async-task.js";
 import { parseChoiceByLabel } from "../utils/command.js";

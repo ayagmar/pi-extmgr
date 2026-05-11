@@ -8,7 +8,7 @@ import {
   type ExtensionCommandContext,
   type ExtensionContext,
   getAgentDir,
-} from "@mariozechner/pi-coding-agent";
+} from "@earendil-works/pi-coding-agent";
 import { CACHE_TTL, TIMEOUTS } from "../constants.js";
 import { type InstalledPackage, type NpmPackage, type SearchCache } from "../types/index.js";
 import { parseNpmSource } from "../utils/format.js";

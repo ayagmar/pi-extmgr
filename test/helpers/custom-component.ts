@@ -1,4 +1,33 @@
+import { matchesKey, type KeyId } from "@earendil-works/pi-tui";
+
 const noop = (): undefined => undefined;
+
+const DEFAULT_KEYBINDINGS: Record<string, KeyId | KeyId[]> = {
+  "tui.select.up": "up",
+  "tui.select.down": "down",
+  "tui.select.pageUp": "pageUp",
+  "tui.select.pageDown": "pageDown",
+  "tui.select.confirm": "enter",
+  "tui.select.cancel": ["escape", "ctrl+c"],
+};
+
+const mockKeybindings = {
+  matches(data: string, keybinding: string): boolean {
+    const keys = DEFAULT_KEYBINDINGS[keybinding];
+    if (!keys) return false;
+
+    const keyList = Array.isArray(keys) ? keys : [keys];
+    return keyList.some((key) => matchesKey(data, key));
+  },
+  getKeys(keybinding: string): KeyId[] {
+    const keys = DEFAULT_KEYBINDINGS[keybinding];
+    if (!keys) return [];
+    return Array.isArray(keys) ? [...keys] : [keys];
+  },
+  getEffectiveConfig(): Record<string, KeyId | KeyId[]> {
+    return { ...DEFAULT_KEYBINDINGS };
+  },
+};
 
 export interface TestCustomComponent {
   render(width: number): string[];
@@ -83,7 +112,7 @@ export async function captureCustomComponent<T>(
   )(
     { requestRender: noop, terminal: { rows: height, columns: width } },
     theme,
-    {},
+    mockKeybindings,
     resolveCompletion
   );
 

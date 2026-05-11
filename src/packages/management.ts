@@ -6,7 +6,7 @@ import {
   type ExtensionCommandContext,
   getAgentDir,
   type ProgressEvent,
-} from "@mariozechner/pi-coding-agent";
+} from "@earendil-works/pi-coding-agent";
 import { UI } from "../constants.js";
 import { type InstalledPackage } from "../types/index.js";
 import { runTaskWithLoader } from "../ui/async-task.js";

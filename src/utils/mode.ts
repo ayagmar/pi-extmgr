@@ -1,7 +1,10 @@
 /**
  * UI capability helpers
  */
-import { type ExtensionCommandContext, type ExtensionContext } from "@mariozechner/pi-coding-agent";
+import {
+  type ExtensionCommandContext,
+  type ExtensionContext,
+} from "@earendil-works/pi-coding-agent";
 import { notify } from "./notify.js";
 
 type AnyContext = ExtensionCommandContext | ExtensionContext;

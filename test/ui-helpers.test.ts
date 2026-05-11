@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { type ExtensionCommandContext } from "@mariozechner/pi-coding-agent";
+import { type ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import { confirmReload } from "../src/utils/ui-helpers.js";
 
 void test("confirmReload returns false without reloading when user cancels", async () => {

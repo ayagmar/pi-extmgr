@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { initTheme } from "@mariozechner/pi-coding-agent";
+import { initTheme } from "@earendil-works/pi-coding-agent";
 import { showInteractive } from "../src/ui/unified.js";
 import { captureCustomComponent } from "./helpers/custom-component.js";
 import { createMockHarness } from "./helpers/mocks.js";

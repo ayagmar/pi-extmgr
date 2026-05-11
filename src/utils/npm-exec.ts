@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
 import { execPath, platform } from "node:process";
-import { type ExtensionAPI, getAgentDir, SettingsManager } from "@mariozechner/pi-coding-agent";
+import { type ExtensionAPI, getAgentDir, SettingsManager } from "@earendil-works/pi-coding-agent";
 
 interface NpmCommandResolutionOptions {
   platform?: NodeJS.Platform;

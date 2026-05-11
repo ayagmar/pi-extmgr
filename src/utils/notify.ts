@@ -1,7 +1,10 @@
 /**
  * Centralized notification handling for UI and non-UI modes
  */
-import { type ExtensionCommandContext, type ExtensionContext } from "@mariozechner/pi-coding-agent";
+import {
+  type ExtensionCommandContext,
+  type ExtensionContext,
+} from "@earendil-works/pi-coding-agent";
 
 export type NotifyLevel = "info" | "warning" | "error";
 

@@ -5,7 +5,7 @@ import {
   type ExtensionAPI,
   type ExtensionCommandContext,
   type ExtensionContext,
-} from "@mariozechner/pi-coding-agent";
+} from "@earendil-works/pi-coding-agent";
 import { getPackageCatalog } from "../packages/catalog.js";
 import { parseChoiceByLabel } from "./command.js";
 import { logAutoUpdateConfig } from "./history.js";
