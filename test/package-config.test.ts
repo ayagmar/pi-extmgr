@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { type ExtensionAPI, initTheme } from "@mariozechner/pi-coding-agent";
+import { type ExtensionAPI, initTheme } from "@earendil-works/pi-coding-agent";
 import { discoverPackageExtensions } from "../src/packages/extensions.js";
 import { type InstalledPackage, type State } from "../src/types/index.js";
 import {

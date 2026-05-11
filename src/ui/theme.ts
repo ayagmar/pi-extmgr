@@ -1,7 +1,7 @@
 /**
  * Theme utilities for consistent UI styling across dark/light themes
  */
-import { type Theme } from "@mariozechner/pi-coding-agent";
+import { type Theme } from "@earendil-works/pi-coding-agent";
 
 /**
  * Status icons that work across themes

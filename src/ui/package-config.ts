@@ -7,7 +7,7 @@ import {
   type ExtensionCommandContext,
   getSettingsListTheme,
   type Theme,
-} from "@mariozechner/pi-coding-agent";
+} from "@earendil-works/pi-coding-agent";
 import {
   Container,
   Key,
@@ -16,7 +16,7 @@ import {
   SettingsList,
   Spacer,
   Text,
-} from "@mariozechner/pi-tui";
+} from "@earendil-works/pi-tui";
 import { UI } from "../constants.js";
 import {
   applyPackageExtensionStateChanges,

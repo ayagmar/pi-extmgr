@@ -5,13 +5,13 @@ import {
   DynamicBorder,
   type ExtensionAPI,
   type ExtensionCommandContext,
+  type KeybindingsManager,
   type Theme,
-} from "@mariozechner/pi-coding-agent";
+} from "@earendil-works/pi-coding-agent";
 import {
   Container,
   fuzzyMatch,
   type Focusable,
-  getKeybindings,
   Input,
   Key,
   matchesKey,
@@ -19,7 +19,7 @@ import {
   Text,
   truncateToWidth,
   wrapTextWithAnsi,
-} from "@mariozechner/pi-tui";
+} from "@earendil-works/pi-tui";
 import { CACHE_LIMITS, PAGE_SIZE, TIMEOUTS, UI } from "../constants.js";
 import {
   clearSearchCache,
@@ -552,6 +552,7 @@ class RemotePackageBrowser implements Focusable {
   constructor(
     private readonly packages: NpmPackage[],
     private readonly theme: Theme,
+    private readonly keybindings: KeybindingsManager,
     private readonly browseSource: RemoteBrowseSource,
     private readonly queryLabel: string,
     private readonly totalResults: number,
@@ -578,8 +579,6 @@ class RemotePackageBrowser implements Focusable {
   }
 
   handleBrowseInput(data: string): boolean {
-    const kb = getKeybindings();
-
     if (this.searchActive) {
       if (matchesKey(data, Key.enter)) {
         this.searchActive = false;
@@ -606,22 +605,22 @@ class RemotePackageBrowser implements Focusable {
       return true;
     }
 
-    if (kb.matches(data, "tui.select.up")) {
+    if (this.keybindings.matches(data, "tui.select.up")) {
       this.moveSelection(-1);
       return true;
     }
 
-    if (kb.matches(data, "tui.select.down")) {
+    if (this.keybindings.matches(data, "tui.select.down")) {
       this.moveSelection(1);
       return true;
     }
 
-    if (kb.matches(data, "tui.select.pageUp")) {
+    if (this.keybindings.matches(data, "tui.select.pageUp")) {
       this.moveSelection(-Math.max(1, this.maxVisibleItems - 1));
       return true;
     }
 
-    if (kb.matches(data, "tui.select.pageDown")) {
+    if (this.keybindings.matches(data, "tui.select.pageDown")) {
       this.moveSelection(Math.max(1, this.maxVisibleItems - 1));
       return true;
     }
@@ -811,12 +810,13 @@ async function selectBrowseAction(
   if (!ctx.hasUI) return undefined;
 
   return runCustomUI(ctx, "Remote package browsing", () =>
-    ctx.ui.custom<BrowseAction>((tui, theme, _keybindings, done) => {
+    ctx.ui.custom<BrowseAction>((tui, theme, keybindings, done) => {
       const container = new Container();
       const title = new Text("", 2, 0);
       const browser = new RemotePackageBrowser(
         packages,
         theme,
+        keybindings,
         browseSource,
         plan.displayQuery,
         totalResults,

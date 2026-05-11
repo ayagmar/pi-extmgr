@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { type ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import { type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import extensionsManager from "../src/index.js";
 import { setPackageCatalogFactory } from "../src/packages/catalog.js";
 import {

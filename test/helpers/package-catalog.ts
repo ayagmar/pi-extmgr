@@ -1,4 +1,4 @@
-import { type ProgressEvent } from "@mariozechner/pi-coding-agent";
+import { type ProgressEvent } from "@earendil-works/pi-coding-agent";
 import {
   type AvailablePackageUpdate,
   type PackageCatalog,

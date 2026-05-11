@@ -6,7 +6,7 @@ import {
   type ExtensionCommandContext,
   type ExtensionContext,
   getAgentDir,
-} from "@mariozechner/pi-coding-agent";
+} from "@earendil-works/pi-coding-agent";
 import { getPackageCatalog, type PackageCatalog } from "../packages/catalog.js";
 import { getAutoUpdateStatus } from "./auto-update.js";
 import { normalizePackageIdentity } from "./package-source.js";
