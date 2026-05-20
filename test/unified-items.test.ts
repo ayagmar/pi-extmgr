@@ -4,7 +4,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { discoverPackageExtensions } from "../src/packages/extensions.js";
-import { type ExtensionEntry, type InstalledPackage } from "../src/types/index.js";
+import {
+  type ExtensionEntry,
+  type InstalledPackage,
+  type PackageExtensionEntry,
+} from "../src/types/index.js";
 import { buildUnifiedItems } from "../src/ui/unified.js";
 
 function createPackage(source: string, name: string): InstalledPackage {
@@ -50,6 +54,46 @@ void test("buildUnifiedItems marks package update availability from knownUpdates
   assert.equal(items.length, 1);
   assert.equal(items[0]?.type, "package");
   assert.equal(items[0]?.updateAvailable, true);
+});
+
+void test("buildUnifiedItems summarizes package extension enabled and disabled states", () => {
+  const installedPackages = [createPackage("npm:demo", "demo")];
+  const packageExtensions: PackageExtensionEntry[] = [
+    {
+      id: "pkg-ext:global:npm:demo:extensions/enabled.ts",
+      packageSource: "npm:demo",
+      packageName: "demo",
+      packageScope: "global",
+      extensionPath: "extensions/enabled.ts",
+      absolutePath: "/tmp/demo/extensions/enabled.ts",
+      displayName: "demo/extensions/enabled.ts",
+      summary: "enabled extension",
+      state: "enabled",
+    },
+    {
+      id: "pkg-ext:global:npm:demo:extensions/disabled.ts",
+      packageSource: "npm:demo",
+      packageName: "demo",
+      packageScope: "global",
+      extensionPath: "extensions/disabled.ts",
+      absolutePath: "/tmp/demo/extensions/disabled.ts",
+      displayName: "demo/extensions/disabled.ts",
+      summary: "disabled extension",
+      state: "disabled",
+    },
+  ];
+
+  const items = buildUnifiedItems([], installedPackages, new Set(), packageExtensions);
+  const packageRow = items.find(
+    (item): item is Extract<(typeof items)[number], { type: "package" }> => item.type === "package"
+  );
+
+  assert.ok(packageRow);
+  assert.deepEqual(packageRow.extensionSummary, {
+    enabled: 1,
+    disabled: 1,
+    total: 2,
+  });
 });
 
 void test("buildUnifiedItems omits package rows that duplicate local extension paths", () => {
