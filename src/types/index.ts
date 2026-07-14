@@ -5,6 +5,12 @@
 export type Scope = "global" | "project";
 export type State = "enabled" | "disabled";
 
+export interface PackageExtensionStateSummary {
+  enabled: number;
+  disabled: number;
+  total: number;
+}
+
 export interface ExtensionEntry {
   id: string;
   scope: Scope;
@@ -70,6 +76,7 @@ export interface PackageUnifiedItem {
   description?: string | undefined;
   size?: number | undefined; // Package size in bytes
   updateAvailable?: boolean | undefined;
+  extensionSummary?: PackageExtensionStateSummary | undefined;
 }
 
 export type UnifiedItem = LocalUnifiedItem | PackageUnifiedItem;

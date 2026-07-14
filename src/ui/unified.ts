@@ -30,6 +30,7 @@ import {
   setExtensionState,
 } from "../extensions/discovery.js";
 import { getInstalledPackages } from "../packages/discovery.js";
+import { discoverPackageExtensions } from "../packages/extensions.js";
 import {
   removePackageWithOutcome,
   showInstalledPackagesList,
@@ -39,6 +40,8 @@ import {
 import {
   type InstalledPackage,
   type LocalUnifiedItem,
+  type PackageExtensionEntry,
+  type PackageExtensionStateSummary,
   type State,
   type UnifiedAction,
   type UnifiedItem,
@@ -118,7 +121,10 @@ async function showInteractiveOnce(
         installedPackagesPromise,
       ]);
 
-      return { localEntries, installedPackages };
+      setMessage("Loading package extension states...");
+      const packageExtensions = await discoverPackageExtensions(installedPackages, ctx.cwd);
+
+      return { localEntries, installedPackages, packageExtensions };
     }
   );
 
@@ -132,11 +138,11 @@ async function showInteractiveOnce(
     return true;
   }
 
-  const { localEntries, installedPackages } = initialData;
+  const { localEntries, installedPackages, packageExtensions } = initialData;
 
   // Build unified items list.
   const knownUpdates = getKnownUpdates(ctx);
-  const items = buildUnifiedItems(localEntries, installedPackages, knownUpdates);
+  const items = buildUnifiedItems(localEntries, installedPackages, knownUpdates, packageExtensions);
 
   // If nothing found, show quick actions
   if (items.length === 0) {
@@ -263,10 +269,12 @@ async function showInteractiveOnce(
 export function buildUnifiedItems(
   localEntries: Awaited<ReturnType<typeof discoverExtensions>>,
   installedPackages: InstalledPackage[],
-  knownUpdates: Set<string>
+  knownUpdates: Set<string>,
+  packageExtensions: PackageExtensionEntry[] = []
 ): UnifiedItem[] {
   const items: UnifiedItem[] = [];
   const localPaths = new Set<string>();
+  const packageExtensionSummaries = buildPackageExtensionSummaries(packageExtensions);
 
   // Add local extensions
   for (const entry of localEntries) {
@@ -302,6 +310,10 @@ export function buildUnifiedItems(
     }
     if (isDuplicate) continue;
 
+    const extensionSummary = packageExtensionSummaries.get(
+      getPackageExtensionSummaryKey(pkg.scope, pkg.source)
+    );
+
     items.push({
       type: "package",
       id: `pkg:${pkg.source}`,
@@ -313,6 +325,7 @@ export function buildUnifiedItems(
       description: pkg.description,
       size: pkg.size,
       updateAvailable: knownUpdates.has(normalizePackageIdentity(pkg.source)),
+      ...(extensionSummary ? { extensionSummary } : {}),
     });
   }
 
@@ -329,6 +342,55 @@ export function buildUnifiedItems(
   });
 
   return items;
+}
+
+function getPackageExtensionSummaryKey(scope: string, source: string): string {
+  return `${scope}\0${source}`;
+}
+
+function buildPackageExtensionSummaries(
+  entries: PackageExtensionEntry[]
+): Map<string, PackageExtensionStateSummary> {
+  const summaries = new Map<string, PackageExtensionStateSummary>();
+
+  for (const entry of entries) {
+    const key = getPackageExtensionSummaryKey(entry.packageScope, entry.packageSource);
+    let summary = summaries.get(key);
+    if (!summary) {
+      summary = { enabled: 0, disabled: 0, total: 0 };
+      summaries.set(key, summary);
+    }
+
+    summary.total += 1;
+    if (entry.state === "enabled") {
+      summary.enabled += 1;
+    } else {
+      summary.disabled += 1;
+    }
+  }
+
+  return summaries;
+}
+
+function getPackageExtensionStatusIcon(
+  theme: Theme,
+  summary?: PackageExtensionStateSummary
+): string {
+  if (!summary || summary.total === 0) return "";
+  if (summary.disabled === 0) return getStatusIcon(theme, "enabled");
+  if (summary.enabled === 0) return getStatusIcon(theme, "disabled");
+  return theme.fg("warning", "◐");
+}
+
+function formatPackageExtensionState(summary?: PackageExtensionStateSummary): string | undefined {
+  if (!summary || summary.total === 0) return undefined;
+  if (summary.disabled === 0) {
+    return `${summary.enabled}/${summary.total} package extensions enabled`;
+  }
+  if (summary.enabled === 0) {
+    return `all ${summary.total} package extension${summary.total === 1 ? "" : "s"} disabled`;
+  }
+  return `${summary.enabled}/${summary.total} package extensions enabled (${summary.disabled} disabled)`;
 }
 
 function buildManagerSummary(
@@ -354,6 +416,12 @@ function buildManagerSummary(
   const updateCount = summaryItems.filter(
     (item) => item.type === "package" && item.updateAvailable
   ).length;
+  const disabledCount = summaryItems.filter((item) => {
+    if (item.type === "local") {
+      return getCurrentUnifiedItemState(item, staged) === "disabled";
+    }
+    return (item.extensionSummary?.disabled ?? 0) > 0;
+  }).length;
   const pendingCount = getPendingToggleChangeCount(staged, byId);
   const parts = [
     filtered
@@ -368,6 +436,10 @@ function buildManagerSummary(
 
   if (updateCount > 0) {
     parts.push(theme.fg("warning", `${updateCount} update${updateCount === 1 ? "" : "s"}`));
+  }
+
+  if (disabledCount > 0) {
+    parts.push(theme.fg("warning", `${disabledCount} disabled`));
   }
 
   if (pendingCount > 0) {
@@ -419,13 +491,15 @@ function formatUnifiedItemLabel(
     theme,
     sourceKind === "npm" || sourceKind === "git" || sourceKind === "local" ? sourceKind : "local"
   );
+  const extensionStatusIcon = getPackageExtensionStatusIcon(theme, item.extensionSummary);
+  const extensionStatusPrefix = extensionStatusIcon ? `${extensionStatusIcon} ` : "";
   const scopeIcon = getScopeIcon(theme, item.scope);
   const name = theme.bold(item.displayName);
   const version = item.version ? theme.fg("dim", `@${item.version}`) : "";
   const size = item.size !== undefined ? theme.fg("dim", ` • ${formatBytes(item.size)}`) : "";
   const updateBadge = item.updateAvailable ? ` ${theme.fg("warning", "[update]")}` : "";
 
-  return `${pkgIcon} [${scopeIcon}] ${name}${version}${size}${updateBadge}`;
+  return `${extensionStatusPrefix}${pkgIcon} [${scopeIcon}] ${name}${version}${size}${updateBadge}`;
 }
 
 function getLocalItemCurrentPath(item: LocalUnifiedItem, state?: State): string {
@@ -455,6 +529,7 @@ function formatUnifiedItemDescription(
   const details = [
     item.description || "No description",
     `${sourceKind === "unknown" ? "package" : `${sourceKind} package`}`,
+    formatPackageExtensionState(item.extensionSummary),
     item.scope,
     source,
     item.updateAvailable ? "update available" : undefined,
@@ -508,7 +583,10 @@ function matchesUnifiedFilter(
     case "updates":
       return item.type === "package" && Boolean(item.updateAvailable);
     case "disabled":
-      return item.type === "local" && getCurrentUnifiedItemState(item, staged) === "disabled";
+      if (item.type === "local") {
+        return getCurrentUnifiedItemState(item, staged) === "disabled";
+      }
+      return (item.extensionSummary?.disabled ?? 0) > 0;
   }
 }
 
@@ -531,7 +609,18 @@ function getUnifiedItemSearchFields(
       : item.source;
   return {
     primary: [item.displayName, source],
-    secondary: [item.version ?? "", item.description ?? ""],
+    secondary: [
+      item.version ?? "",
+      item.description ?? "",
+      formatPackageExtensionState(item.extensionSummary) ?? "",
+      item.extensionSummary
+        ? item.extensionSummary.disabled > 0
+          ? item.extensionSummary.enabled > 0
+            ? "mixed disabled"
+            : "disabled"
+          : "enabled"
+        : "",
+    ],
   };
 }
 
@@ -1209,8 +1298,10 @@ function showUnifiedItemDetails(
   }
 
   const sizeStr = item.size !== undefined ? `\nSize: ${formatBytes(item.size)}` : "";
+  const extensionState = formatPackageExtensionState(item.extensionSummary);
+  const extensionStr = extensionState ? `\nExtensions: ${extensionState}` : "";
   ctx.ui.notify(
-    `Name: ${item.displayName}\nVersion: ${item.version || "unknown"}\nSource: ${item.source}\nScope: ${item.scope}${sizeStr}${item.description ? `\nDescription: ${item.description}` : ""}`,
+    `Name: ${item.displayName}\nVersion: ${item.version || "unknown"}\nSource: ${item.source}\nScope: ${item.scope}${extensionStr}${sizeStr}${item.description ? `\nDescription: ${item.description}` : ""}`,
     "info"
   );
 }
