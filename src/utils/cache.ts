@@ -264,9 +264,26 @@ async function loadCache(): Promise<CacheData> {
 /**
  * Save cache to disk
  */
+function pruneCache(cache: CacheData): void {
+  for (const [name, data] of cache.packages) {
+    if (!hasFreshCachedField(data)) {
+      cache.packages.delete(name);
+    }
+  }
+
+  const maxEntries = CACHE_LIMITS.packageInfoMaxSize;
+  if (cache.packages.size <= maxEntries) return;
+
+  const entries = [...cache.packages.entries()].sort(
+    ([, left], [, right]) => right.timestamp - left.timestamp
+  );
+  cache.packages = new Map(entries.slice(0, maxEntries));
+}
+
 async function saveCache(): Promise<void> {
   if (!memoryCache) return;
 
+  pruneCache(memoryCache);
   await ensureCacheDir();
 
   const data: {
