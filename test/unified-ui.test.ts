@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { initTheme } from "@earendil-works/pi-coding-agent";
+import { visibleWidth } from "@earendil-works/pi-tui";
 import { showInteractive } from "../src/ui/unified.js";
 import { captureCustomComponent } from "./helpers/custom-component.js";
 import { createMockHarness } from "./helpers/mocks.js";
@@ -50,6 +51,31 @@ void test("/extensions keeps rows compact and moves selected details below the l
       renderedLines.some((line) => line.includes("Space toggle")),
       "expected contextual actions in the manager footer"
     );
+  } finally {
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
+
+void test("/extensions keeps narrow terminal lines within the requested width", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "pi-extmgr-unified-narrow-"));
+  try {
+    const extensionsRoot = join(cwd, ".pi", "extensions");
+    await mkdir(extensionsRoot, { recursive: true });
+    await writeFile(join(extensionsRoot, "very-long-extension-name.ts"), "// detail\n", "utf8");
+
+    const { pi, ctx } = createMockHarness({ cwd, hasUI: true });
+    (ctx.ui as { custom: (factory: unknown) => Promise<unknown> }).custom = async (factory) =>
+      captureCustomComponent(
+        factory,
+        ctx.ui.theme,
+        (_component, lines) => {
+          assert.ok(lines.every((line) => visibleWidth(line) <= 24));
+          return { type: "cancel" };
+        },
+        { width: 24, height: 20 }
+      );
+
+    await showInteractive(ctx, pi);
   } finally {
     await rm(cwd, { recursive: true, force: true });
   }

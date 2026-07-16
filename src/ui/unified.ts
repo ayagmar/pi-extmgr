@@ -52,8 +52,8 @@ import { formatBytes, formatEntry as formatExtEntry } from "../utils/format.js";
 import { logExtensionDelete, logExtensionToggle } from "../utils/history.js";
 import { hasCustomUI, runCustomUI } from "../utils/mode.js";
 import { notify } from "../utils/notify.js";
-import { normalizePathIdentity } from "../utils/path-identity.js";
 import { getPackageSourceKind, normalizePackageIdentity } from "../utils/package-source.js";
+import { normalizePathIdentity } from "../utils/path-identity.js";
 import { updateExtmgrStatus } from "../utils/status.js";
 import { confirmReload, formatListOutput } from "../utils/ui-helpers.js";
 import { runTaskWithLoader } from "./async-task.js";
@@ -966,22 +966,31 @@ class UnifiedManagerBrowser implements Focusable {
   }
 
   render(width: number): string[] {
+    const safeWidth = Math.max(1, width);
     const lines: string[] = [];
 
     const searchQuery = this.searchInput.getValue().trim();
     if (this.searchActive) {
-      lines.push(...this.searchInput.render(width));
+      lines.push(...this.searchInput.render(safeWidth));
       lines.push("");
     } else if (searchQuery) {
-      lines.push(truncateToWidth(this.theme.fg("accent", `  Search: ${searchQuery}`), width, ""));
+      lines.push(
+        truncateToWidth(this.theme.fg("accent", `  Search: ${searchQuery}`), safeWidth, "")
+      );
       lines.push("");
     }
 
-    lines.push(truncateToWidth(this.buildFilterLine(), width, ""));
+    lines.push(truncateToWidth(this.buildFilterLine(), safeWidth, ""));
     lines.push("");
 
     if (this.filteredItems.length === 0) {
-      lines.push(this.theme.fg("warning", "  No matching extensions or packages"));
+      lines.push(
+        truncateToWidth(
+          this.theme.fg("warning", "  No matching extensions or packages"),
+          safeWidth,
+          ""
+        )
+      );
       return lines;
     }
 
@@ -993,9 +1002,15 @@ class UnifiedManagerBrowser implements Focusable {
     const visiblePackageItems = visibleItems.filter((item) => item.type === "package");
 
     if (visibleLocalItems.length > 0) {
-      lines.push(this.theme.fg("accent", `  Local extensions (${localCount})`));
+      lines.push(
+        truncateToWidth(
+          this.theme.fg("accent", `  Local extensions (${localCount})`),
+          safeWidth,
+          ""
+        )
+      );
       for (const item of visibleLocalItems) {
-        lines.push(this.renderItemLine(item, width));
+        lines.push(this.renderItemLine(item, safeWidth));
       }
       if (visiblePackageItems.length > 0) {
         lines.push("");
@@ -1003,9 +1018,15 @@ class UnifiedManagerBrowser implements Focusable {
     }
 
     if (visiblePackageItems.length > 0) {
-      lines.push(this.theme.fg("accent", `  Installed packages (${packageCount})`));
+      lines.push(
+        truncateToWidth(
+          this.theme.fg("accent", `  Installed packages (${packageCount})`),
+          safeWidth,
+          ""
+        )
+      );
       for (const item of visiblePackageItems) {
-        lines.push(this.renderItemLine(item, width));
+        lines.push(this.renderItemLine(item, safeWidth));
       }
     }
 
@@ -1014,7 +1035,11 @@ class UnifiedManagerBrowser implements Focusable {
       lines.push(
         this.theme.fg(
           "dim",
-          `  Showing ${startIndex + 1}-${endIndex} of ${this.filteredItems.length}`
+          truncateToWidth(
+            `  Showing ${startIndex + 1}-${endIndex} of ${this.filteredItems.length}`,
+            safeWidth,
+            ""
+          )
         )
       );
     }
@@ -1029,8 +1054,8 @@ class UnifiedManagerBrowser implements Focusable {
         selectedItem.type === "local" && selectedState !== selectedItem.originalState,
         this.cwd
       );
-      for (const line of wrapTextWithAnsi(detailText, width - 4)) {
-        lines.push(this.theme.fg("dim", `  ${line}`));
+      for (const line of wrapTextWithAnsi(detailText, Math.max(1, safeWidth - 4))) {
+        lines.push(truncateToWidth(this.theme.fg("dim", `  ${line}`), safeWidth, ""));
       }
     }
 
