@@ -4,6 +4,7 @@
 import { type ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import { UI } from "../constants.js";
 import { error as notifyError, notify } from "./notify.js";
+import { clearReloadRequired, markReloadRequired } from "./reload-state.js";
 
 /**
  * Confirm and trigger reload
@@ -14,6 +15,7 @@ export async function confirmReload(
   reason: string
 ): Promise<boolean> {
   if (!ctx.hasUI) {
+    await markReloadRequired(reason);
     notify(ctx, `Reload pi to apply changes. (${reason})`);
     return false;
   }
@@ -25,7 +27,9 @@ export async function confirmReload(
   }
 
   try {
+    await markReloadRequired(reason);
     await ctx.reload();
+    await clearReloadRequired();
     return true;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
