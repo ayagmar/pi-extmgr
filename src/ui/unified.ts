@@ -65,7 +65,7 @@ import { notify } from "../utils/notify.js";
 import { getPackageSourceKind, normalizePackageIdentity } from "../utils/package-source.js";
 import { normalizePathIdentity } from "../utils/path-identity.js";
 import { comparePackageScopes, movePackageBetweenScopes } from "../packages/scopes.js";
-import { markReloadRequired } from "../utils/reload-state.js";
+import { markReloadRequired, readReloadState } from "../utils/reload-state.js";
 import {
   getSavedViewsPath,
   type SavedView,
@@ -80,6 +80,8 @@ import { showHelp } from "./help.js";
 import { configurePackageExtensions } from "./package-config.js";
 import { showRemote } from "./remote.js";
 import { getChangeMarker, getPackageIcon, getScopeIcon, getStatusIcon } from "./theme.js";
+
+let lastReloadNoticeAt: number | undefined;
 
 async function showInteractiveFallback(
   ctx: ExtensionCommandContext,
@@ -101,6 +103,16 @@ export async function showInteractive(
     );
     await showInteractiveFallback(ctx, pi);
     return;
+  }
+
+  const reloadState = await readReloadState();
+  if (reloadState.required && reloadState.changedAt !== lastReloadNoticeAt) {
+    lastReloadNoticeAt = reloadState.changedAt;
+    notify(
+      ctx,
+      `Reload required for pending changes${reloadState.reasons.length > 0 ? `: ${reloadState.reasons.join(", ")}` : "."}`,
+      "warning"
+    );
   }
 
   // Main loop - keeps showing the menu until user explicitly exits

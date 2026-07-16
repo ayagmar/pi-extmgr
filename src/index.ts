@@ -25,6 +25,7 @@ import {
 } from "./utils/auto-update.js";
 import { tokenizeArgs } from "./utils/command.js";
 import { isPackageSource } from "./utils/format.js";
+import { clearReloadRequired } from "./utils/reload-state.js";
 import { getAutoUpdateConfig, hydrateAutoUpdateConfig } from "./utils/settings.js";
 import { updateExtmgrStatus } from "./utils/status.js";
 
@@ -97,7 +98,10 @@ export default function extensionsManager(pi: ExtensionAPI) {
     });
   }
 
-  pi.on("session_start", async (_event, ctx) => {
+  pi.on("session_start", async (event, ctx) => {
+    if (event.reason === "reload") {
+      await clearReloadRequired();
+    }
     await bootstrapSession(ctx);
   });
 
