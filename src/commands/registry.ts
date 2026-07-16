@@ -16,6 +16,7 @@ import { handleAutoUpdateSubcommand } from "./auto-update.js";
 import { clearMetadataCacheCommand } from "./cache.js";
 import { handleHistorySubcommand } from "./history.js";
 import { handleInstallSubcommand, INSTALL_USAGE } from "./install.js";
+import { handleProfileSubcommand } from "./profile.js";
 import { type CommandDefinition, type CommandId } from "./types.js";
 
 const REMOVE_USAGE = "Usage: /extensions remove <npm:package|git:url|path>";
@@ -55,6 +56,7 @@ function showNonInteractiveHelp(ctx: ExtensionCommandContext): void {
     "  /extensions update [source]  - Update one package or all packages",
     "  /extensions history [opts]   - Show history (supports filters)",
     "  /extensions doctor           - Inspect runtime ownership/conflicts",
+    "  /extensions profile <action> - Export, compare, or dry-run a profile",
     "  /extensions auto-update <d>  - Configure auto-update (e.g. 1d, 1w, 1mo, never)",
     "",
     "History examples:",
@@ -157,6 +159,12 @@ const COMMAND_DEFINITIONS: Record<CommandId, CommandDefinition> = {
     runInteractive: (_tokens, ctx, pi) => showDoctor(ctx, pi),
     runNonInteractive: (_tokens, ctx, pi) => showDoctor(ctx, pi),
   },
+  profile: {
+    id: "profile",
+    description: "Export, compare, or dry-run a package profile",
+    runInteractive: (tokens, ctx) => handleProfileSubcommand(tokens, ctx),
+    runNonInteractive: (tokens, ctx) => handleProfileSubcommand(tokens, ctx),
+  },
 };
 
 function buildCommandAliasMap(
@@ -209,6 +217,7 @@ export function getExtensionsAutocompleteItems(prefix: string): AutocompleteItem
       update: ["--all", "--preview"],
       "auto-update": ["daily", "weekly", "monthly", "never"],
       history: ["--failed", "--success", "--global", "--limit", "--since"],
+      profile: ["export", "dry-run", "compare"],
     };
     const options = argumentOptions[command] ?? [];
     const matches = options.filter((option) => option.startsWith(argumentPrefix));
