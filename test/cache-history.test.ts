@@ -11,6 +11,7 @@ import {
   logAutoUpdateConfig,
   logExtensionDelete,
   queryGlobalHistory,
+  queryPackageTimeline,
   querySessionChanges,
 } from "../src/utils/history.js";
 import { createMockHarness } from "./helpers/mocks.js";
@@ -82,6 +83,31 @@ void test("queryGlobalHistory keeps the latest matching entries without loading 
   } finally {
     await rm(sessionDir, { recursive: true, force: true });
   }
+});
+
+void test("queryPackageTimeline returns package activity in chronological order", () => {
+  const entries: { type: "custom"; customType: string; data: unknown }[] = [
+    {
+      type: "custom",
+      customType: "extmgr-change",
+      data: { action: "package_update", timestamp: 30, success: true, packageName: "demo" },
+    },
+    {
+      type: "custom",
+      customType: "extmgr-change",
+      data: { action: "package_install", timestamp: 10, success: true, packageName: "demo" },
+    },
+  ];
+  const ctx = {
+    hasUI: false,
+    cwd: "/tmp",
+    sessionManager: { getEntries: () => entries },
+  } as unknown as ExtensionCommandContext;
+
+  assert.deepEqual(
+    queryPackageTimeline(ctx, "demo").map((change) => change.timestamp),
+    [10, 30]
+  );
 });
 
 void test("history records local extension deletion and auto-update config changes", () => {
