@@ -136,6 +136,7 @@ Open the manager:
 /extensions profile save <name>   # Save the current package profile
 /extensions profile apply <name|path> # Safely apply a profile
 /extensions profile delete <name> # Delete a named profile
+/extensions trash <list|restore|purge> # Manage local extension trash
 /extensions history [options]    # View change history (supports filters)
 /extensions clear-cache          # Clear persistent + runtime extmgr caches
 ```

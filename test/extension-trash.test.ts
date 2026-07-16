@@ -3,6 +3,8 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { handleTrashSubcommand } from "../src/commands/trash.js";
+import { createMockHarness } from "./helpers/mocks.js";
 import { removeLocalExtension } from "../src/extensions/discovery.js";
 import {
   listExtensionTrash,
@@ -68,6 +70,26 @@ void test("expired and missing trash records are removed from persistent listing
     );
     assert.deepEqual(await listExtensionTrash(trash), []);
   } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+void test("trash command restores a persisted record by index", async () => {
+  const root = await mkdtemp(join(tmpdir(), "pi-extmgr-trash-command-"));
+  const agentDir = join(root, "agent");
+  const source = join(root, "extension.ts");
+  const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
+  process.env.PI_CODING_AGENT_DIR = agentDir;
+  try {
+    await mkdir(agentDir, { recursive: true });
+    await writeFile(source, "export default {};\n", "utf8");
+    await moveToExtensionTrash(source, join(agentDir, ".extmgr-trash"));
+    const { pi, ctx } = createMockHarness({ hasUI: false, cwd: root, confirmResult: true });
+    await handleTrashSubcommand(["restore", "1"], ctx, pi);
+    assert.equal(await readFile(source, "utf8"), "export default {};\n");
+  } finally {
+    if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+    else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
     await rm(root, { recursive: true, force: true });
   }
 });
