@@ -49,6 +49,8 @@
 
 ### Fixed
 
+- Remote npm browsing fetches only the visible result page instead of crawling the full `pi-package` catalog, honors `Retry-After` on HTTP 429 responses, and reports exhausted rate limits inside the UI.
+- Remote refresh bypasses both runtime and persistent search caches, community search stays scoped to `pi-package`, and author labels prefer usernames over fallback email addresses.
 - Unified manager interactions keep staged changes, filters, and selection when returning from details, action menus, and stay-in-manager prompts.
 - Disabled local extensions deduplicate correctly, manifest entrypoints only resolve real files, and npm author selection now prefers maintainer usernames before fallback emails.
 - Metadata cache freshness no longer refreshes inherited stale fields.

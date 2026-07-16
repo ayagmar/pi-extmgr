@@ -9,9 +9,18 @@ import {
   type ExtensionContext,
   getAgentDir,
 } from "@earendil-works/pi-coding-agent";
-import { CACHE_TTL, TIMEOUTS } from "../constants.js";
+import { CACHE_LIMITS, PAGE_SIZE, TIMEOUTS } from "../constants.js";
 import { type InstalledPackage, type NpmPackage, type SearchCache } from "../types/index.js";
 import { parseNpmSource } from "../utils/format.js";
+import {
+  getCachedPackage,
+  getCachedPackageSize,
+  getCachedSearch,
+  getPackageDescriptions,
+  setCachedPackage,
+  setCachedPackageSize,
+  setCachedSearch,
+} from "../utils/cache.js";
 import { readSummary } from "../utils/fs.js";
 import { fetchWithTimeout } from "../utils/network.js";
 import { execNpm } from "../utils/npm-exec.js";
@@ -19,7 +28,9 @@ import { normalizePackageIdentity } from "../utils/package-source.js";
 import { getPackageCatalog } from "./catalog.js";
 
 const NPM_SEARCH_API = "https://registry.npmjs.org/-/v1/search";
-const NPM_SEARCH_PAGE_SIZE = 250;
+const NPM_SEARCH_MAX_PAGE_SIZE = 250;
+const NPM_SEARCH_MAX_RETRIES = 2;
+const NPM_SEARCH_RETRY_DELAY_MS = 1_000;
 
 interface NpmSearchResultObject {
   package?: {
@@ -44,7 +55,8 @@ interface NpmSearchResponse {
   objects?: NpmSearchResultObject[];
 }
 
-let searchCache: SearchCache | null = null;
+const searchCacheByPage = new Map<string, SearchCache>();
+let latestSearchCacheKey: string | undefined;
 
 function createAbortError(): Error {
   const error = new Error("Operation cancelled");
@@ -58,34 +70,43 @@ function throwIfAborted(signal?: AbortSignal): void {
   }
 }
 
-export function getSearchCache(): SearchCache | null {
-  return searchCache;
+function getSearchCacheKey(query: string, offset: number): string {
+  return `${offset}\0${query}`;
 }
 
-export function setSearchCache(cache: SearchCache | null): void {
-  searchCache = cache;
+export function getSearchCache(query?: string, offset = 0): SearchCache | null {
+  const key = query ? getSearchCacheKey(query, offset) : latestSearchCacheKey;
+  return key ? (searchCacheByPage.get(key) ?? null) : null;
 }
 
-export function clearSearchCache(): void {
-  searchCache = null;
+export function setSearchCache(cache: SearchCache): void {
+  const key = getSearchCacheKey(cache.query, cache.offset);
+  searchCacheByPage.set(key, cache);
+  latestSearchCacheKey = key;
 }
 
-export function isCacheValid(query: string): boolean {
-  if (!searchCache) return false;
-  if (searchCache.query !== query) return false;
-  return Date.now() - searchCache.timestamp < CACHE_TTL;
+export function clearSearchCache(query?: string): void {
+  if (!query) {
+    searchCacheByPage.clear();
+    latestSearchCacheKey = undefined;
+    return;
+  }
+
+  for (const [key, cache] of searchCacheByPage) {
+    if (cache.query === query) {
+      searchCacheByPage.delete(key);
+    }
+  }
+
+  if (latestSearchCacheKey && !searchCacheByPage.has(latestSearchCacheKey)) {
+    latestSearchCacheKey = undefined;
+  }
 }
 
-// Import persistent cache
-import {
-  getCachedPackage,
-  getCachedPackageSize,
-  getCachedSearch,
-  getPackageDescriptions,
-  setCachedPackage,
-  setCachedPackageSize,
-  setCachedSearch,
-} from "../utils/cache.js";
+export function isCacheValid(query: string, offset = 0): boolean {
+  const cache = getSearchCache(query, offset);
+  return cache ? Date.now() - cache.timestamp < CACHE_LIMITS.searchTTL : false;
+}
 
 function getNpmPackageAuthor(
   pkg: NonNullable<NpmSearchResultObject["package"]>
@@ -95,13 +116,13 @@ function getNpmPackageAuthor(
     return publisher.username.trim();
   }
 
-  if (publisher?.email?.trim()) {
-    return publisher.email.trim();
-  }
-
   const maintainerWithUsername = pkg.maintainers?.find((entry) => entry.username?.trim());
   if (maintainerWithUsername?.username?.trim()) {
     return maintainerWithUsername.username.trim();
+  }
+
+  if (publisher?.email?.trim()) {
+    return publisher.email.trim();
   }
 
   const maintainerWithEmail = pkg.maintainers?.find((entry) => entry.email?.trim());
@@ -129,93 +150,120 @@ function toNpmPackage(entry: NpmSearchResultObject): NpmPackage | undefined {
   };
 }
 
-async function fetchNpmSearchPage(
+function getRetryDelayMs(response: Response, retryNumber: number): number {
+  const retryAfter = response.headers.get("retry-after")?.trim();
+  if (retryAfter) {
+    const seconds = Number(retryAfter);
+    if (Number.isFinite(seconds) && seconds >= 0) {
+      return Math.min(seconds * 1_000, TIMEOUTS.npmSearch);
+    }
+
+    const retryAt = Date.parse(retryAfter);
+    if (Number.isFinite(retryAt)) {
+      return Math.min(Math.max(0, retryAt - Date.now()), TIMEOUTS.npmSearch);
+    }
+  }
+
+  return NPM_SEARCH_RETRY_DELAY_MS * 2 ** (retryNumber - 1);
+}
+
+function waitForRetry(delayMs: number, signal?: AbortSignal): Promise<void> {
+  throwIfAborted(signal);
+  if (delayMs === 0) return Promise.resolve();
+
+  return new Promise((resolve, reject) => {
+    const onAbort = (): void => {
+      clearTimeout(timer);
+      reject(createAbortError());
+    };
+    const timer = setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, delayMs);
+
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
+}
+
+export async function fetchNpmRegistrySearchPage(
   query: string,
-  from: number,
-  signal?: AbortSignal
-): Promise<{
-  total: number;
-  resultCount: number;
-  packages: NpmPackage[];
-}> {
+  from = 0,
+  signal?: AbortSignal,
+  size = PAGE_SIZE
+): Promise<SearchCache> {
+  const pageSize = Number.isFinite(size)
+    ? Math.max(1, Math.min(Math.floor(size), NPM_SEARCH_MAX_PAGE_SIZE))
+    : PAGE_SIZE;
+  const offset = Number.isFinite(from) ? Math.max(0, Math.floor(from)) : 0;
   const params = new URLSearchParams({
     text: query,
-    size: String(NPM_SEARCH_PAGE_SIZE),
-    from: String(from),
+    size: String(pageSize),
+    from: String(offset),
   });
-  const response = await fetchWithTimeout(
-    `${NPM_SEARCH_API}?${params.toString()}`,
-    TIMEOUTS.npmSearch,
-    signal
-  );
+  const url = `${NPM_SEARCH_API}?${params.toString()}`;
 
-  if (!response.ok) {
-    throw new Error(`npm registry search failed: HTTP ${response.status}`);
+  let response: Response | undefined;
+  for (let attempt = 0; attempt <= NPM_SEARCH_MAX_RETRIES; attempt += 1) {
+    response = await fetchWithTimeout(url, TIMEOUTS.npmSearch, signal);
+    if (response.status !== 429 || attempt === NPM_SEARCH_MAX_RETRIES) {
+      break;
+    }
+
+    await response.body?.cancel();
+    await waitForRetry(getRetryDelayMs(response, attempt + 1), signal);
+  }
+
+  if (!response?.ok) {
+    if (response?.status === 429) {
+      throw new Error("npm registry search is rate-limited (HTTP 429). Try again shortly.");
+    }
+    throw new Error(`npm registry search failed: HTTP ${response?.status ?? "unknown"}`);
   }
 
   const data = (await response.json()) as NpmSearchResponse;
   const objects = data.objects ?? [];
-  const packages = objects.map(toNpmPackage).filter((pkg): pkg is NpmPackage => !!pkg);
+  const results = objects.map(toNpmPackage).filter((pkg): pkg is NpmPackage => !!pkg);
+  const total =
+    typeof data.total === "number" && Number.isFinite(data.total) && data.total >= 0
+      ? data.total
+      : offset + results.length;
 
   return {
-    total:
-      typeof data.total === "number" && Number.isFinite(data.total) ? data.total : packages.length,
-    resultCount: objects.length,
-    packages,
+    query,
+    results,
+    total,
+    offset,
+    timestamp: Date.now(),
   };
-}
-
-export async function fetchNpmRegistrySearchResults(
-  query: string,
-  signal?: AbortSignal
-): Promise<NpmPackage[]> {
-  const packagesByName = new Map<string, NpmPackage>();
-  let from = 0;
-  let total = Infinity;
-
-  while (from < total) {
-    const page = await fetchNpmSearchPage(query, from, signal);
-    total = page.total;
-
-    if (page.resultCount === 0) {
-      break;
-    }
-
-    for (const pkg of page.packages) {
-      if (!packagesByName.has(pkg.name)) {
-        packagesByName.set(pkg.name, pkg);
-      }
-    }
-
-    from += page.resultCount;
-  }
-
-  return [...packagesByName.values()];
 }
 
 export async function searchNpmPackages(
   query: string,
   ctx: ExtensionCommandContext,
-  options?: { signal?: AbortSignal }
-): Promise<NpmPackage[]> {
-  const cached = await getCachedSearch(query);
-  if (cached) {
-    if (ctx.hasUI) {
-      ctx.ui.notify(`Using ${cached.length} cached results`, "info");
+  options?: { signal?: AbortSignal; offset?: number; size?: number; forceRefresh?: boolean }
+): Promise<SearchCache> {
+  const offset = options?.offset ?? 0;
+
+  if (!options?.forceRefresh) {
+    const runtimeCached = getSearchCache(query, offset);
+    if (runtimeCached && isCacheValid(query, offset)) {
+      return runtimeCached;
     }
-    return cached;
+
+    const persisted = await getCachedSearch(query, offset);
+    if (persisted) {
+      setSearchCache(persisted);
+      if (ctx.hasUI) {
+        ctx.ui.notify(`Using ${persisted.results.length} cached results`, "info");
+      }
+      return persisted;
+    }
   }
 
-  if (ctx.hasUI) {
-    ctx.ui.notify(`Searching npm for "${query}"...`, "info");
-  }
-
-  const packages = await fetchNpmRegistrySearchResults(query, options?.signal);
-
-  // Cache the results
-  await setCachedSearch(query, packages);
-
-  return packages;
+  const page = await fetchNpmRegistrySearchPage(query, offset, options?.signal, options?.size);
+  setSearchCache(page);
+  await setCachedSearch(page);
+  return page;
 }
 
 export async function getInstalledPackages(
