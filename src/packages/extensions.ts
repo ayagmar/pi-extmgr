@@ -40,6 +40,7 @@ export interface PackageManifest {
 
 const execFileAsync = promisify(execFile);
 let globalNpmRootCache: { key: string; root: string | null } | undefined;
+const packageEntrypointCache = new Map<string, Promise<string[]>>();
 
 function normalizeSource(source: string): string {
   return source
@@ -532,7 +533,7 @@ async function resolveConventionExtensionEntrypoints(packageRoot: string): Promi
   return collectExtensionFilesFromDir(packageRoot, extensionsDir);
 }
 
-export async function discoverPackageExtensionEntrypoints(
+async function discoverPackageExtensionEntrypointsUncached(
   packageRoot: string,
   options?: {
     allowConventionDirectory?: boolean;
@@ -567,6 +568,35 @@ export async function discoverPackageExtensionEntrypoints(
   }
 
   return [];
+}
+
+function getEntrypointCacheKey(
+  packageRoot: string,
+  options?: { allowConventionDirectory?: boolean; allowRootIndexFallback?: boolean }
+): string {
+  return `${resolve(packageRoot)}\0${options?.allowConventionDirectory !== false}\0${options?.allowRootIndexFallback !== false}`;
+}
+
+/** Clear the in-memory entrypoint cache, useful after package installation or removal. */
+export function clearPackageEntrypointCache(): void {
+  packageEntrypointCache.clear();
+}
+
+export function discoverPackageExtensionEntrypoints(
+  packageRoot: string,
+  options?: {
+    allowConventionDirectory?: boolean;
+    allowRootIndexFallback?: boolean;
+  }
+): Promise<string[]> {
+  const key = getEntrypointCacheKey(packageRoot, options);
+  const cached = packageEntrypointCache.get(key);
+  if (cached) return cached;
+
+  const result = discoverPackageExtensionEntrypointsUncached(packageRoot, options);
+  packageEntrypointCache.set(key, result);
+  result.catch(() => packageEntrypointCache.delete(key));
+  return result;
 }
 
 export async function discoverPackageExtensions(

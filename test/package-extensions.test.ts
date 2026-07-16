@@ -3,8 +3,38 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { discoverPackageExtensions, setPackageExtensionState } from "../src/packages/extensions.js";
+import {
+  clearPackageEntrypointCache,
+  discoverPackageExtensionEntrypoints,
+  discoverPackageExtensions,
+  setPackageExtensionState,
+} from "../src/packages/extensions.js";
 import { type InstalledPackage } from "../src/types/index.js";
+
+void test("discoverPackageExtensionEntrypoints reuses results until explicitly cleared", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "pi-extmgr-cwd-"));
+  const pkgRoot = join(cwd, "cached-package");
+
+  try {
+    await mkdir(pkgRoot, { recursive: true });
+    await writeFile(
+      join(pkgRoot, "package.json"),
+      JSON.stringify({ name: "cached-package", pi: { extensions: ["./index.ts"] } }),
+      "utf8"
+    );
+    await writeFile(join(pkgRoot, "index.ts"), "// cached\n", "utf8");
+
+    assert.deepEqual(await discoverPackageExtensionEntrypoints(pkgRoot), ["index.ts"]);
+    await rm(join(pkgRoot, "index.ts"));
+    assert.deepEqual(await discoverPackageExtensionEntrypoints(pkgRoot), ["index.ts"]);
+
+    clearPackageEntrypointCache();
+    assert.deepEqual(await discoverPackageExtensionEntrypoints(pkgRoot), []);
+  } finally {
+    clearPackageEntrypointCache();
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
 
 void test("discoverPackageExtensions expands manifest glob entrypoints", async () => {
   const cwd = await mkdtemp(join(tmpdir(), "pi-extmgr-cwd-"));
