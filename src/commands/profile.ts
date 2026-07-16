@@ -12,6 +12,7 @@ import { getInstalledPackagesAllScopes } from "../packages/discovery.js";
 import { type InstalledPackage } from "../types/index.js";
 import { runTaskWithLoader } from "../ui/async-task.js";
 import { notify } from "../utils/notify.js";
+import { markReloadRequired } from "../utils/reload-state.js";
 import { parsePackageNameAndVersion, splitGitRepoAndRef } from "../utils/package-source.js";
 import { confirmAction, confirmReload } from "../utils/ui-helpers.js";
 import { throwIfSettingsErrors } from "../utils/settings-errors.js";
@@ -243,30 +244,49 @@ async function applyProfileFromCommand(
     return;
   }
 
-  await runTaskWithLoader(
-    ctx,
-    { title: "Apply profile", message: `Applying ${desired.name}...`, cancellable: false },
-    async ({ setMessage }) => {
-      const catalog = getPackageCatalog(ctx.cwd);
-      for (const pkg of plan.remove) {
-        setMessage(`Removing ${pkg.source}...`);
-        await catalog.remove(pkg.source, pkg.scope);
+  let completedMutations = 0;
+  try {
+    await runTaskWithLoader(
+      ctx,
+      { title: "Apply profile", message: `Applying ${desired.name}...`, cancellable: false },
+      async ({ setMessage }) => {
+        const catalog = getPackageCatalog(ctx.cwd);
+        for (const pkg of plan.remove) {
+          setMessage(`Removing ${pkg.source}...`);
+          await catalog.remove(pkg.source, pkg.scope);
+          completedMutations += 1;
+        }
+        for (const pkg of plan.add) {
+          setMessage(`Installing ${pkg.source}...`);
+          await catalog.install(pkg.source, pkg.scope);
+          completedMutations += 1;
+        }
+        for (const change of plan.update) {
+          if (change.from.source === change.to.source) continue;
+          setMessage(`Changing ${change.to.source}...`);
+          await catalog.remove(change.from.source, change.from.scope);
+          completedMutations += 1;
+          await catalog.install(change.to.source, change.to.scope);
+          completedMutations += 1;
+        }
+        setMessage("Preserving package settings and filters...");
+        await persistProfileConfiguration(desired, ctx);
+        return undefined;
       }
-      for (const pkg of plan.add) {
-        setMessage(`Installing ${pkg.source}...`);
-        await catalog.install(pkg.source, pkg.scope);
-      }
-      for (const change of plan.update) {
-        if (change.from.source === change.to.source) continue;
-        setMessage(`Changing ${change.to.source}...`);
-        await catalog.remove(change.from.source, change.from.scope);
-        await catalog.install(change.to.source, change.to.scope);
-      }
-      setMessage("Preserving package settings and filters...");
-      await persistProfileConfiguration(desired, ctx);
-      return undefined;
+    );
+  } catch (error) {
+    if (completedMutations > 0) {
+      const message = error instanceof Error ? error.message : String(error);
+      await markReloadRequired(`Profile ${desired.name} partially applied.`);
+      notify(
+        ctx,
+        `Profile ${desired.name} partially applied: ${completedMutations} mutation(s) succeeded before failure. ${message}\nReload pi before continuing.`,
+        "error"
+      );
+      return;
     }
-  );
+    throw error;
+  }
 
   notify(ctx, `Applied profile ${desired.name}.`, "info");
   await confirmReload(ctx, "Profile package configuration changed.");
