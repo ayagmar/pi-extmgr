@@ -28,6 +28,7 @@ import {
   isCacheValid,
   searchNpmPackages,
 } from "../packages/discovery.js";
+import { inspectPackageMetadata } from "../packages/inspection.js";
 import {
   installPackage,
   installPackageLocallyWithOutcome,
@@ -58,6 +59,7 @@ interface NpmViewInfo {
   users?: Record<string, boolean>;
   dist?: { unpackedSize?: number };
   repository?: { url?: string } | string;
+  dependencies?: Record<string, string>;
 }
 
 interface NpmDownloadsPoint {
@@ -333,6 +335,13 @@ async function buildPackageInfoText(
   const stars = info.users ? Object.keys(info.users).length : undefined;
   const unpackedSize = info.dist?.unpackedSize;
   const repository = typeof info.repository === "string" ? info.repository : info.repository?.url;
+  const inspection = inspectPackageMetadata({
+    name: packageName,
+    ...(info.version ? { version: info.version } : {}),
+    ...(info.description ? { description: info.description } : {}),
+    ...(info.dependencies ? { dependencies: info.dependencies } : {}),
+    ...(repository ? { repository } : {}),
+  });
 
   const lines = [
     `${packageName}@${version}`,
@@ -341,6 +350,9 @@ async function buildPackageInfoText(
     `Weekly downloads: ${formatCount(weeklyDownloads)}`,
     `Stars: ${formatCount(stars)}`,
     `Unpacked size: ${typeof unpackedSize === "number" ? formatBytes(unpackedSize) : "unknown"}`,
+    `Dependencies: ${inspection.dependencies.length > 0 ? inspection.dependencies.join(", ") : "none declared"}`,
+    `Compatibility: ${inspection.compatibility}`,
+    `Provenance: ${inspection.provenance}`,
   ];
 
   if (homepage) lines.push(`Homepage: ${homepage}`);
