@@ -273,6 +273,17 @@ export function querySessionChanges(
   return applyHistoryFilters(getAllSessionChanges(ctx), filters);
 }
 
+/** Return a chronological activity timeline for one package. */
+export function queryPackageTimeline(
+  ctx: ExtensionCommandContext,
+  packageQuery: string,
+  options: Omit<HistoryFilters, "packageQuery"> = {}
+): ExtensionChangeEntry[] {
+  return querySessionChanges(ctx, { ...options, packageQuery }).sort(
+    (left, right) => left.timestamp - right.timestamp
+  );
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
