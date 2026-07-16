@@ -1,4 +1,5 @@
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { type ExtmgrProfile, normalizeProfile } from "./schema.js";
 
@@ -83,6 +84,6 @@ export async function deleteNamedProfile(path: string, name: string): Promise<bo
 export function getProfileStorePath(): string {
   const directory = process.env.PI_EXTMGR_CACHE_DIR
     ? process.env.PI_EXTMGR_CACHE_DIR
-    : join(process.env.HOME ?? "~", ".pi", "agent", ".extmgr-cache");
+    : join(homedir(), ".pi", "agent", ".extmgr-cache");
   return join(directory, "profiles.json");
 }
