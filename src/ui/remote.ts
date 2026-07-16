@@ -20,8 +20,10 @@ import {
   wrapTextWithAnsi,
 } from "@earendil-works/pi-tui";
 import { CACHE_LIMITS, PAGE_SIZE, TIMEOUTS, UI } from "../constants.js";
+import { getRemotePackageBadges } from "../packages/badges.js";
 import {
   clearSearchCache,
+  getInstalledPackagesAllScopes,
   getSearchCache,
   isCacheValid,
   searchNpmPackages,
@@ -31,7 +33,9 @@ import {
   installPackageLocallyWithOutcome,
   installPackageWithOutcome,
 } from "../packages/install.js";
+import { type RemotePackageSort, sortRemotePackages } from "../packages/sorting.js";
 import { type BrowseAction, type NpmPackage } from "../types/index.js";
+import { getKnownUpdates } from "../utils/auto-update.js";
 import { parseChoiceByLabel, splitCommandArgs } from "../utils/command.js";
 import { formatBytes, normalizePackageSource, parseNpmSource, truncate } from "../utils/format.js";
 import { requireCustomUI, runCustomUI } from "../utils/mode.js";
@@ -410,7 +414,12 @@ async function showRemoteMenu(ctx: ExtensionCommandContext, pi: ExtensionAPI): P
 function formatRemotePackageLabel(pkg: NpmPackage, theme: Theme): string {
   const name = theme.bold(pkg.name);
   const version = pkg.version ? theme.fg("dim", `@${pkg.version}`) : "";
-  return `${name}${version}`;
+  const badges = [
+    pkg.installed ? theme.fg("success", "installed") : undefined,
+    pkg.updateAvailable ? theme.fg("warning", "update") : undefined,
+    theme.fg("dim", `compat:${pkg.compatibility ?? "unknown"}`),
+  ].filter(Boolean);
+  return `${name}${version}${badges.length ? ` [${badges.join(" · ")}]` : ""}`;
 }
 
 function formatRemotePackageDetails(
@@ -433,10 +442,12 @@ class RemotePackageBrowser implements Focusable {
   private readonly searchInput = new Input();
   private selectedIndex = 0;
   private searchActive = false;
+  private sortMode: RemotePackageSort = "relevance";
+  private readonly originalPackages: NpmPackage[];
   private _focused = false;
 
   constructor(
-    private readonly packages: NpmPackage[],
+    private packages: NpmPackage[],
     private readonly theme: Theme,
     private readonly keybindings: KeybindingsManager,
     private readonly browseSource: RemoteBrowseSource,
@@ -448,6 +459,7 @@ class RemotePackageBrowser implements Focusable {
     private readonly showLoadMore: boolean,
     private readonly onAction: (action: BrowseAction) => void
   ) {
+    this.originalPackages = [...packages];
     this.searchInput.setValue(queryLabel);
   }
 
@@ -534,6 +546,19 @@ class RemotePackageBrowser implements Focusable {
 
     if ((data === "n" || data === "N") && this.showLoadMore) {
       this.onAction({ type: "next" });
+      return true;
+    }
+
+    if (data === "o" || data === "O") {
+      const modes: RemotePackageSort[] = ["relevance", "name", "recent"];
+      const nextIndex = (modes.indexOf(this.sortMode) + 1) % modes.length;
+      this.sortMode = modes[nextIndex] ?? "relevance";
+      const selectedName = selected?.name;
+      this.packages = sortRemotePackages(this.originalPackages, this.sortMode);
+      this.selectedIndex = Math.max(
+        0,
+        this.packages.findIndex((pkg) => pkg.name === selectedName)
+      );
       return true;
     }
 
@@ -626,7 +651,7 @@ class RemotePackageBrowser implements Focusable {
     const label = this.queryLabel
       ? `Search: ${truncate(this.queryLabel, 40)}`
       : "Community packages";
-    return `  ${this.theme.fg("accent", label)} • ${this.theme.fg("muted", `${this.offset + 1}-${rangeEnd} of ${this.totalResults}`)} • ${this.theme.fg("muted", `page ${pageNumber}/${pageCount}`)}`;
+    return `  ${this.theme.fg("accent", label)} • ${this.theme.fg("muted", `${this.offset + 1}-${rangeEnd} of ${this.totalResults}`)} • ${this.theme.fg("muted", `page ${pageNumber}/${pageCount}`)} • ${this.theme.fg("muted", `sort:${this.sortMode}`)}`;
   }
 
   private buildFooterLine(): string {
@@ -639,7 +664,7 @@ class RemotePackageBrowser implements Focusable {
       parts.push("n next");
     }
 
-    parts.push("r refresh", "i install", "m menu", "Esc back");
+    parts.push("o sort", "r refresh", "i install", "m menu", "Esc back");
     return `  ${this.theme.fg("dim", parts.join(" · "))}`;
   }
 
@@ -862,7 +887,23 @@ async function browseRemotePackagesPage({
     return;
   }
 
-  const packages = filterRemoteBrowseResults(plan, searchPage.results);
+  const installed = await getInstalledPackagesAllScopes(ctx);
+  const installedNames = new Set(
+    installed.flatMap((pkg) => {
+      const parsed = parseNpmSource(pkg.source);
+      return parsed?.name ? [parsed.name] : [];
+    })
+  );
+  const updateNames = new Set(
+    [...getKnownUpdates(ctx)].flatMap((identity) => {
+      const parsed = parseNpmSource(identity);
+      return parsed?.name ? [parsed.name] : [];
+    })
+  );
+  const packages = filterRemoteBrowseResults(plan, searchPage.results).map((pkg) => ({
+    ...pkg,
+    ...getRemotePackageBadges(pkg, installedNames, updateNames),
+  }));
   const totalResults =
     plan.kind === "search" && plan.exactPackageName ? packages.length : searchPage.total;
   const reloadQuery =

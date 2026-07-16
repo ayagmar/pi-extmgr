@@ -29,6 +29,9 @@ export interface NpmPackage {
   keywords?: string[] | undefined;
   date?: string | undefined;
   size?: number | undefined; // Package size in bytes
+  installed?: boolean | undefined;
+  updateAvailable?: boolean | undefined;
+  compatibility?: "compatible" | "incompatible" | "unknown" | undefined;
 }
 
 export interface InstalledPackage {
