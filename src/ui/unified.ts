@@ -63,6 +63,7 @@ import { hasCustomUI, runCustomUI } from "../utils/mode.js";
 import { notify } from "../utils/notify.js";
 import { getPackageSourceKind, normalizePackageIdentity } from "../utils/package-source.js";
 import { normalizePathIdentity } from "../utils/path-identity.js";
+import { markReloadRequired } from "../utils/reload-state.js";
 import { updateExtmgrStatus } from "../utils/status.js";
 import { confirmReload, formatListOutput } from "../utils/ui-helpers.js";
 import { runTaskWithLoader } from "./async-task.js";
@@ -1249,6 +1250,7 @@ async function applyToggleChangesFromManager(
       return { changed: apply.changed, reloaded, hasErrors: apply.errors.length > 0 };
     }
 
+    await markReloadRequired("Local extensions changed.");
     ctx.ui.notify("Changes saved. Reload pi later to fully apply extension state updates.", "info");
   }
 
