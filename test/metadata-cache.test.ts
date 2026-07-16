@@ -56,6 +56,34 @@ void test("metadata cache merges partial package updates without discarding rich
   }
 });
 
+void test("metadata cache prunes expired entries and bounds package metadata", async () => {
+  const cacheDir = await mkdtemp(join(tmpdir(), "pi-extmgr-cache-prune-"));
+  const previousCacheDir = process.env.PI_EXTMGR_CACHE_DIR;
+
+  try {
+    process.env.PI_EXTMGR_CACHE_DIR = cacheDir;
+    const cache = (await import(
+      `../src/utils/cache.ts?cache-prune=${Date.now()}`
+    )) as typeof import("../src/utils/cache.js");
+
+    await cache.clearCache();
+    for (let index = 0; index < CACHE_LIMITS.packageInfoMaxSize + 5; index += 1) {
+      await cache.setCachedPackage(`pkg-${index}`, { name: `pkg-${index}`, description: "cached" });
+    }
+
+    const stats = await cache.getCacheStats();
+    assert.equal(stats.totalPackages, CACHE_LIMITS.packageInfoMaxSize);
+    assert.equal(stats.validEntries, CACHE_LIMITS.packageInfoMaxSize);
+  } finally {
+    if (previousCacheDir === undefined) {
+      delete process.env.PI_EXTMGR_CACHE_DIR;
+    } else {
+      process.env.PI_EXTMGR_CACHE_DIR = previousCacheDir;
+    }
+    await rm(cacheDir, { recursive: true, force: true });
+  }
+});
+
 void test("metadata cache keeps inherited fields on their original TTL", async () => {
   const cacheDir = await mkdtemp(join(tmpdir(), "pi-extmgr-cache-ttl-"));
   const previousCacheDir = process.env.PI_EXTMGR_CACHE_DIR;
