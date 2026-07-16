@@ -660,6 +660,47 @@ void test("setPackageExtensionState fails safely when settings.json is invalid",
   }
 });
 
+void test("setPackageExtensionState preserves unrelated settings fields", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "pi-extmgr-cwd-"));
+  const agentDir = await mkdtemp(join(tmpdir(), "pi-extmgr-agent-"));
+  const oldAgentDir = process.env.PI_CODING_AGENT_DIR;
+  process.env.PI_CODING_AGENT_DIR = agentDir;
+  const settingsPath = join(agentDir, "settings.json");
+
+  try {
+    await writeFile(
+      settingsPath,
+      JSON.stringify(
+        { theme: "dark", customPolicy: { allow: false }, packages: ["npm:demo-pkg@1.0.0"] },
+        null,
+        2
+      ),
+      "utf8"
+    );
+
+    const result = await setPackageExtensionState(
+      "npm:demo-pkg@1.0.0",
+      "extensions/main.ts",
+      "global",
+      "disabled",
+      cwd
+    );
+    assert.equal(result.ok, true);
+
+    const saved = JSON.parse(await readFile(settingsPath, "utf8")) as Record<string, unknown>;
+    assert.equal(saved.theme, "dark");
+    assert.deepEqual(saved.customPolicy, { allow: false });
+  } finally {
+    if (oldAgentDir === undefined) {
+      delete process.env.PI_CODING_AGENT_DIR;
+    } else {
+      process.env.PI_CODING_AGENT_DIR = oldAgentDir;
+    }
+    await rm(cwd, { recursive: true, force: true });
+    await rm(agentDir, { recursive: true, force: true });
+  }
+});
+
 void test("setPackageExtensionState preserves non-marker extension tokens", async () => {
   const cwd = await mkdtemp(join(tmpdir(), "pi-extmgr-cwd-"));
   const agentDir = await mkdtemp(join(tmpdir(), "pi-extmgr-agent-"));
