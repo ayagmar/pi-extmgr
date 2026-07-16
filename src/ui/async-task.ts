@@ -26,6 +26,46 @@ export interface TaskControls {
   setMessage: (message: string) => void;
 }
 
+export interface GenerationRequest {
+  id: number;
+  signal: AbortSignal;
+  isCurrent: () => boolean;
+  commit: (apply: () => void) => boolean;
+}
+
+export class RequestGeneration {
+  private generation = 0;
+  private controller: AbortController | undefined;
+
+  begin(parentSignal?: AbortSignal): GenerationRequest {
+    this.controller?.abort();
+    const controller = new AbortController();
+    this.controller = controller;
+    const id = ++this.generation;
+    const signal = parentSignal
+      ? AbortSignal.any([parentSignal, controller.signal])
+      : controller.signal;
+    const isCurrent = (): boolean =>
+      id === this.generation && this.controller === controller && !signal.aborted;
+    return {
+      id,
+      signal,
+      isCurrent,
+      commit: (apply) => {
+        if (!isCurrent()) return false;
+        apply();
+        return true;
+      },
+    };
+  }
+
+  cancel(): void {
+    this.controller?.abort();
+    this.controller = undefined;
+    this.generation += 1;
+  }
+}
+
 interface LoaderConfig {
   title: string;
   message: string;
@@ -137,6 +177,7 @@ export async function runTaskWithLoader<T>(
       task({
         signal,
         setMessage: (message) => {
+          if (finished || signal.aborted) return;
           loader.setMessage(message);
           tui.requestRender();
         },

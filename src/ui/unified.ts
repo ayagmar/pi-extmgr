@@ -1782,7 +1782,7 @@ async function handleUnifiedAction(
     if (results.completed.length === 0) return "resume";
 
     const reloaded = await confirmReload(ctx, "Bulk package changes completed.");
-    return reloaded ? true : false;
+    return reloaded;
   }
 
   if (result.type === "remote") {
