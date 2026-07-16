@@ -64,6 +64,12 @@ import { notify } from "../utils/notify.js";
 import { getPackageSourceKind, normalizePackageIdentity } from "../utils/package-source.js";
 import { normalizePathIdentity } from "../utils/path-identity.js";
 import { markReloadRequired } from "../utils/reload-state.js";
+import {
+  getSavedViewsPath,
+  type SavedView,
+  readSavedViews,
+  writeSavedViews,
+} from "../utils/views.js";
 import { updateExtmgrStatus } from "../utils/status.js";
 import { confirmReload, formatListOutput } from "../utils/ui-helpers.js";
 import { runTaskWithLoader } from "./async-task.js";
@@ -149,6 +155,8 @@ async function showInteractiveOnce(
   }
 
   const { localEntries, installedPackages, packageExtensions } = initialData;
+  const viewsPath = getSavedViewsPath();
+  let savedViews = await readSavedViews(viewsPath);
 
   // Build unified items list.
   const knownUpdates = getKnownUpdates(ctx);
@@ -171,7 +179,7 @@ async function showInteractiveOnce(
   // Staged changes tracking for local extensions.
   const staged = new Map<string, State>();
   const byId = new Map(items.map((item) => [item.id, item]));
-  let managerState: UnifiedManagerViewState | undefined;
+  let managerState = viewToManagerState(savedViews.lastView);
 
   while (true) {
     let nextManagerState = managerState;
@@ -199,6 +207,8 @@ async function showInteractiveOnce(
             ctx.cwd,
             Math.max(4, Math.min(UI.maxListHeight, tui.terminal.rows - 12)),
             complete,
+            new Set(savedViews.favorites),
+            new Set(savedViews.recent),
             managerState
           );
           let lastWidth = tui.terminal.columns;
@@ -266,9 +276,33 @@ async function showInteractiveOnce(
       return true;
     }
 
-    const outcome = await handleUnifiedAction(result, items, staged, byId, ctx, pi);
+    if (nextManagerState) {
+      const lastView = managerStateToView(
+        nextManagerState,
+        "last-used",
+        savedViews.lastView?.createdAt
+      );
+      const selectedItemId = nextManagerState.selectedItemId;
+      const recent = selectedItemId
+        ? [selectedItemId, ...savedViews.recent.filter((id) => id !== selectedItemId)].slice(0, 20)
+        : savedViews.recent;
+      savedViews = { ...savedViews, lastView, recent };
+      await writeSavedViews(viewsPath, savedViews);
+    }
+
+    const outcome = await handleUnifiedAction(
+      result,
+      items,
+      staged,
+      byId,
+      ctx,
+      pi,
+      savedViews,
+      viewsPath,
+      nextManagerState
+    );
     if (outcome === "resume") {
-      managerState = nextManagerState;
+      managerState = viewToManagerState(savedViews.lastView) ?? nextManagerState;
       continue;
     }
 
@@ -428,7 +462,9 @@ function buildManagerSummary(
     options?.filter === "local" ||
     options?.filter === "packages" ||
     options?.filter === "updates" ||
-    options?.filter === "disabled";
+    options?.filter === "disabled" ||
+    options?.filter === "favorites" ||
+    options?.filter === "recent";
   const localCount = summaryItems.filter((item) => item.type === "local").length;
   const packageCount = summaryItems.length - localCount;
   const updateCount = summaryItems.filter(
@@ -467,7 +503,7 @@ function buildManagerSummary(
   return parts.join(" • ");
 }
 
-type UnifiedFilter = "all" | "local" | "packages" | "updates" | "disabled";
+type UnifiedFilter = "all" | "local" | "packages" | "updates" | "disabled" | "favorites" | "recent";
 
 interface UnifiedManagerViewState {
   filter: UnifiedFilter;
@@ -481,7 +517,37 @@ const UNIFIED_FILTER_OPTIONS: Array<{ id: UnifiedFilter; key: string; label: str
   { id: "packages", key: "3", label: "Packages" },
   { id: "updates", key: "4", label: "Updates" },
   { id: "disabled", key: "5", label: "Disabled" },
+  { id: "favorites", key: "6", label: "Favorites" },
+  { id: "recent", key: "7", label: "Recent" },
 ];
+
+function isUnifiedFilter(value: string): value is UnifiedFilter {
+  return UNIFIED_FILTER_OPTIONS.some((option) => option.id === value);
+}
+
+function viewToManagerState(view: SavedView | undefined): UnifiedManagerViewState | undefined {
+  if (!view || !isUnifiedFilter(view.filter)) return undefined;
+  return {
+    filter: view.filter,
+    searchQuery: view.searchQuery,
+    ...(view.selectedItemId ? { selectedItemId: view.selectedItemId } : {}),
+  };
+}
+
+function managerStateToView(
+  state: UnifiedManagerViewState,
+  name: string,
+  now = Date.now()
+): SavedView {
+  return {
+    name,
+    filter: state.filter,
+    searchQuery: state.searchQuery,
+    ...(state.selectedItemId ? { selectedItemId: state.selectedItemId } : {}),
+    createdAt: now,
+    updatedAt: now,
+  };
+}
 
 function getCurrentUnifiedItemState(
   item: UnifiedItem,
@@ -589,7 +655,9 @@ function isAbsoluteDisplayPath(value: string): boolean {
 function matchesUnifiedFilter(
   item: UnifiedItem,
   filter: UnifiedFilter,
-  staged: Map<string, State>
+  staged: Map<string, State>,
+  favoriteIds: ReadonlySet<string>,
+  recentIds: ReadonlySet<string>
 ): boolean {
   switch (filter) {
     case "all":
@@ -605,6 +673,10 @@ function matchesUnifiedFilter(
         return getCurrentUnifiedItemState(item, staged) === "disabled";
       }
       return (item.extensionSummary?.disabled ?? 0) > 0;
+    case "favorites":
+      return favoriteIds.has(item.id);
+    case "recent":
+      return recentIds.has(item.id);
   }
 }
 
@@ -751,6 +823,8 @@ class UnifiedManagerBrowser implements Focusable {
     private readonly cwd: string,
     private readonly maxVisibleItems: number,
     private readonly onAction: (action: UnifiedAction) => void,
+    private readonly favoriteIds: ReadonlySet<string> = new Set(),
+    private readonly recentIds: ReadonlySet<string> = new Set(),
     initialState?: UnifiedManagerViewState
   ) {
     if (initialState) {
@@ -932,6 +1006,26 @@ class UnifiedManagerBrowser implements Focusable {
       return true;
     }
 
+    if (data === "W") {
+      this.onAction({ type: "views", action: "save" });
+      return true;
+    }
+
+    if (data === "L") {
+      this.onAction({ type: "views", action: "load" });
+      return true;
+    }
+
+    if (data === "D") {
+      this.onAction({ type: "views", action: "delete" });
+      return true;
+    }
+
+    if (data === "*" && selectedId) {
+      this.onAction({ type: "views", action: "favorite", itemId: selectedId });
+      return true;
+    }
+
     if (data === "i") {
       this.onAction({ type: "quick", action: "install" });
       return true;
@@ -1026,13 +1120,18 @@ class UnifiedManagerBrowser implements Focusable {
     lines.push("");
 
     if (this.filteredItems.length === 0) {
-      lines.push(
-        truncateToWidth(
-          this.theme.fg("warning", "  No matching extensions or packages"),
-          safeWidth,
-          ""
-        )
-      );
+      const emptyMessage = searchQuery
+        ? `  No items match “${searchQuery}”. Try clearing search with Esc.`
+        : this.filter === "favorites"
+          ? "  No favorites yet. Press * on an item to favorite it."
+          : this.filter === "recent"
+            ? "  No recent items yet. Open an item to build your recent list."
+            : this.filter === "updates"
+              ? "  No updates are currently known."
+              : this.filter === "disabled"
+                ? "  No disabled extensions or package entrypoints."
+                : "  No extensions or packages installed yet. Press i to install one.";
+      lines.push(truncateToWidth(this.theme.fg("warning", emptyMessage), safeWidth, ""));
       return lines;
     }
 
@@ -1144,7 +1243,7 @@ class UnifiedManagerBrowser implements Focusable {
   private refreshVisibleItems(preferredItemId?: string): void {
     const previousSelectedId = preferredItemId ?? this.getSelectedItem()?.id;
     const filteredByMode = this.items.filter((item) =>
-      matchesUnifiedFilter(item, this.filter, this.staged)
+      matchesUnifiedFilter(item, this.filter, this.staged, this.favoriteIds, this.recentIds)
     );
     const query = this.searchInput.getValue().trim();
     this.filteredItems.length = 0;
@@ -1447,7 +1546,10 @@ async function handleUnifiedAction(
   staged: Map<string, State>,
   byId: Map<string, UnifiedItem>,
   ctx: ExtensionCommandContext,
-  pi: ExtensionAPI
+  pi: ExtensionAPI,
+  savedViews: Awaited<ReturnType<typeof readSavedViews>>,
+  viewsPath: string,
+  currentViewState?: UnifiedManagerViewState
 ): Promise<boolean | "resume"> {
   if (result.type === "cancel") {
     const pendingCount = getPendingToggleChangeCount(staged, byId);
@@ -1470,6 +1572,75 @@ async function handleUnifiedAction(
     }
 
     return true;
+  }
+
+  if (result.type === "views") {
+    if (result.action === "favorite") {
+      const itemId = result.itemId;
+      if (!itemId) return "resume";
+      const favorites = new Set(savedViews.favorites);
+      if (favorites.has(itemId)) {
+        favorites.delete(itemId);
+        notify(ctx, "Removed from favorites.", "info");
+      } else {
+        favorites.add(itemId);
+        notify(ctx, "Added to favorites.", "info");
+      }
+      savedViews.favorites = [...favorites];
+      await writeSavedViews(viewsPath, savedViews);
+      return "resume";
+    }
+
+    if (result.action === "save") {
+      if (!currentViewState) return "resume";
+      const name = (await ctx.ui.input("Save manager view", "name"))?.trim();
+      if (!name) return "resume";
+      const existing = savedViews.views.find((view) => view.name === name);
+      if (existing && !(await ctx.ui.confirm("Overwrite view", `Replace saved view “${name}”?`))) {
+        return "resume";
+      }
+      const now = Date.now();
+      const saved = managerStateToView(currentViewState, name, existing?.createdAt ?? now);
+      savedViews.views = existing
+        ? savedViews.views.map((view) => (view.name === name ? saved : view))
+        : [...savedViews.views, saved];
+      await writeSavedViews(viewsPath, savedViews);
+      notify(ctx, `Saved view “${name}”.`, "info");
+      return "resume";
+    }
+
+    if (result.action === "load") {
+      if (savedViews.views.length === 0) {
+        notify(ctx, "No saved views yet. Press W to save the current view.", "info");
+        return "resume";
+      }
+      const choice = await ctx.ui.select(
+        "Load manager view",
+        savedViews.views.map((view) => view.name)
+      );
+      const selected = savedViews.views.find((view) => view.name === choice);
+      if (selected) {
+        savedViews.lastView = selected;
+        await writeSavedViews(viewsPath, savedViews);
+        notify(ctx, `Loaded view “${selected.name}”.`, "info");
+      }
+      return "resume";
+    }
+
+    if (savedViews.views.length === 0) {
+      notify(ctx, "No saved views to delete.", "info");
+      return "resume";
+    }
+    const choice = await ctx.ui.select(
+      "Delete manager view",
+      savedViews.views.map((view) => view.name)
+    );
+    if (choice && (await ctx.ui.confirm("Delete view", `Delete saved view “${choice}”?`))) {
+      savedViews.views = savedViews.views.filter((view) => view.name !== choice);
+      await writeSavedViews(viewsPath, savedViews);
+      notify(ctx, `Deleted view “${choice}”.`, "info");
+    }
+    return "resume";
   }
 
   if (result.type === "bulk") {

@@ -101,6 +101,11 @@ export type UnifiedAction =
   | { type: "help" }
   | { type: "menu" }
   | { type: "bulk"; itemIds: string[]; action: "update" | "remove" }
+  | {
+      type: "views";
+      action: "save" | "load" | "delete" | "favorite";
+      itemId?: string;
+    }
   | { type: "quick"; action: "install" | "search" | "update-all" | "auto-update" }
   | {
       type: "action";

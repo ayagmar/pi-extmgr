@@ -73,7 +73,8 @@ export function buildFooterShortcuts(state: FooterState): string {
 
   parts.push("/ search");
   parts.push("Tab filters");
-  parts.push("1-5 filters");
+  parts.push("1-7 filters");
+  parts.push("W save view · L load · D delete · * favorite");
   parts.push("i install");
   parts.push("f remote search");
   parts.push("U update all");

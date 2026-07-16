@@ -13,18 +13,30 @@ void test("saved views normalize versioned view, favorite, and recent state", ()
     ],
     favorites: [" demo ", 1],
     recent: Array.from({ length: 30 }, (_, index) => `pkg-${index}`),
+    lastView: {
+      name: "last-used",
+      filter: "favorites",
+      searchQuery: "demo",
+      selectedItemId: "pkg:demo",
+      createdAt: 1,
+      updatedAt: 2,
+    },
   });
   assert.equal(result.version, 1);
   assert.equal(result.views[0]?.name, "work");
   assert.deepEqual(result.favorites, ["demo"]);
   assert.equal(result.recent.length, 20);
+  assert.equal(result.lastView?.selectedItemId, "pkg:demo");
 });
 
 void test("saved views use an atomic replacement write", async () => {
   const dir = await mkdtemp(join(tmpdir(), "pi-extmgr-views-"));
   const path = join(dir, "views.json");
   try {
-    await writeSavedViews(path, { version: 1, views: [], favorites: ["demo"], recent: [] });
+    await Promise.all([
+      writeSavedViews(path, { version: 1, views: [], favorites: ["first"], recent: [] }),
+      writeSavedViews(path, { version: 1, views: [], favorites: ["demo"], recent: [] }),
+    ]);
     assert.deepEqual((await readSavedViews(path)).favorites, ["demo"]);
     assert.equal((await readFile(path, "utf8")).endsWith("\n"), true);
   } finally {
