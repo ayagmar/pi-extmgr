@@ -94,6 +94,7 @@ void test("buildUnifiedItems summarizes package extension enabled and disabled s
     disabled: 1,
     total: 2,
   });
+  assert.deepEqual(packageRow.extensionPaths, ["extensions/enabled.ts", "extensions/disabled.ts"]);
 });
 
 void test("buildUnifiedItems omits package rows that duplicate local extension paths", () => {

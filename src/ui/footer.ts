@@ -5,6 +5,7 @@ import { type State, type UnifiedItem } from "../types/index.js";
 
 export interface FooterState {
   selectedType?: UnifiedItem["type"];
+  expandable: boolean;
   pendingChanges: number;
 }
 
@@ -15,6 +16,7 @@ export function buildFooterState(
 ): FooterState {
   const state: FooterState = {
     pendingChanges: getPendingToggleChangeCount(staged, byId),
+    expandable: selectedItem?.type === "package" && Boolean(selectedItem.extensionPaths?.length),
   };
 
   if (selectedItem) {
@@ -56,6 +58,7 @@ export function buildFooterShortcuts(state: FooterState): string {
   }
 
   if (state.selectedType === "package") {
+    if (state.expandable) parts.push("E expand");
     parts.push("Enter/A actions");
     parts.push("V details");
     parts.push("c configure");
