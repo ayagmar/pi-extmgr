@@ -2,13 +2,7 @@ import { type ExtensionAPI, type ExtensionCommandContext } from "@earendil-works
 import { type AutocompleteItem } from "@earendil-works/pi-tui";
 import { findRuntimeConflicts } from "../doctor/conflicts.js";
 import { getRuntimeOwners } from "../doctor/runtime.js";
-import {
-  promptRemove,
-  removePackage,
-  showInstalledPackagesList,
-  updatePackage,
-  updatePackages,
-} from "../packages/management.js";
+import { promptRemove, removePackage, showInstalledPackagesList } from "../packages/management.js";
 import { showRemote } from "../ui/remote.js";
 import { showInstalledPackagesLegacy, showInteractive, showListOnly } from "../ui/unified.js";
 import { notify } from "../utils/notify.js";
@@ -18,6 +12,7 @@ import { handleHistorySubcommand } from "./history.js";
 import { handleInstallSubcommand, INSTALL_USAGE } from "./install.js";
 import { handleProfileSubcommand } from "./profile.js";
 import { type CommandDefinition, type CommandId } from "./types.js";
+import { handleUpdateSubcommand } from "./update.js";
 
 const REMOVE_USAGE = "Usage: /extensions remove <npm:package|git:url|path>";
 
@@ -129,11 +124,9 @@ const COMMAND_DEFINITIONS: Record<CommandId, CommandDefinition> = {
   },
   update: {
     id: "update",
-    description: "Update one package or all packages",
-    runInteractive: (tokens, ctx, pi) =>
-      tokens.length > 0 ? updatePackage(tokens.join(" "), ctx, pi) : updatePackages(ctx, pi),
-    runNonInteractive: (tokens, ctx, pi) =>
-      tokens.length > 0 ? updatePackage(tokens.join(" "), ctx, pi) : updatePackages(ctx, pi),
+    description: "Preview or update selected packages",
+    runInteractive: (tokens, ctx, pi) => handleUpdateSubcommand(tokens, ctx, pi),
+    runNonInteractive: (tokens, ctx, pi) => handleUpdateSubcommand(tokens, ctx, pi),
   },
   history: {
     id: "history",
