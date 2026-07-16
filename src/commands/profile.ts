@@ -14,6 +14,7 @@ import { runTaskWithLoader } from "../ui/async-task.js";
 import { notify } from "../utils/notify.js";
 import { parsePackageNameAndVersion, splitGitRepoAndRef } from "../utils/package-source.js";
 import { confirmAction, confirmReload } from "../utils/ui-helpers.js";
+import { throwIfSettingsErrors } from "../utils/settings-errors.js";
 import { checksumPackagePath, verifyPackageChecksum } from "../profiles/checksum.js";
 import { planProfileApplication, type ProfilePlan } from "../profiles/apply.js";
 import { loadProjectProfilePolicy, validateProfilePolicy } from "../profiles/compare.js";
@@ -155,6 +156,7 @@ async function persistProfileConfiguration(
   ctx: ExtensionCommandContext
 ): Promise<void> {
   const settings = SettingsManager.create(ctx.cwd, getAgentDir());
+  throwIfSettingsErrors(settings, "Profile application");
   const global = settings.getGlobalSettings();
   const project = settings.getProjectSettings();
   settings.setPackages(
@@ -170,6 +172,7 @@ async function persistProfileConfiguration(
     )
   );
   await settings.flush();
+  throwIfSettingsErrors(settings, "Profile application");
 }
 
 async function verifyProfileSafety(

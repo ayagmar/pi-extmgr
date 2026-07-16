@@ -3,6 +3,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { getPackageCatalog } from "../src/packages/catalog.js";
 import {
   comparePackageScopes,
   getPackageScopeLabel,
@@ -95,6 +96,31 @@ void test("movePackageBetweenScopes refuses a conflicting destination", async ()
     const result = await movePackageBetweenScopes("npm:demo@1.0.0", "global", "project", cwd);
     assert.equal(result.moved, false);
     assert.match(result.conflict ?? "", /different package configuration/);
+  } finally {
+    if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+    else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+void test("package mutations refuse malformed settings without reporting success", async () => {
+  const root = await mkdtemp(join(tmpdir(), "pi-extmgr-scopes-malformed-"));
+  const agentDir = join(root, "agent");
+  const cwd = join(root, "project");
+  const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
+  process.env.PI_CODING_AGENT_DIR = agentDir;
+  try {
+    await mkdir(agentDir, { recursive: true });
+    await writeFile(join(agentDir, "settings.json"), "{ invalid", "utf8");
+
+    await assert.rejects(
+      () => getPackageCatalog(cwd).install("npm:demo", "global"),
+      /Package installation refused/
+    );
+    const moved = await movePackageBetweenScopes("npm:demo", "global", "project", cwd);
+    assert.equal(moved.moved, false);
+    assert.match(moved.conflict ?? "", /Package scope move refused/);
+    assert.equal(await readFile(join(agentDir, "settings.json"), "utf8"), "{ invalid");
   } finally {
     if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
     else process.env.PI_CODING_AGENT_DIR = previousAgentDir;

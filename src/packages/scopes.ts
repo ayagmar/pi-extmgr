@@ -1,6 +1,7 @@
 import { getAgentDir, SettingsManager, type PackageSource } from "@earendil-works/pi-coding-agent";
 import { type InstalledPackage, type Scope } from "../types/index.js";
 import { normalizePackageIdentity } from "../utils/package-source.js";
+import { throwIfSettingsErrors } from "../utils/settings-errors.js";
 
 export interface PackageScopeComparison {
   identity: string;
@@ -72,6 +73,7 @@ export interface MovePackageScopeResult {
   from: Scope;
   to: Scope;
   moved: boolean;
+  partial?: boolean;
   conflict?: string;
 }
 
@@ -93,6 +95,17 @@ export async function movePackageBetweenScopes(
   }
 
   const settings = SettingsManager.create(cwd, getAgentDir());
+  try {
+    throwIfSettingsErrors(settings, "Package scope move");
+  } catch (error) {
+    return {
+      source,
+      from,
+      to,
+      moved: false,
+      conflict: error instanceof Error ? error.message : String(error),
+    };
+  }
   const globalPackages = [...(settings.getGlobalSettings().packages ?? [])];
   const projectPackages = [...(settings.getProjectSettings().packages ?? [])];
   const sourcePackages = from === "global" ? globalPackages : projectPackages;
@@ -125,14 +138,37 @@ export async function movePackageBetweenScopes(
     destinationPackages.push(structuredClone(entry));
   }
 
-  if (to === "global") settings.setPackages(destinationPackages);
-  else settings.setProjectPackages(destinationPackages);
-  await settings.flush();
+  try {
+    if (to === "global") settings.setPackages(destinationPackages);
+    else settings.setProjectPackages(destinationPackages);
+    await settings.flush();
+    throwIfSettingsErrors(settings, "Package scope move");
+  } catch (error) {
+    return {
+      source,
+      from,
+      to,
+      moved: false,
+      conflict: error instanceof Error ? error.message : String(error),
+    };
+  }
 
   sourcePackages.splice(sourceIndex, 1);
-  if (from === "global") settings.setPackages(sourcePackages);
-  else settings.setProjectPackages(sourcePackages);
-  await settings.flush();
+  try {
+    if (from === "global") settings.setPackages(sourcePackages);
+    else settings.setProjectPackages(sourcePackages);
+    await settings.flush();
+    throwIfSettingsErrors(settings, "Package scope move");
+  } catch (error) {
+    return {
+      source: sourceOf(entry),
+      from,
+      to,
+      moved: false,
+      partial: true,
+      conflict: `The package was copied to ${to}, but could not be removed from ${from}: ${error instanceof Error ? error.message : String(error)}`,
+    };
+  }
 
   return { source: sourceOf(entry), from, to, moved: true };
 }
