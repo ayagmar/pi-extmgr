@@ -30,6 +30,7 @@ import {
   setExtensionState,
 } from "../extensions/discovery.js";
 import { undoExtensionTrash } from "../extensions/trash.js";
+import { getPackageCatalog } from "../packages/catalog.js";
 import { getInstalledPackages, getInstalledPackagesAllScopes } from "../packages/discovery.js";
 import {
   applyPackageExtensionStateChanges,
@@ -156,7 +157,7 @@ async function showInteractiveOnce(
   }
 
   const { localEntries, installedPackages, packageExtensions } = initialData;
-  const viewsPath = getSavedViewsPath();
+  const viewsPath = getSavedViewsPath(ctx.cwd);
   let savedViews = await readSavedViews(viewsPath);
 
   // Build unified items list.
@@ -231,12 +232,20 @@ async function showInteractiveOnce(
                 visibleItems: browser.getVisibleItems(),
                 filter: browser.getFilter(),
                 searchQuery: browser.getSearchQuery(),
+                selectedCount: browser.getBulkSelectedCount(),
               })
             );
             footerText.setText(
               theme.fg(
                 "dim",
-                buildFooterShortcuts(buildFooterState(staged, byId, browser.getSelectedItem()))
+                buildFooterShortcuts(
+                  buildFooterState(
+                    staged,
+                    byId,
+                    browser.getSelectedItem(),
+                    browser.getBulkSelectedCount()
+                  )
+                )
               )
             );
           };
@@ -455,6 +464,7 @@ function buildManagerSummary(
     visibleItems?: readonly UnifiedItem[];
     filter?: UnifiedFilter;
     searchQuery?: string;
+    selectedCount?: number;
   }
 ): string {
   const summaryItems = options?.visibleItems ?? items;
@@ -501,6 +511,10 @@ function buildManagerSummary(
     parts.push(theme.fg("warning", `${pendingCount} unsaved`));
   }
 
+  if ((options?.selectedCount ?? 0) > 0) {
+    parts.push(theme.fg("accent", `${options?.selectedCount} selected`));
+  }
+
   return parts.join(" • ");
 }
 
@@ -510,6 +524,7 @@ interface UnifiedManagerViewState {
   filter: UnifiedFilter;
   searchQuery: string;
   selectedItemId?: string;
+  selectedItemIds: string[];
 }
 
 const UNIFIED_FILTER_OPTIONS: Array<{ id: UnifiedFilter; key: string; label: string }> = [
@@ -532,6 +547,7 @@ function viewToManagerState(view: SavedView | undefined): UnifiedManagerViewStat
     filter: view.filter,
     searchQuery: view.searchQuery,
     ...(view.selectedItemId ? { selectedItemId: view.selectedItemId } : {}),
+    selectedItemIds: [...(view.selectedItemIds ?? [])],
   };
 }
 
@@ -545,6 +561,7 @@ function managerStateToView(
     filter: state.filter,
     searchQuery: state.searchQuery,
     ...(state.selectedItemId ? { selectedItemId: state.selectedItemId } : {}),
+    selectedItemIds: [...state.selectedItemIds],
     createdAt: now,
     updatedAt: now,
   };
@@ -829,6 +846,11 @@ class UnifiedManagerBrowser implements Focusable {
     initialState?: UnifiedManagerViewState
   ) {
     if (initialState) {
+      for (const id of initialState.selectedItemIds) {
+        if (this.items.some((item) => item.id === id && item.type === "package")) {
+          this.bulkSelectedIds.add(id);
+        }
+      }
       this.filter = initialState.filter;
       this.searchInput.setValue(initialState.searchQuery);
       this.refreshVisibleItems(initialState.selectedItemId);
@@ -863,12 +885,17 @@ class UnifiedManagerBrowser implements Focusable {
     return this.searchInput.getValue().trim();
   }
 
+  getBulkSelectedCount(): number {
+    return this.bulkSelectedIds.size;
+  }
+
   getViewState(): UnifiedManagerViewState {
     const selectedItemId = this.getSelectedItem()?.id;
     return {
       filter: this.filter,
       searchQuery: this.getSearchQuery(),
       ...(selectedItemId ? { selectedItemId } : {}),
+      selectedItemIds: [...this.bulkSelectedIds],
     };
   }
 
@@ -972,7 +999,7 @@ class UnifiedManagerBrowser implements Focusable {
       this.onAction({
         type: "bulk",
         itemIds: [...this.bulkSelectedIds],
-        action: "update",
+        action: "menu",
       });
       return true;
     }
@@ -1418,6 +1445,14 @@ const LOCAL_ACTION_OPTIONS = {
   back: "Back to manager",
 } as const;
 
+const BULK_ACTION_OPTIONS = {
+  update: "Update selected packages",
+  remove: "Remove selected packages",
+  enable: "Enable selected package extensions",
+  disable: "Disable selected package extensions",
+  cancel: "Cancel",
+} as const;
+
 const PACKAGE_ACTION_OPTIONS = {
   configure: "Configure extensions",
   enable: "Enable whole package",
@@ -1655,18 +1690,99 @@ async function handleUnifiedAction(
       );
     if (selectedPackages.length === 0) return "resume";
 
+    const action =
+      result.action === "menu"
+        ? parseChoiceByLabel(
+            BULK_ACTION_OPTIONS,
+            await ctx.ui.select(
+              `${selectedPackages.length} selected packages`,
+              Object.values(BULK_ACTION_OPTIONS)
+            )
+          )
+        : result.action;
+    if (!action || action === "cancel") return "resume";
+
     const confirmed = await ctx.ui.confirm(
-      "Update selected packages",
-      `Update ${selectedPackages.length} selected package(s)?`
+      "Bulk package operation",
+      `${BULK_ACTION_OPTIONS[action]} for ${selectedPackages.length} package(s)?`
     );
     if (!confirmed) return "resume";
 
-    for (const item of selectedPackages) {
-      const outcome = await updatePackageWithOutcome(item.source, ctx, pi);
-      if (outcome.reloaded) return true;
-    }
-    ctx.ui.notify(`Processed ${selectedPackages.length} selected package(s).`, "info");
-    return "resume";
+    const results = await runTaskWithLoader(
+      ctx,
+      {
+        title: "Bulk package operation",
+        message: `${BULK_ACTION_OPTIONS[action]}...`,
+        cancellable: false,
+        fallbackWithoutLoader: true,
+      },
+      async ({ setMessage }) => {
+        const catalog = getPackageCatalog(ctx.cwd);
+        const completed: string[] = [];
+        const failed: string[] = [];
+        const skipped: string[] = [];
+        const availableUpdates =
+          action === "update"
+            ? new Set(
+                (await catalog.checkForAvailableUpdates()).map(
+                  (update) => `${update.scope}\0${normalizePackageIdentity(update.source)}`
+                )
+              )
+            : undefined;
+        for (const item of selectedPackages) {
+          setMessage(`${BULK_ACTION_OPTIONS[action]}: ${item.displayName}...`);
+          try {
+            if (action === "update") {
+              if (
+                !availableUpdates?.has(`${item.scope}\0${normalizePackageIdentity(item.source)}`)
+              ) {
+                skipped.push(`${item.displayName}: already current or pinned`);
+                continue;
+              }
+              await catalog.update(item.source, (event) => {
+                if (event.message) setMessage(event.message);
+              });
+            } else if (action === "remove") {
+              await catalog.remove(item.source, item.scope, (event) => {
+                if (event.message) setMessage(event.message);
+              });
+            } else {
+              if (!item.extensionPaths?.length) {
+                throw new Error("no package extension entrypoints were discovered");
+              }
+              const target: State = action === "enable" ? "enabled" : "disabled";
+              const changed = await applyPackageExtensionStateChanges(
+                item.source,
+                item.scope,
+                item.extensionPaths.map((extensionPath) => ({ extensionPath, target })),
+                ctx.cwd
+              );
+              if (!changed.ok) throw new Error(changed.error);
+            }
+            completed.push(item.displayName);
+          } catch (error) {
+            failed.push(
+              `${item.displayName}: ${error instanceof Error ? error.message : String(error)}`
+            );
+          }
+        }
+        return { completed, failed, skipped };
+      }
+    );
+
+    if (!results) return "resume";
+    const summary = [
+      `${results.completed.length} succeeded`,
+      `${results.failed.length} failed`,
+      `${results.skipped.length} skipped`,
+      ...results.failed.map((failure) => `- ${failure}`),
+      ...results.skipped.map((skipped) => `- ${skipped}`),
+    ].join("\n");
+    ctx.ui.notify(summary, results.failed.length > 0 ? "warning" : "info");
+    if (results.completed.length === 0) return "resume";
+
+    const reloaded = await confirmReload(ctx, "Bulk package changes completed.");
+    return reloaded ? true : false;
   }
 
   if (result.type === "remote") {

@@ -100,7 +100,11 @@ export type UnifiedAction =
   | { type: "remote" }
   | { type: "help" }
   | { type: "menu" }
-  | { type: "bulk"; itemIds: string[]; action: "update" | "remove" }
+  | {
+      type: "bulk";
+      itemIds: string[];
+      action: "menu" | "update" | "remove" | "enable" | "disable";
+    }
   | {
       type: "views";
       action: "save" | "load" | "delete" | "favorite";

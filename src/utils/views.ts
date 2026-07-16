@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { homedir } from "node:os";
@@ -7,6 +8,7 @@ export interface SavedView {
   filter: string;
   searchQuery: string;
   selectedItemId?: string;
+  selectedItemIds?: string[];
   createdAt: number;
   updatedAt: number;
 }
@@ -44,6 +46,13 @@ export function normalizeViewsFile(input: unknown): SavedViewsFile {
       searchQuery: value.searchQuery,
       ...(typeof value.selectedItemId === "string" && value.selectedItemId.trim()
         ? { selectedItemId: value.selectedItemId.trim() }
+        : {}),
+      ...(Array.isArray(value.selectedItemIds)
+        ? {
+            selectedItemIds: value.selectedItemIds.filter(
+              (id): id is string => typeof id === "string" && Boolean(id.trim())
+            ),
+          }
         : {}),
       createdAt:
         typeof value.createdAt === "number" && Number.isFinite(value.createdAt)
@@ -104,9 +113,10 @@ export async function writeSavedViews(path: string, data: SavedViewsFile): Promi
   await write;
 }
 
-export function getSavedViewsPath(): string {
+export function getSavedViewsPath(cwd?: string): string {
   const directory = process.env.PI_EXTMGR_CACHE_DIR
     ? process.env.PI_EXTMGR_CACHE_DIR
     : join(homedir(), ".pi", "agent", ".extmgr-cache");
-  return join(directory, "views.json");
+  const suffix = cwd ? `-${createHash("sha256").update(cwd).digest("hex").slice(0, 12)}` : "";
+  return join(directory, `views${suffix}.json`);
 }

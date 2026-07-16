@@ -539,6 +539,62 @@ void test("/extensions discards staged changes before resuming from help", async
   }
 });
 
+void test("/extensions bulk updates use one flow and summarize partial failures", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "pi-extmgr-unified-bulk-"));
+  const updated: string[] = [];
+  const restoreCatalog = mockPackageCatalog({
+    packages: [
+      { source: "npm:alpha", name: "alpha", scope: "global" },
+      { source: "npm:beta", name: "beta", scope: "global" },
+    ],
+    updates: [
+      { source: "npm:alpha", displayName: "alpha", type: "npm", scope: "global" },
+      { source: "npm:beta", displayName: "beta", type: "npm", scope: "global" },
+    ],
+    updateImpl: (source) => {
+      if (source === "npm:beta") throw new Error("registry unavailable");
+      if (source) updated.push(source);
+    },
+  });
+  try {
+    const { pi, ctx, notifications, confirmPrompts, reloadCount } = createMockHarness({
+      cwd,
+      hasUI: true,
+      selectResult: "Update selected packages",
+      confirmImpl: (title) => title === "Bulk package operation",
+    });
+    let managerCalls = 0;
+    (ctx.ui as { custom: (factory: unknown) => Promise<unknown> }).custom = async (factory) =>
+      captureCustomComponent(factory, ctx.ui.theme, (component, lines, completion) => {
+        if (!lines.some((line) => line.includes("i install"))) return completion;
+        managerCalls += 1;
+        if (managerCalls === 1) {
+          component.handleInput?.("3");
+          component.handleInput?.(" ");
+          component.handleInput?.("\u001b[B");
+          component.handleInput?.(" ");
+          component.handleInput?.("B");
+          return completion;
+        }
+        return { type: "cancel" };
+      });
+
+    await showInteractive(ctx, pi);
+
+    assert.deepEqual(updated, ["npm:alpha"]);
+    assert.equal(reloadCount(), 0);
+    assert.equal(confirmPrompts.filter((title) => title === "Reload Required").length, 1);
+    assert.ok(
+      notifications.some(
+        (entry) => entry.message.includes("1 succeeded") && entry.message.includes("1 failed")
+      )
+    );
+  } finally {
+    restoreCatalog();
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
+
 void test("/extensions keeps staged changes when staying in the manager", async () => {
   const cwd = await mkdtemp(join(tmpdir(), "pi-extmgr-unified-stay-"));
   const projectExtensionsRoot = join(cwd, ".pi", "extensions");
