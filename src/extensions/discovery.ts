@@ -6,7 +6,7 @@
  */
 
 import { type Dirent } from "node:fs";
-import { readdir, rename, rm } from "node:fs/promises";
+import { readdir, rename } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, dirname, join, relative } from "node:path";
 import { DISABLED_SUFFIX } from "../constants.js";
@@ -17,6 +17,7 @@ import {
   normalizeRelativePath,
   resolveRelativePathSelection,
 } from "../utils/relative-path-selection.js";
+import { moveToExtensionTrash, type TrashRecord } from "./trash.js";
 
 interface RootConfig {
   root: string;
@@ -345,7 +346,8 @@ export async function removeLocalExtension(
   entry: Pick<ExtensionEntry, "activePath" | "disabledPath">,
   cwd: string
 ): Promise<
-  { ok: true; removedPath: string; removedDirectory: boolean } | { ok: false; error: string }
+  | { ok: true; removedPath: string; removedDirectory: boolean; trashRecord: TrashRecord }
+  | { ok: false; error: string }
 > {
   try {
     const globalRoot = join(homedir(), ".pi", "agent", "extensions");
@@ -364,13 +366,14 @@ export async function removeLocalExtension(
     const isIndexFile = /^index\.(ts|js)$/i.test(normalizedBase);
     const isInsideExtensionDir = parentDir !== globalRoot && parentDir !== projectRoot;
 
+    const trashRoot = join(homedir(), ".pi", "agent", ".extmgr-trash");
     if (isIndexFile && isInsideExtensionDir) {
-      await rm(parentDir, { recursive: true, force: true });
-      return { ok: true, removedPath: parentDir, removedDirectory: true };
+      const trashRecord = await moveToExtensionTrash(parentDir, trashRoot);
+      return { ok: true, removedPath: parentDir, removedDirectory: true, trashRecord };
     }
 
-    await rm(existingPath, { force: true });
-    return { ok: true, removedPath: existingPath, removedDirectory: false };
+    const trashRecord = await moveToExtensionTrash(existingPath, trashRoot);
+    return { ok: true, removedPath: existingPath, removedDirectory: false, trashRecord };
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : String(error) };
   }

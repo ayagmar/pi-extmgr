@@ -29,6 +29,7 @@ import {
   removeLocalExtension,
   setExtensionState,
 } from "../extensions/discovery.js";
+import { undoExtensionTrash } from "../extensions/trash.js";
 import { getInstalledPackages } from "../packages/discovery.js";
 import { discoverPackageExtensions } from "../packages/extensions.js";
 import {
@@ -1582,9 +1583,22 @@ async function handleUnifiedAction(
 
       logExtensionDelete(pi, item.id, true);
       ctx.ui.notify(
-        `Removed ${item.displayName}${removal.removedDirectory ? " (directory)" : ""}.`,
+        `Moved ${item.displayName}${removal.removedDirectory ? " (directory)" : ""} to trash.`,
         "info"
       );
+      const undo = await ctx.ui.confirm("Undo Removal", "Restore the extension from trash now?");
+      if (undo) {
+        try {
+          await undoExtensionTrash(removal.trashRecord);
+          ctx.ui.notify(`Restored ${item.displayName}.`, "info");
+          return "resume";
+        } catch (error) {
+          ctx.ui.notify(
+            `Undo failed: ${error instanceof Error ? error.message : String(error)}`,
+            "error"
+          );
+        }
+      }
 
       return await confirmReload(ctx, "Extension removed.");
     }
