@@ -50,7 +50,12 @@ import {
 import { getKnownUpdates, promptAutoUpdateWizard } from "../utils/auto-update.js";
 import { parseChoiceByLabel } from "../utils/command.js";
 import { formatBytes, formatEntry as formatExtEntry } from "../utils/format.js";
-import { logExtensionDelete, logExtensionToggle } from "../utils/history.js";
+import {
+  formatChangeEntry,
+  logExtensionDelete,
+  logExtensionToggle,
+  queryPackageTimeline,
+} from "../utils/history.js";
 import { hasCustomUI, runCustomUI } from "../utils/mode.js";
 import { notify } from "../utils/notify.js";
 import { getPackageSourceKind, normalizePackageIdentity } from "../utils/package-source.js";
@@ -1371,8 +1376,13 @@ function showUnifiedItemDetails(
   const sizeStr = item.size !== undefined ? `\nSize: ${formatBytes(item.size)}` : "";
   const extensionState = formatPackageExtensionState(item.extensionSummary);
   const extensionStr = extensionState ? `\nExtensions: ${extensionState}` : "";
+  const timeline = queryPackageTimeline(ctx, item.source, { limit: 5 });
+  const timelineText =
+    timeline.length > 0
+      ? `\nRecent activity:\n${timeline.map((entry) => `- ${formatChangeEntry(entry)}`).join("\n")}`
+      : "\nRecent activity: none in this session";
   ctx.ui.notify(
-    `Name: ${item.displayName}\nVersion: ${item.version || "unknown"}\nSource: ${item.source}\nScope: ${item.scope}${extensionStr}${sizeStr}${item.description ? `\nDescription: ${item.description}` : ""}`,
+    `Name: ${item.displayName}\nVersion: ${item.version || "unknown"}\nSource: ${item.source}\nScope: ${item.scope}${extensionStr}${sizeStr}${item.description ? `\nDescription: ${item.description}` : ""}${timelineText}`,
     "info"
   );
 }
