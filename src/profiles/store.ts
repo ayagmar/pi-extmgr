@@ -16,7 +16,9 @@ function emptyStore(): ProfileStoreFile {
 
 export function normalizeProfileStore(input: unknown): ProfileStoreFile {
   if (!input || typeof input !== "object" || Array.isArray(input)) return emptyStore();
-  const profilesValue = (input as Record<string, unknown>).profiles;
+  const value = input as Record<string, unknown>;
+  if (value.version !== 1) return emptyStore();
+  const profilesValue = value.profiles;
   if (!profilesValue || typeof profilesValue !== "object" || Array.isArray(profilesValue)) {
     return emptyStore();
   }
@@ -33,9 +35,26 @@ export function normalizeProfileStore(input: unknown): ProfileStoreFile {
 
 export async function readProfileStore(path: string): Promise<ProfileStoreFile> {
   try {
-    return normalizeProfileStore(JSON.parse(await readFile(path, "utf8")));
-  } catch {
-    return emptyStore();
+    const parsed = JSON.parse(await readFile(path, "utf8")) as unknown;
+    if (
+      !parsed ||
+      typeof parsed !== "object" ||
+      Array.isArray(parsed) ||
+      (parsed as Record<string, unknown>).version !== 1
+    ) {
+      throw new Error(`Unsupported or malformed profile store: ${path}`);
+    }
+    return normalizeProfileStore(parsed);
+  } catch (error) {
+    if (error instanceof Error && "code" in error && error.code === "ENOENT") {
+      return emptyStore();
+    }
+    if (error instanceof Error && error.message.startsWith("Unsupported or malformed")) {
+      throw error;
+    }
+    throw new Error(
+      `Unable to read profile store ${path}: ${error instanceof Error ? error.message : String(error)}`
+    );
   }
 }
 

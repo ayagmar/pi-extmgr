@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -61,6 +61,28 @@ void test("named profiles persist atomically and can be deleted", async () => {
     assert.equal((await readProfileStore(path)).profiles.team?.name, "team");
     assert.equal(await deleteNamedProfile(path, "team"), true);
     assert.equal(Object.keys((await readProfileStore(path)).profiles).length, 0);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+void test("profile writes refuse malformed or unknown-version stores", async () => {
+  const root = await mkdtemp(join(tmpdir(), "pi-extmgr-profile-store-invalid-"));
+  const path = join(root, "profiles.json");
+  try {
+    await writeFile(path, "{ invalid", "utf8");
+    await assert.rejects(
+      () => saveNamedProfile(path, normalizeProfile({ name: "team", packages: [] })),
+      /Unable to read profile store/
+    );
+    assert.equal(await readFile(path, "utf8"), "{ invalid");
+
+    await writeFile(path, JSON.stringify({ version: 99, profiles: {} }), "utf8");
+    await assert.rejects(
+      () => deleteNamedProfile(path, "team"),
+      /Unsupported or malformed profile store/
+    );
+    assert.deepEqual(JSON.parse(await readFile(path, "utf8")), { version: 99, profiles: {} });
   } finally {
     await rm(root, { recursive: true, force: true });
   }
