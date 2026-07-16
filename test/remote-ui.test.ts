@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { visibleWidth } from "@earendil-works/pi-tui";
 import { clearMetadataCacheCommand } from "../src/commands/cache.js";
 import { clearSearchCache, setSearchCache } from "../src/packages/discovery.js";
-import { browseRemotePackages } from "../src/ui/remote.js";
+import { browseRemotePackages, clearRemotePackageInfoCache } from "../src/ui/remote.js";
 import { captureCustomComponent } from "./helpers/custom-component.js";
 import { createMockHarness } from "./helpers/mocks.js";
 import { mockPackageCatalog } from "./helpers/package-catalog.js";
@@ -39,6 +40,33 @@ void test("browseRemotePackages honors an empty in-memory cache", async () => {
     assert.ok(
       notifications.some((entry) => entry.message.includes("No packages found for: no-results"))
     );
+  } finally {
+    clearSearchCache();
+  }
+});
+
+void test("browseRemotePackages keeps every rendered line within terminal width", async () => {
+  setSearchPage("narrow", [
+    {
+      name: "very-long-community-package-name",
+      version: "123.456.789",
+      description: "A very long package description that must wrap without overflowing.",
+      author: "a-very-long-maintainer-name",
+    },
+  ]);
+  const { pi, ctx } = createMockHarness({ hasUI: true });
+  (ctx.ui as { custom: (factory: unknown) => Promise<unknown> }).custom = async (factory) =>
+    captureCustomComponent(
+      factory,
+      ctx.ui.theme,
+      (_component, lines) => {
+        assert.ok(lines.every((line) => visibleWidth(line) <= 24));
+        return { type: "cancel" };
+      },
+      { width: 24, height: 20 }
+    );
+  try {
+    await browseRemotePackages(ctx, "narrow", pi);
   } finally {
     clearSearchCache();
   }
@@ -591,6 +619,7 @@ void test("browseRemotePackages returns to results after installing from package
 });
 
 void test("browseRemotePackages returns to package details after a cancelled load", async () => {
+  clearRemotePackageInfoCache();
   setSearchPage("demo", [
     {
       name: "demo-pkg",
@@ -628,6 +657,7 @@ void test("browseRemotePackages returns to package details after a cancelled loa
       )
     );
   } finally {
+    clearRemotePackageInfoCache();
     clearSearchCache();
   }
 });

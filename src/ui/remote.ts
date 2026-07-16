@@ -45,7 +45,7 @@ import { fetchWithTimeout } from "../utils/network.js";
 import { notify } from "../utils/notify.js";
 import { execNpm } from "../utils/npm-exec.js";
 import { getPackageSourceKind } from "../utils/package-source.js";
-import { runTaskWithLoader } from "./async-task.js";
+import { RequestGeneration, runTaskWithLoader } from "./async-task.js";
 
 interface PackageInfoCacheEntry {
   timestamp: number;
@@ -121,6 +121,7 @@ const packageInfoCache = new PackageInfoCache(
   CACHE_LIMITS.packageInfoMaxSize,
   CACHE_LIMITS.packageInfoTTL
 );
+const packageInfoRequests = new RequestGeneration();
 
 export function clearRemotePackageInfoCache(): void {
   packageInfoCache.clear();
@@ -315,15 +316,16 @@ async function buildPackageInfoText(
     return cached.text;
   }
 
+  const request = packageInfoRequests.begin(signal);
   const [infoRes, weeklyDownloads] = await Promise.all([
     execNpm(pi, ["view", packageName, "--json"], ctx, {
       timeout: TIMEOUTS.npmView,
-      ...(signal ? { signal } : {}),
+      signal: request.signal,
     }),
-    fetchWeeklyDownloads(packageName, signal),
+    fetchWeeklyDownloads(packageName, request.signal),
   ]);
 
-  throwIfAborted(signal);
+  throwIfAborted(request.signal);
 
   if (infoRes.code !== 0) {
     throw new Error(infoRes.stderr || infoRes.stdout || `npm view failed (exit ${infoRes.code})`);
@@ -375,8 +377,10 @@ async function buildPackageInfoText(
 
   const text = lines.join("\n");
 
-  throwIfAborted(signal);
-  packageInfoCache.set(packageName, { text });
+  throwIfAborted(request.signal);
+  if (!request.commit(() => packageInfoCache.set(packageName, { text }))) {
+    throw createAbortError();
+  }
 
   return text;
 }
@@ -613,42 +617,51 @@ class RemotePackageBrowser implements Focusable {
   }
 
   render(width: number): string[] {
+    const safeWidth = Math.max(1, width);
     const lines: string[] = [];
 
     if (this.searchActive) {
-      lines.push(...this.searchInput.render(width));
+      lines.push(...this.searchInput.render(safeWidth));
       lines.push("");
     } else if (this.queryLabel) {
       lines.push(
-        truncateToWidth(this.theme.fg("accent", `  Search: ${this.queryLabel}`), width, "")
+        truncateToWidth(this.theme.fg("accent", `  Search: ${this.queryLabel}`), safeWidth, "")
       );
       lines.push("");
     } else {
       lines.push(
-        this.theme.fg(
-          "muted",
-          this.browseSource === "community"
-            ? "  Browse community packages · / search to search community packages"
-            : "  Browse remote search results · / search to search npm packages"
+        truncateToWidth(
+          this.theme.fg(
+            "muted",
+            this.browseSource === "community"
+              ? "  Browse community packages · / search to search community packages"
+              : "  Browse remote search results · / search to search npm packages"
+          ),
+          safeWidth,
+          ""
         )
       );
       lines.push("");
     }
 
-    lines.push(truncateToWidth(this.buildSummaryLine(), width, ""));
+    lines.push(truncateToWidth(this.buildSummaryLine(), safeWidth, ""));
     lines.push("");
 
     const { startIndex, endIndex } = this.getVisibleRange();
     for (const pkg of this.packages.slice(startIndex, endIndex)) {
-      lines.push(this.renderPackageLine(pkg, width));
+      lines.push(this.renderPackageLine(pkg, safeWidth));
     }
 
     if (startIndex > 0 || endIndex < this.packages.length) {
       lines.push("");
       lines.push(
-        this.theme.fg(
-          "dim",
-          `  Showing ${startIndex + 1}-${endIndex} of ${this.packages.length} on this page`
+        truncateToWidth(
+          this.theme.fg(
+            "dim",
+            `  Showing ${startIndex + 1}-${endIndex} of ${this.packages.length} on this page`
+          ),
+          safeWidth,
+          ""
         )
       );
     }
@@ -661,13 +674,13 @@ class RemotePackageBrowser implements Focusable {
         this.offset + this.selectedIndex + 1,
         this.totalResults
       );
-      for (const line of wrapTextWithAnsi(detailText, width - 4)) {
-        lines.push(this.theme.fg("dim", `  ${line}`));
+      for (const line of wrapTextWithAnsi(detailText, Math.max(1, safeWidth - 4))) {
+        lines.push(truncateToWidth(this.theme.fg("dim", `  ${line}`), safeWidth, ""));
       }
     }
 
     lines.push("");
-    lines.push(truncateToWidth(this.buildFooterLine(), width, ""));
+    lines.push(truncateToWidth(this.buildFooterLine(), safeWidth, ""));
     return lines;
   }
 
@@ -1032,14 +1045,16 @@ async function confirmMarketplaceInstall(
   );
   if (!scopeChoice || scopeChoice === "cancel") return undefined;
 
-  const info = await runTaskWithLoader(
-    ctx,
-    {
-      title: "Pre-install review",
-      message: `Inspecting ${packageName} metadata...`,
-    },
-    ({ signal }) => buildPackageInfoText(packageName, ctx, pi, signal)
-  );
+  const info =
+    packageInfoCache.get(packageName)?.text ??
+    (await runTaskWithLoader(
+      ctx,
+      {
+        title: "Pre-install review",
+        message: `Inspecting ${packageName} metadata...`,
+      },
+      ({ signal }) => buildPackageInfoText(packageName, ctx, pi, signal)
+    ));
   if (!info) {
     notify(ctx, "Pre-install review cancelled; nothing was installed.", "info");
     return undefined;
@@ -1116,14 +1131,16 @@ async function showPackageDetails(
     }
     case "viewInfo":
       try {
-        const text = await runTaskWithLoader(
-          ctx,
-          {
-            title: packageName,
-            message: `Fetching package details for ${packageName}...`,
-          },
-          ({ signal }) => buildPackageInfoText(packageName, ctx, pi, signal)
-        );
+        const text =
+          packageInfoCache.get(packageName)?.text ??
+          (await runTaskWithLoader(
+            ctx,
+            {
+              title: packageName,
+              message: `Fetching package details for ${packageName}...`,
+            },
+            ({ signal }) => buildPackageInfoText(packageName, ctx, pi, signal)
+          ));
 
         if (!text) {
           notify(ctx, `Loading ${packageName} details was cancelled.`, "info");
