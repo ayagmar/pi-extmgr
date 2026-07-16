@@ -8,6 +8,7 @@ import {
   markReloadRequired,
   readReloadState,
 } from "../src/utils/reload-state.js";
+import { confirmReload } from "../src/utils/ui-helpers.js";
 
 void test("reload-required state is versioned, atomic, and coalesces reasons", async () => {
   const dir = await mkdtemp(join(tmpdir(), "pi-extmgr-reload-"));
@@ -27,6 +28,63 @@ void test("reload-required state is versioned, atomic, and coalesces reasons", a
     assert.equal((await readFile(path, "utf8")).endsWith("\n"), true);
 
     await clearReloadRequired(path);
+    assert.deepEqual(await readReloadState(path), {
+      version: 1,
+      required: false,
+      changes: 0,
+      reasons: [],
+    });
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+void test("declining an interactive reload keeps the successful mutation pending", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "pi-extmgr-reload-declined-"));
+  const path = join(dir, "reload.json");
+  try {
+    let reloads = 0;
+    const reloaded = await confirmReload(
+      {
+        hasUI: true,
+        ui: { confirm: async () => false },
+        reload: async () => {
+          reloads += 1;
+        },
+      } as never,
+      "Package installed.",
+      path
+    );
+
+    assert.equal(reloaded, false);
+    assert.equal(reloads, 0);
+    assert.deepEqual(await readReloadState(path), {
+      version: 1,
+      required: true,
+      changedAt: (await readReloadState(path)).changedAt,
+      changes: 1,
+      reasons: ["Package installed."],
+    });
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+void test("a successful interactive reload clears the pending marker", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "pi-extmgr-reload-success-"));
+  const path = join(dir, "reload.json");
+  try {
+    const reloaded = await confirmReload(
+      {
+        hasUI: true,
+        ui: { confirm: async () => true },
+        reload: async () => undefined,
+      } as never,
+      "Extension changed.",
+      path
+    );
+
+    assert.equal(reloaded, true);
     assert.deepEqual(await readReloadState(path), {
       version: 1,
       required: false,
