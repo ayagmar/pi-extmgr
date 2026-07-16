@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { applyProfile, planProfileApplication } from "../src/profiles/apply.js";
+import { compareProfiles, validateProfilePolicy } from "../src/profiles/compare.js";
 import { normalizeProfile } from "../src/profiles/schema.js";
 
 void test("profile application produces a dry-run plan without mutating state", async () => {
@@ -32,6 +33,16 @@ void test("profile plans identify exact package state changes", () => {
     packages: [{ source: "npm:demo", scope: "global", version: "2.0.0" }],
   });
   assert.equal(planProfileApplication(current, desired).update.length, 1);
+});
+
+void test("profile comparison and policy validation expose actionable differences", () => {
+  const left = normalizeProfile({ packages: [{ source: "npm:demo", scope: "global" }] });
+  const right = normalizeProfile({ packages: [{ source: "npm:demo", scope: "project" }] });
+  assert.equal(compareProfiles(left, right).add.length, 1);
+  assert.equal(
+    validateProfilePolicy(right, { allowedScopes: ["global"], requireChecksums: true }).length,
+    2
+  );
 });
 
 void test("profile schema preserves exact package versions, refs, filters, scopes, and checksums", () => {
