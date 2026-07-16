@@ -16,6 +16,7 @@ import { handleInstallSubcommand, INSTALL_USAGE } from "./install.js";
 import { handleProfileSubcommand } from "./profile.js";
 import { type CommandDefinition, type CommandId } from "./types.js";
 import { handleUpdateSubcommand } from "./update.js";
+import { handleTrashSubcommand } from "./trash.js";
 
 const REMOVE_USAGE = "Usage: /extensions remove <npm:package|git:url|path>";
 
@@ -156,6 +157,12 @@ const COMMAND_DEFINITIONS: Record<CommandId, CommandDefinition> = {
     runInteractive: (_tokens, ctx, pi) => clearMetadataCacheCommand(ctx, pi),
     runNonInteractive: (_tokens, ctx, pi) => clearMetadataCacheCommand(ctx, pi),
   },
+  trash: {
+    id: "trash",
+    description: "List, restore, or purge local extension trash",
+    runInteractive: (tokens, ctx, pi) => handleTrashSubcommand(tokens, ctx, pi),
+    runNonInteractive: (tokens, ctx, pi) => handleTrashSubcommand(tokens, ctx, pi),
+  },
   "auto-update": {
     id: "auto-update",
     description: "Configure auto-update schedule",
@@ -264,6 +271,7 @@ export function getExtensionsAutocompleteItems(prefix: string): AutocompleteItem
     const argumentOptions: Record<string, string[]> = {
       install: ["--global", "--project"],
       "auto-update": ["daily", "weekly", "monthly", "never"],
+      trash: ["list", "restore", "purge", "all"],
     };
     return completionItems(argumentOptions[command] ?? [], activePrefix);
   }

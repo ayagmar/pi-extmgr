@@ -65,6 +65,7 @@ export function showHelp(ctx: ExtensionCommandContext): void {
     "  /extensions profile list List saved profiles",
     "  /extensions profile save <name>  Save current package state",
     "  /extensions profile apply <name|path>  Safely apply a profile",
+    "  /extensions trash list/restore/purge  Manage local trash records",
     "",
     "Persistence:",
     "  ~/.pi/agent/.extmgr-cache/ stores reload, view, profile, and auto-update state",

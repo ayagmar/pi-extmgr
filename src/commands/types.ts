@@ -11,6 +11,7 @@ export type CommandId =
   | "update"
   | "history"
   | "clear-cache"
+  | "trash"
   | "auto-update"
   | "doctor"
   | "profile";
