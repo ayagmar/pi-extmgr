@@ -59,6 +59,7 @@ export function buildFooterShortcuts(state: FooterState): string {
 
   if (state.selectedType === "package") {
     if (state.expandable) parts.push("E expand");
+    parts.push("Space select · B update selected");
     parts.push("Enter/A actions");
     parts.push("V details");
     parts.push("c configure");
