@@ -1,7 +1,9 @@
 import { type ExtensionAPI, type ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import { type AutocompleteItem } from "@earendil-works/pi-tui";
+import { inspectInstalledPackageCompatibility } from "../doctor/compatibility.js";
 import { findRuntimeConflicts } from "../doctor/conflicts.js";
 import { getRuntimeOwners } from "../doctor/runtime.js";
+import { getInstalledPackagesAllScopes } from "../packages/discovery.js";
 import { promptRemove, removePackage, showInstalledPackagesList } from "../packages/management.js";
 import { showRemote } from "../ui/remote.js";
 import { showInstalledPackagesLegacy, showInteractive, showListOnly } from "../ui/unified.js";
@@ -19,7 +21,20 @@ const REMOVE_USAGE = "Usage: /extensions remove <npm:package|git:url|path>";
 async function showDoctor(ctx: ExtensionCommandContext, pi: ExtensionAPI): Promise<void> {
   const owners = getRuntimeOwners(pi);
   const conflicts = findRuntimeConflicts(owners);
+  const packages = await getInstalledPackagesAllScopes(ctx);
+  const compatibility = await inspectInstalledPackageCompatibility(packages);
   const lines = [`Runtime ownership: ${owners.length} command/tool entries`];
+  lines.push("Installed package compatibility:");
+  if (compatibility.length === 0) {
+    lines.push("- none installed");
+  } else {
+    for (const diagnostic of compatibility) {
+      lines.push(
+        `- ${diagnostic.source} (${diagnostic.scope}): Node ${diagnostic.node}, Pi ${diagnostic.pi}`
+      );
+      for (const reason of diagnostic.reasons) lines.push(`  ${reason}`);
+    }
+  }
   if (conflicts.length === 0) {
     lines.push("No command or tool conflicts detected.");
   } else {

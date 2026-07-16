@@ -1,3 +1,7 @@
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
+import { type InstalledPackage } from "../types/index.js";
+
 export interface CompatibilityInput {
   packageName: string;
   engines?: { node?: string };
@@ -39,4 +43,54 @@ export function validateCompatibility(input: CompatibilityInput): CompatibilityD
   if (node === "incompatible") reasons.push(`requires Node ${input.engines?.node}`);
   if (pi === "incompatible") reasons.push(`requires Pi ${input.requiredPi}`);
   return { packageName: input.packageName, node, pi, reasons };
+}
+
+export interface InstalledCompatibilityDiagnostic extends CompatibilityDiagnostic {
+  scope: "global" | "project";
+  source: string;
+}
+
+export async function inspectInstalledPackageCompatibility(
+  packages: InstalledPackage[],
+  options?: { nodeVersion?: string; piVersion?: string }
+): Promise<InstalledCompatibilityDiagnostic[]> {
+  const diagnostics = await Promise.all(
+    packages.map(async (pkg) => {
+      let engines: { node?: string } | undefined;
+      let requiredPi: string | undefined;
+      if (pkg.resolvedPath) {
+        try {
+          const manifestPath = /(?:^|[\\/])package\.json$/i.test(pkg.resolvedPath)
+            ? pkg.resolvedPath
+            : join(pkg.resolvedPath, "package.json");
+          const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as Record<
+            string,
+            unknown
+          >;
+          const manifestEngines = manifest.engines;
+          if (
+            manifestEngines &&
+            typeof manifestEngines === "object" &&
+            !Array.isArray(manifestEngines)
+          ) {
+            const node = (manifestEngines as Record<string, unknown>).node;
+            const pi = (manifestEngines as Record<string, unknown>).pi;
+            engines = typeof node === "string" ? { node } : undefined;
+            requiredPi = typeof pi === "string" ? pi : undefined;
+          }
+        } catch {
+          // Missing or malformed package metadata remains unknown.
+        }
+      }
+      const diagnostic = validateCompatibility({
+        packageName: pkg.name,
+        ...(engines ? { engines } : {}),
+        ...(requiredPi ? { requiredPi } : {}),
+        ...(options?.piVersion ? { piVersion: options.piVersion } : {}),
+        nodeVersion: options?.nodeVersion ?? process.version,
+      });
+      return { ...diagnostic, scope: pkg.scope, source: pkg.source };
+    })
+  );
+  return diagnostics.sort((left, right) => left.source.localeCompare(right.source));
 }
