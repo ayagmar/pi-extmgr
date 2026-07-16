@@ -275,6 +275,13 @@ export function buildUnifiedItems(
   const items: UnifiedItem[] = [];
   const localPaths = new Set<string>();
   const packageExtensionSummaries = buildPackageExtensionSummaries(packageExtensions);
+  const packageExtensionPaths = new Map<string, string[]>();
+  for (const entry of packageExtensions) {
+    const key = getPackageExtensionSummaryKey(entry.packageScope, entry.packageSource);
+    const paths = packageExtensionPaths.get(key) ?? [];
+    if (!paths.includes(entry.extensionPath)) paths.push(entry.extensionPath);
+    packageExtensionPaths.set(key, paths);
+  }
 
   // Add local extensions
   for (const entry of localEntries) {
@@ -310,9 +317,9 @@ export function buildUnifiedItems(
     }
     if (isDuplicate) continue;
 
-    const extensionSummary = packageExtensionSummaries.get(
-      getPackageExtensionSummaryKey(pkg.scope, pkg.source)
-    );
+    const packageKey = getPackageExtensionSummaryKey(pkg.scope, pkg.source);
+    const extensionSummary = packageExtensionSummaries.get(packageKey);
+    const extensionPaths = packageExtensionPaths.get(packageKey);
 
     items.push({
       type: "package",
@@ -326,6 +333,7 @@ export function buildUnifiedItems(
       size: pkg.size,
       updateAvailable: knownUpdates.has(normalizePackageIdentity(pkg.source)),
       ...(extensionSummary ? { extensionSummary } : {}),
+      ...(extensionPaths?.length ? { extensionPaths: [...extensionPaths] } : {}),
     });
   }
 
@@ -721,6 +729,7 @@ class UnifiedManagerBrowser implements Focusable {
   private selectedIndex = 0;
   private filter: UnifiedFilter = "all";
   private searchActive = false;
+  private readonly expandedPackageIds = new Set<string>();
   private _focused = false;
 
   constructor(
@@ -923,6 +932,13 @@ class UnifiedManagerBrowser implements Focusable {
     }
 
     if (selectedId && selectedItem?.type === "package") {
+      if (data === "e" || data === "E") {
+        if (selectedItem.extensionPaths?.length) {
+          if (this.expandedPackageIds.has(selectedId)) this.expandedPackageIds.delete(selectedId);
+          else this.expandedPackageIds.add(selectedId);
+        }
+        return true;
+      }
       if (data === "u") {
         this.onAction({ type: "action", itemId: selectedId, action: "update" });
         return true;
@@ -1027,6 +1043,13 @@ class UnifiedManagerBrowser implements Focusable {
       );
       for (const item of visiblePackageItems) {
         lines.push(this.renderItemLine(item, safeWidth));
+        if (this.expandedPackageIds.has(item.id) && item.extensionPaths?.length) {
+          for (const extensionPath of item.extensionPaths) {
+            lines.push(
+              truncateToWidth(this.theme.fg("dim", `    ↳ ${extensionPath}`), safeWidth, "")
+            );
+          }
+        }
       }
     }
 

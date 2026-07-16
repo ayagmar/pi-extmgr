@@ -77,6 +77,7 @@ export interface PackageUnifiedItem {
   size?: number | undefined; // Package size in bytes
   updateAvailable?: boolean | undefined;
   extensionSummary?: PackageExtensionStateSummary | undefined;
+  extensionPaths?: string[] | undefined;
 }
 
 export type UnifiedItem = LocalUnifiedItem | PackageUnifiedItem;
