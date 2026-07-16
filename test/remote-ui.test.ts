@@ -498,33 +498,52 @@ void test("browseRemotePackages returns to results after installing from package
 
   globalThis.fetch = ((input: string | URL | Request) => {
     const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
-    assert.ok(url.includes("registry.npmjs.org/-/v1/search"));
-
-    return Promise.resolve(
-      new Response(
-        JSON.stringify({
-          total: 1,
-          objects: [
-            {
-              package: {
-                name: "demo-pkg",
-                version: "1.0.0",
-                description: "Demo package",
+    if (url.includes("registry.npmjs.org/-/v1/search")) {
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({
+            total: 1,
+            objects: [
+              {
+                package: {
+                  name: "demo-pkg",
+                  version: "1.0.0",
+                  description: "Demo package",
+                },
               },
-            },
-          ],
-        }),
-        {
-          status: 200,
-          headers: { "content-type": "application/json" },
-        }
-      )
+            ],
+          }),
+          {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          }
+        )
+      );
+    }
+    return Promise.resolve(
+      new Response(JSON.stringify({ downloads: 42 }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      })
     );
   }) as typeof fetch;
 
   const { pi, ctx, confirmPrompts, selectPrompts } = createMockHarness({
     hasUI: true,
-    confirmImpl: (title) => title === "Install Package",
+    confirmImpl: (title) => title === "Review before install",
+    execImpl: (command, args) =>
+      command === "npm" && args[0] === "view"
+        ? {
+            code: 0,
+            stdout: JSON.stringify({
+              version: "1.0.0",
+              description: "Demo package",
+              dependencies: { "demo-dependency": "^1.0.0" },
+            }),
+            stderr: "",
+            killed: false,
+          }
+        : { code: 0, stdout: "ok", stderr: "", killed: false },
   });
   const selectResults = ["Install via npm (managed)", "Global (~/.pi/agent/settings.json)"];
   let browserCalls = 0;

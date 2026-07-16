@@ -35,6 +35,7 @@ export type InstallScope = "global" | "project";
 
 export interface InstallOptions {
   scope?: InstallScope;
+  skipConfirmation?: boolean;
 }
 
 export interface InstallOutcome {
@@ -183,11 +184,9 @@ async function installPackageInternal(
   const normalized = normalizePackageSource(source);
 
   // Confirm installation
-  const confirmed = await confirmAction(
-    ctx,
-    "Install Package",
-    `Install ${normalized} (${scope})?`
-  );
+  const confirmed = options?.skipConfirmation
+    ? true
+    : await confirmAction(ctx, "Install Package", `Install ${normalized} (${scope})?`);
   if (!confirmed) {
     notify(ctx, "Installation cancelled.", "info");
     return { installed: false, reloaded: false };
@@ -353,11 +352,13 @@ async function installPackageLocallyInternal(
   const extensionDir = getExtensionInstallDir(ctx, scope);
 
   // Confirm local installation
-  const confirmed = await confirmAction(
-    ctx,
-    "Install Locally",
-    `Download ${packageName} to ${scope} extensions?\n\nThis installs as a standalone extension (manual updates).`
-  );
+  const confirmed = options?.skipConfirmation
+    ? true
+    : await confirmAction(
+        ctx,
+        "Install Locally",
+        `Download ${packageName} to ${scope} extensions?\n\nThis installs as a standalone extension (manual updates).`
+      );
   if (!confirmed) {
     notify(ctx, "Installation cancelled.", "info");
     return { installed: false, reloaded: false };
