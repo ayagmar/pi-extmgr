@@ -730,6 +730,7 @@ class UnifiedManagerBrowser implements Focusable {
   private filter: UnifiedFilter = "all";
   private searchActive = false;
   private readonly expandedPackageIds = new Set<string>();
+  private readonly bulkSelectedIds = new Set<string>();
   private _focused = false;
 
   constructor(
@@ -875,6 +876,21 @@ class UnifiedManagerBrowser implements Focusable {
 
     const selectedItem = this.getSelectedItem();
     const selectedId = selectedItem?.id;
+
+    if (data === " " && selectedItem?.type === "package") {
+      if (this.bulkSelectedIds.has(selectedItem.id)) this.bulkSelectedIds.delete(selectedItem.id);
+      else this.bulkSelectedIds.add(selectedItem.id);
+      return true;
+    }
+
+    if (data === "B" && this.bulkSelectedIds.size > 0) {
+      this.onAction({
+        type: "bulk",
+        itemIds: [...this.bulkSelectedIds],
+        action: "update",
+      });
+      return true;
+    }
 
     if (matchesKey(data, Key.ctrl("s")) || data === "s" || data === "S") {
       this.onAction({ type: "apply" });
@@ -1102,9 +1118,15 @@ class UnifiedManagerBrowser implements Focusable {
   private renderItemLine(item: UnifiedItem, width: number): string {
     const state = getCurrentUnifiedItemState(item, this.staged);
     const changed = item.type === "local" && state !== item.originalState;
+    const selectionMarker =
+      item.type === "package" && this.bulkSelectedIds.has(item.id)
+        ? this.theme.fg("accent", "[x] ")
+        : item.type === "package"
+          ? "[ ] "
+          : "";
     const prefix = this.getSelectedItem()?.id === item.id ? this.theme.fg("accent", "→ ") : "  ";
     return truncateToWidth(
-      prefix + formatUnifiedItemLabel(item, state, this.theme, changed),
+      prefix + selectionMarker + formatUnifiedItemLabel(item, state, this.theme, changed),
       width
     );
   }
@@ -1430,6 +1452,28 @@ async function handleUnifiedAction(
     }
 
     return true;
+  }
+
+  if (result.type === "bulk") {
+    const selectedPackages = result.itemIds
+      .map((id) => byId.get(id))
+      .filter(
+        (item): item is Extract<UnifiedItem, { type: "package" }> => item?.type === "package"
+      );
+    if (selectedPackages.length === 0) return "resume";
+
+    const confirmed = await ctx.ui.confirm(
+      "Update selected packages",
+      `Update ${selectedPackages.length} selected package(s)?`
+    );
+    if (!confirmed) return "resume";
+
+    for (const item of selectedPackages) {
+      const outcome = await updatePackageWithOutcome(item.source, ctx, pi);
+      if (outcome.reloaded) return true;
+    }
+    ctx.ui.notify(`Processed ${selectedPackages.length} selected package(s).`, "info");
+    return "resume";
   }
 
   if (result.type === "remote") {

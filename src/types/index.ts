@@ -97,6 +97,7 @@ export type UnifiedAction =
   | { type: "remote" }
   | { type: "help" }
   | { type: "menu" }
+  | { type: "bulk"; itemIds: string[]; action: "update" | "remove" }
   | { type: "quick"; action: "install" | "search" | "update-all" | "auto-update" }
   | {
       type: "action";
