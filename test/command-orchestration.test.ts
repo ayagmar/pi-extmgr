@@ -16,9 +16,11 @@ void test("resolveCommand defaults to local when no args are provided", () => {
 void test("resolveCommand maps aliases to command ids", () => {
   const remote = resolveCommand(["packages"]);
   const remove = resolveCommand(["uninstall", "npm:demo"]);
+  const doctor = resolveCommand(["doctor"]);
 
   assert.deepEqual(remote, { id: "remote", args: [] });
   assert.deepEqual(remove, { id: "remove", args: ["npm:demo"] });
+  assert.deepEqual(doctor, { id: "doctor", args: [] });
 });
 
 void test("autocomplete includes base commands and aliases", () => {

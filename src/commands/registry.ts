@@ -1,5 +1,7 @@
 import { type ExtensionAPI, type ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import { type AutocompleteItem } from "@earendil-works/pi-tui";
+import { findRuntimeConflicts } from "../doctor/conflicts.js";
+import { getRuntimeOwners } from "../doctor/runtime.js";
 import {
   promptRemove,
   removePackage,
@@ -18,6 +20,24 @@ import { type CommandDefinition, type CommandId } from "./types.js";
 
 const REMOVE_USAGE = "Usage: /extensions remove <npm:package|git:url|path>";
 
+async function showDoctor(ctx: ExtensionCommandContext, pi: ExtensionAPI): Promise<void> {
+  const owners = getRuntimeOwners(pi);
+  const conflicts = findRuntimeConflicts(owners);
+  const lines = [`Runtime ownership: ${owners.length} command/tool entries`];
+  if (conflicts.length === 0) {
+    lines.push("No command or tool conflicts detected.");
+  } else {
+    lines.push(`Conflicts detected: ${conflicts.length}`);
+    for (const conflict of conflicts) {
+      lines.push(`- ${conflict.kind} ${conflict.name}:`);
+      for (const owner of conflict.owners) {
+        lines.push(`  ${owner.source} (${owner.scope}) ${owner.path}`);
+      }
+    }
+  }
+  notify(ctx, lines.join("\n"), conflicts.length > 0 ? "warning" : "info");
+}
+
 function requireInteractiveCommand(ctx: ExtensionCommandContext, feature: string): void {
   notify(ctx, `${feature} requires interactive mode.`, "warning");
 }
@@ -34,6 +54,7 @@ function showNonInteractiveHelp(ctx: ExtensionCommandContext): void {
     "  /extensions remove <source>  - Remove a package",
     "  /extensions update [source]  - Update one package or all packages",
     "  /extensions history [opts]   - Show history (supports filters)",
+    "  /extensions doctor           - Inspect runtime ownership/conflicts",
     "  /extensions auto-update <d>  - Configure auto-update (e.g. 1d, 1w, 1mo, never)",
     "",
     "History examples:",
@@ -129,6 +150,12 @@ const COMMAND_DEFINITIONS: Record<CommandId, CommandDefinition> = {
     description: "Configure auto-update schedule",
     runInteractive: (tokens, ctx, pi) => handleAutoUpdateSubcommand(tokens, ctx, pi),
     runNonInteractive: (tokens, ctx, pi) => handleAutoUpdateSubcommand(tokens, ctx, pi),
+  },
+  doctor: {
+    id: "doctor",
+    description: "Inspect runtime command/tool ownership and conflicts",
+    runInteractive: (_tokens, ctx, pi) => showDoctor(ctx, pi),
+    runNonInteractive: (_tokens, ctx, pi) => showDoctor(ctx, pi),
   },
 };
 

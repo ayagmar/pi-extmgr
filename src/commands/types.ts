@@ -11,7 +11,8 @@ export type CommandId =
   | "update"
   | "history"
   | "clear-cache"
-  | "auto-update";
+  | "auto-update"
+  | "doctor";
 
 export interface CommandDefinition {
   id: CommandId;
