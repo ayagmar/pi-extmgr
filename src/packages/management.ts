@@ -30,6 +30,7 @@ import {
   getInstalledPackages,
   getInstalledPackagesAllScopes,
 } from "./discovery.js";
+import { clearPackageEntrypointCache } from "./extensions.js";
 
 export interface PackageMutationOutcome {
   reloaded: boolean;
@@ -388,6 +389,9 @@ async function removePackageInternal(
 
   const results = await executeRemovalTargets(targets, ctx, pi);
   clearSearchCache();
+  if (results.some((result) => result.success)) {
+    clearPackageEntrypointCache();
+  }
 
   const failures = results
     .filter((result): result is RemovalExecutionResult & { success: false; error: string } =>

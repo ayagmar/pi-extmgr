@@ -25,7 +25,11 @@ import { updateExtmgrStatus } from "../utils/status.js";
 import { confirmAction, confirmReload, showProgress } from "../utils/ui-helpers.js";
 import { getPackageCatalog } from "./catalog.js";
 import { clearSearchCache } from "./discovery.js";
-import { discoverPackageExtensionEntrypoints, readPackageManifest } from "./extensions.js";
+import {
+  clearPackageEntrypointCache,
+  discoverPackageExtensionEntrypoints,
+  readPackageManifest,
+} from "./extensions.js";
 
 export type InstallScope = "global" | "project";
 
@@ -217,6 +221,7 @@ async function installPackageInternal(
   }
 
   clearSearchCache();
+  clearPackageEntrypointCache();
   logPackageInstall(pi, normalized, normalized, undefined, scope, true);
   success(ctx, `Installed ${normalized} (${scope})`);
   clearUpdatesAvailable(pi, ctx, [normalizePackageIdentity(normalized, { cwd: ctx.cwd })]);
@@ -540,6 +545,7 @@ async function installPackageLocallyInternal(
   }
 
   clearSearchCache();
+  clearPackageEntrypointCache();
   logPackageInstall(pi, `npm:${packageName}`, packageName, version, scope, true);
   success(ctx, `Installed ${packageName}@${version} locally to:\n${destResult}`);
 
