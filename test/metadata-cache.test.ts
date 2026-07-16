@@ -18,15 +18,21 @@ void test("metadata cache merges partial package updates without discarding rich
 
     await cache.clearCache();
     await cache.setCachedPackageSize("demo", 2048);
-    await cache.setCachedSearch("keywords:pi-package", [
-      {
-        name: "demo",
-        description: "original description",
-        author: "ayagmar",
-        keywords: ["pi-package", "queue"],
-        date: "2026-04-04T00:00:00.000Z",
-      },
-    ]);
+    await cache.setCachedSearch({
+      query: "keywords:pi-package",
+      results: [
+        {
+          name: "demo",
+          description: "original description",
+          author: "ayagmar",
+          keywords: ["pi-package", "queue"],
+          date: "2026-04-04T00:00:00.000Z",
+        },
+      ],
+      total: 1,
+      offset: 0,
+      timestamp: Date.now(),
+    });
 
     await cache.setCachedPackage("demo", {
       name: "demo",

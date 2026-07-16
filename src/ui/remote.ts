@@ -10,7 +10,6 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import {
   Container,
-  fuzzyMatch,
   type Focusable,
   Input,
   Key,
@@ -26,14 +25,13 @@ import {
   getSearchCache,
   isCacheValid,
   searchNpmPackages,
-  setSearchCache,
 } from "../packages/discovery.js";
 import {
   installPackage,
   installPackageLocallyWithOutcome,
   installPackageWithOutcome,
 } from "../packages/install.js";
-import { type BrowseAction, type NpmPackage, type SearchCache } from "../types/index.js";
+import { type BrowseAction, type NpmPackage } from "../types/index.js";
 import { parseChoiceByLabel, splitCommandArgs } from "../utils/command.js";
 import { formatBytes, normalizePackageSource, parseNpmSource, truncate } from "../utils/format.js";
 import { requireCustomUI, runCustomUI } from "../utils/mode.js";
@@ -118,30 +116,6 @@ const packageInfoCache = new PackageInfoCache(
 
 export function clearRemotePackageInfoCache(): void {
   packageInfoCache.clear();
-  clearCommunityBrowseCache();
-}
-
-function getCommunityBrowseCache(): SearchCache | null {
-  const cache = getSearchCache();
-  if (!cache || cache.query !== COMMUNITY_BROWSE_QUERY) {
-    return null;
-  }
-
-  return isCacheValid(COMMUNITY_BROWSE_QUERY) ? cache : null;
-}
-
-function setCommunityBrowseCache(results: NpmPackage[]): void {
-  setSearchCache({
-    query: COMMUNITY_BROWSE_QUERY,
-    results,
-    timestamp: Date.now(),
-  });
-}
-
-function clearCommunityBrowseCache(): void {
-  if (getSearchCache()?.query === COMMUNITY_BROWSE_QUERY) {
-    clearSearchCache();
-  }
 }
 
 const REMOTE_MENU_CHOICES = {
@@ -255,7 +229,7 @@ function createCommunityBrowsePlan(
   return {
     kind: "search",
     rawQuery: trimmed,
-    searchQuery: COMMUNITY_BROWSE_QUERY,
+    searchQuery: `${COMMUNITY_BROWSE_QUERY} ${trimmed}`,
     displayQuery: trimmed,
     title: "Community packages",
   };
@@ -268,94 +242,6 @@ function resolveRemoteBrowseSource(query: string, source?: RemoteBrowseSource): 
 
   const trimmed = query.trim();
   return !trimmed || trimmed === COMMUNITY_BROWSE_QUERY ? "community" : "npm";
-}
-
-function getCommunitySearchFields(pkg: NpmPackage): {
-  primary: string[];
-  secondary: string[];
-} {
-  return {
-    primary: [pkg.name, pkg.author ?? ""]
-      .map((value) => value.trim().toLowerCase())
-      .filter((value) => value.length > 0),
-    secondary: [pkg.description ?? "", ...(pkg.keywords ?? [])]
-      .map((value) => value.trim().toLowerCase())
-      .filter((value) => value.length > 0),
-  };
-}
-
-function scoreCommunityBrowseResult(pkg: NpmPackage, query: string): number | undefined {
-  const tokens = query
-    .trim()
-    .toLowerCase()
-    .split(/\s+/)
-    .filter((token) => token.length > 0);
-  if (tokens.length === 0) {
-    return 0;
-  }
-
-  const fields = getCommunitySearchFields(pkg);
-  let totalScore = 0;
-
-  for (const token of tokens) {
-    const primarySubstringScore = fields.primary.reduce<number | undefined>((best, field) => {
-      const index = field.indexOf(token);
-      if (index < 0) {
-        return best;
-      }
-      return best === undefined ? index : Math.min(best, index);
-    }, undefined);
-    if (primarySubstringScore !== undefined) {
-      totalScore += primarySubstringScore;
-      continue;
-    }
-
-    const secondarySubstringScore = fields.secondary.reduce<number | undefined>((best, field) => {
-      const index = field.indexOf(token);
-      if (index < 0) {
-        return best;
-      }
-      const score = 100 + index;
-      return best === undefined ? score : Math.min(best, score);
-    }, undefined);
-    if (secondarySubstringScore !== undefined) {
-      totalScore += secondarySubstringScore;
-      continue;
-    }
-
-    const primaryFuzzyScore = fields.primary.reduce<number | undefined>((best, field) => {
-      const match = fuzzyMatch(token, field);
-      if (!match.matches) {
-        return best;
-      }
-      const score = 200 + match.score;
-      return best === undefined ? score : Math.min(best, score);
-    }, undefined);
-    if (primaryFuzzyScore !== undefined) {
-      totalScore += primaryFuzzyScore;
-      continue;
-    }
-
-    return undefined;
-  }
-
-  return totalScore;
-}
-
-function filterCommunityBrowseResults(packages: NpmPackage[], query: string): NpmPackage[] {
-  const matches = packages
-    .map((pkg, index) => ({
-      pkg,
-      index,
-      score: scoreCommunityBrowseResult(pkg, query),
-    }))
-    .filter(
-      (match): match is { pkg: NpmPackage; index: number; score: number } =>
-        match.score !== undefined
-    );
-
-  matches.sort((a, b) => a.score - b.score || a.index - b.index);
-  return matches.map((match) => match.pkg);
 }
 
 function filterRemoteBrowseResults(
@@ -690,7 +576,7 @@ class RemotePackageBrowser implements Focusable {
         this.theme.fg(
           "muted",
           this.browseSource === "community"
-            ? "  Browse community packages · / search to filter loaded packages"
+            ? "  Browse community packages · / search to search community packages"
             : "  Browse remote search results · / search to search npm packages"
         )
       );
@@ -871,7 +757,8 @@ export async function browseRemotePackages(
   query: string,
   pi: ExtensionAPI,
   offset = 0,
-  source?: RemoteBrowseSource
+  source?: RemoteBrowseSource,
+  forceRefresh = false
 ): Promise<void> {
   if (
     !requireCustomUI(
@@ -893,62 +780,45 @@ export async function browseRemotePackages(
     return;
   }
 
-  const cacheQuery = browseSource === "community" ? COMMUNITY_BROWSE_QUERY : plan.rawQuery;
-  let allPackages: NpmPackage[] | undefined;
-
-  if (browseSource === "community") {
-    const cache = getCommunityBrowseCache();
-    if (cache) {
-      allPackages = filterCommunityBrowseResults(cache.results, plan.displayQuery);
-    }
-  } else if (isCacheValid(cacheQuery)) {
-    const cache = getSearchCache();
-    if (cache?.query === cacheQuery) {
-      allPackages = cache.results;
-    }
+  const searchLabel = plan.displayQuery || "community packages";
+  let searchPage: Awaited<ReturnType<typeof searchNpmPackages>> | undefined;
+  if (!forceRefresh && isCacheValid(plan.searchQuery, offset)) {
+    searchPage = getSearchCache(plan.searchQuery, offset) ?? undefined;
   }
 
-  if (!allPackages) {
-    const searchLabel =
-      browseSource === "community"
-        ? "community packages"
-        : plan.displayQuery || "community packages";
-    const results = await runTaskWithLoader(
-      ctx,
-      {
-        title: plan.title,
-        message: `Searching npm for ${truncate(searchLabel, 40)}...`,
-      },
-      async ({ signal, setMessage }) => {
-        setMessage(`Searching npm for ${truncate(searchLabel, 40)}...`);
-        return searchNpmPackages(
-          browseSource === "community" ? COMMUNITY_BROWSE_QUERY : plan.searchQuery,
-          ctx,
-          { signal }
-        );
-      }
-    );
-
-    if (!results) {
-      notify(ctx, "Remote package search was cancelled.", "info");
+  if (!searchPage) {
+    try {
+      searchPage = await runTaskWithLoader(
+        ctx,
+        {
+          title: plan.title,
+          message: `Searching npm for ${truncate(searchLabel, 40)}...`,
+        },
+        async ({ signal, setMessage }) => {
+          setMessage(`Searching npm for ${truncate(searchLabel, 40)}...`);
+          return searchNpmPackages(plan.searchQuery, ctx, {
+            signal,
+            offset,
+            size: PAGE_SIZE,
+            forceRefresh,
+          });
+        }
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      notify(ctx, `Remote package search failed: ${message}`, "warning");
       return;
     }
-
-    if (browseSource === "community") {
-      setCommunityBrowseCache(results);
-      allPackages = filterCommunityBrowseResults(results, plan.displayQuery);
-    } else {
-      allPackages = filterRemoteBrowseResults(plan, results);
-      setSearchCache({
-        query: plan.rawQuery,
-        results: allPackages,
-        timestamp: Date.now(),
-      });
-    }
   }
 
-  const totalResults = allPackages.length;
-  const packages = allPackages.slice(offset, offset + PAGE_SIZE);
+  if (!searchPage) {
+    notify(ctx, "Remote package search was cancelled.", "info");
+    return;
+  }
+
+  const packages = filterRemoteBrowseResults(plan, searchPage.results);
+  const totalResults =
+    plan.kind === "search" && plan.exactPackageName ? packages.length : searchPage.total;
   const reloadQuery =
     browseSource === "community" ? plan.displayQuery || COMMUNITY_BROWSE_QUERY : plan.rawQuery;
 
@@ -965,7 +835,7 @@ export async function browseRemotePackages(
     return;
   }
 
-  const showLoadMore = totalResults >= PAGE_SIZE && offset + PAGE_SIZE < totalResults;
+  const showLoadMore = offset + searchPage.results.length < totalResults;
   const showPrevious = offset > 0;
 
   const result = await selectBrowseAction(
@@ -997,12 +867,8 @@ export async function browseRemotePackages(
       await browseRemotePackages(ctx, reloadQuery, pi, offset + PAGE_SIZE, browseSource);
       return;
     case "refresh":
-      if (browseSource === "community") {
-        clearCommunityBrowseCache();
-      } else {
-        clearSearchCache();
-      }
-      await browseRemotePackages(ctx, reloadQuery, pi, 0, browseSource);
+      clearSearchCache(plan.searchQuery);
+      await browseRemotePackages(ctx, reloadQuery, pi, 0, browseSource, true);
       return;
     case "search": {
       const nextQuery = result.query.trim();

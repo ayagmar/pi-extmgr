@@ -61,7 +61,7 @@ version manager, or install project-local with `pi install npm:pi-extmgr -l`.
   - Install, update, remove from UI and command line
   - Quick actions (`A`, `u`, `X`) and bulk update (`U`)
 - **Remote discovery and install**
-  - npm search/browse with pagination, inline browse search, and keyboard page navigation
+  - npm search/browse with server-side pagination, inline browse search, keyboard page navigation, and rate-limit-aware retries
   - Path- and git-like queries are handled explicitly instead of surfacing unrelated npm results
   - Install by source (`npm:`, `git:`, `https://`, `ssh://`, `git@...`, local path)
   - Supports direct GitHub `.ts` installs and standalone local install for self-contained packages

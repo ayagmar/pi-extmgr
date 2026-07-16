@@ -5,14 +5,14 @@ import { access, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { CACHE_LIMITS } from "../constants.js";
-import { type InstalledPackage, type NpmPackage } from "../types/index.js";
+import { type InstalledPackage, type SearchCache } from "../types/index.js";
 import { parseNpmSource } from "./format.js";
 
 const CACHE_DIR = process.env.PI_EXTMGR_CACHE_DIR
   ? process.env.PI_EXTMGR_CACHE_DIR
   : join(homedir(), ".pi", "agent", ".extmgr-cache");
 const CACHE_FILE = join(CACHE_DIR, "metadata.json");
-const CURRENT_SEARCH_CACHE_STRATEGY = "npm-registry-v1-paginated";
+const CURRENT_SEARCH_CACHE_STRATEGY = "npm-registry-v1-page";
 const CACHED_PACKAGE_FIELDS = [
   "description",
   "version",
@@ -43,6 +43,8 @@ interface CacheData {
     | {
         query: string;
         results: string[];
+        total: number;
+        offset: number;
         timestamp: number;
         strategy: string;
       }
@@ -157,6 +159,8 @@ function normalizeCacheFromDisk(input: unknown): CacheData {
     const query = input.lastSearch.query;
     const timestamp = input.lastSearch.timestamp;
     const results = input.lastSearch.results;
+    const total = input.lastSearch.total;
+    const offset = input.lastSearch.offset;
     const strategy = input.lastSearch.strategy;
 
     if (
@@ -174,6 +178,11 @@ function normalizeCacheFromDisk(input: unknown): CacheData {
         query,
         timestamp,
         results: normalizedResults,
+        total:
+          typeof total === "number" && Number.isFinite(total) && total >= 0
+            ? total
+            : normalizedResults.length,
+        offset: typeof offset === "number" && Number.isInteger(offset) && offset >= 0 ? offset : 0,
         strategy: strategy.trim(),
       };
     }
@@ -264,7 +273,14 @@ async function saveCache(): Promise<void> {
     version: number;
     packages: Record<string, CachedPackageData>;
     lastSearch?:
-      | { query: string; results: string[]; timestamp: number; strategy: string }
+      | {
+          query: string;
+          results: string[];
+          total: number;
+          offset: number;
+          timestamp: number;
+          strategy: string;
+        }
       | undefined;
   } = {
     version: memoryCache.version,
@@ -433,10 +449,10 @@ export async function setCachedPackage(
 /**
  * Get cached search results
  */
-export async function getCachedSearch(query: string): Promise<NpmPackage[] | null> {
+export async function getCachedSearch(query: string, offset: number): Promise<SearchCache | null> {
   const cache = await loadCache();
 
-  if (!cache.lastSearch || cache.lastSearch.query !== query) {
+  if (!cache.lastSearch || cache.lastSearch.query !== query || cache.lastSearch.offset !== offset) {
     return null;
   }
 
@@ -448,12 +464,11 @@ export async function getCachedSearch(query: string): Promise<NpmPackage[] | nul
     return null;
   }
 
-  // Reconstruct packages from cached names
-  const packages: NpmPackage[] = [];
+  const results: SearchCache["results"] = [];
   for (const name of cache.lastSearch.results) {
     const pkg = cache.packages.get(name);
     if (pkg) {
-      packages.push({
+      results.push({
         name: pkg.name,
         description: getFreshCachedField(pkg, "description") as string | undefined,
         version: getFreshCachedField(pkg, "version") as string | undefined,
@@ -465,17 +480,23 @@ export async function getCachedSearch(query: string): Promise<NpmPackage[] | nul
     }
   }
 
-  return packages;
+  return {
+    query,
+    results,
+    total: cache.lastSearch.total,
+    offset,
+    timestamp: cache.lastSearch.timestamp,
+  };
 }
 
 /**
  * Set cached search results
  */
-export async function setCachedSearch(query: string, packages: NpmPackage[]): Promise<void> {
+export async function setCachedSearch(search: SearchCache): Promise<void> {
   const cache = await loadCache();
 
   // Update cache with new packages
-  for (const pkg of packages) {
+  for (const pkg of search.results) {
     cache.packages.set(
       pkg.name,
       mergeCachedPackageData(cache.packages.get(pkg.name), {
@@ -492,9 +513,11 @@ export async function setCachedSearch(query: string, packages: NpmPackage[]): Pr
 
   // Store search results
   cache.lastSearch = {
-    query,
-    results: packages.map((p) => p.name),
-    timestamp: Date.now(),
+    query: search.query,
+    results: search.results.map((pkg) => pkg.name),
+    total: search.total,
+    offset: search.offset,
+    timestamp: search.timestamp,
     strategy: CURRENT_SEARCH_CACHE_STRATEGY,
   };
 

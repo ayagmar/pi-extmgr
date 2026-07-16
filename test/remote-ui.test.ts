@@ -6,13 +6,19 @@ import { browseRemotePackages } from "../src/ui/remote.js";
 import { captureCustomComponent } from "./helpers/custom-component.js";
 import { createMockHarness } from "./helpers/mocks.js";
 import { mockPackageCatalog } from "./helpers/package-catalog.js";
+import { type NpmPackage } from "../src/types/index.js";
+
+function setSearchPage(
+  query: string,
+  results: NpmPackage[],
+  total = results.length,
+  offset = 0
+): void {
+  setSearchCache({ query, results, total, offset, timestamp: Date.now() });
+}
 
 void test("browseRemotePackages honors an empty in-memory cache", async () => {
-  setSearchCache({
-    query: "no-results",
-    results: [],
-    timestamp: Date.now(),
-  });
+  setSearchPage("no-results", []);
 
   const { pi, ctx, notifications } = createMockHarness({ hasUI: true });
   let customCalls = 0;
@@ -72,17 +78,13 @@ void test("browseRemotePackages rejects local-path queries instead of showing un
 });
 
 void test("browseRemotePackages shows inline search affordances in the browse UI", async () => {
-  setSearchCache({
-    query: "demo",
-    results: [
-      {
-        name: "demo-pkg",
-        version: "1.0.0",
-        description: "Demo package",
-      },
-    ],
-    timestamp: Date.now(),
-  });
+  setSearchPage("demo", [
+    {
+      name: "demo-pkg",
+      version: "1.0.0",
+      description: "Demo package",
+    },
+  ]);
 
   const { pi, ctx } = createMockHarness({ hasUI: true });
   let renderedLines: string[] = [];
@@ -109,15 +111,13 @@ void test("browseRemotePackages shows inline search affordances in the browse UI
 });
 
 void test("browseRemotePackages supports next-page navigation from search results", async () => {
-  setSearchCache({
-    query: "demo",
-    results: Array.from({ length: 25 }, (_, index) => ({
-      name: `demo-pkg-${index + 1}`,
-      version: "1.0.0",
-      description: `Demo package ${index + 1}`,
-    })),
-    timestamp: Date.now(),
-  });
+  const packages = Array.from({ length: 25 }, (_, index) => ({
+    name: `demo-pkg-${index + 1}`,
+    version: "1.0.0",
+    description: `Demo package ${index + 1}`,
+  }));
+  setSearchPage("demo", packages.slice(0, 20), packages.length);
+  setSearchPage("demo", packages.slice(20), packages.length, 20);
 
   const { pi, ctx } = createMockHarness({ hasUI: true });
   let customCalls = 0;
@@ -156,17 +156,13 @@ void test("browseRemotePackages supports next-page navigation from search result
 });
 
 void test("browseRemotePackages can start a new remote npm search from search results", async () => {
-  setSearchCache({
-    query: "demo",
-    results: [
-      {
-        name: "browse-default",
-        version: "1.0.0",
-        description: "Default browse result",
-      },
-    ],
-    timestamp: Date.now(),
-  });
+  setSearchPage("demo", [
+    {
+      name: "browse-default",
+      version: "1.0.0",
+      description: "Default browse result",
+    },
+  ]);
 
   const nextQuery = "inline-demo";
   const { pi, ctx } = createMockHarness({ hasUI: true });
@@ -186,17 +182,13 @@ void test("browseRemotePackages can start a new remote npm search from search re
         for (const char of nextQuery) {
           component.handleInput?.(char);
         }
-        setSearchCache({
-          query: nextQuery,
-          results: [
-            {
-              name: "inline-result",
-              version: "2.0.0",
-              description: "Inline search result",
-            },
-          ],
-          timestamp: Date.now(),
-        });
+        setSearchPage(nextQuery, [
+          {
+            name: "inline-result",
+            version: "2.0.0",
+            description: "Inline search result",
+          },
+        ]);
         component.handleInput?.("\r");
         return completion;
       });
@@ -219,26 +211,24 @@ void test("browseRemotePackages can start a new remote npm search from search re
   }
 });
 
-void test("browseRemotePackages filters community packages locally from the browse UI", async () => {
-  setSearchCache({
-    query: "keywords:pi-package",
-    results: [
-      {
-        name: "browse-default",
-        version: "1.0.0",
-        description: "Default browse result",
-        author: "someone",
-      },
-      {
-        name: "pi-copilot-queue",
-        version: "2.0.0",
-        description: "Queue tools for Pi copilots",
-        author: "ayagmar",
-        keywords: ["pi-package", "queue", "copilot"],
-      },
-    ],
-    timestamp: Date.now(),
-  });
+void test("browseRemotePackages scopes inline community searches to pi packages", async () => {
+  setSearchPage("keywords:pi-package", [
+    {
+      name: "browse-default",
+      version: "1.0.0",
+      description: "Default browse result",
+      author: "someone",
+    },
+  ]);
+  setSearchPage("keywords:pi-package copilot queue", [
+    {
+      name: "pi-copilot-queue",
+      version: "2.0.0",
+      description: "Queue tools for Pi copilots",
+      author: "ayagmar",
+      keywords: ["pi-package", "queue", "copilot"],
+    },
+  ]);
 
   const originalFetch = globalThis.fetch;
   let fetchCalls = 0;
@@ -290,25 +280,21 @@ void test("browseRemotePackages filters community packages locally from the brow
   }
 });
 
-void test("browseRemotePackages ranks community matches locally and shows author in details", async () => {
-  setSearchCache({
-    query: "keywords:pi-package",
-    results: [
-      {
-        name: "alpha-tool",
-        version: "1.0.0",
-        description: "Queue utilities for Pi",
-        author: "someone",
-      },
-      {
-        name: "queue-copilot",
-        version: "2.0.0",
-        description: "Copilot queue tools",
-        author: "ayagmar",
-      },
-    ],
-    timestamp: Date.now(),
-  });
+void test("browseRemotePackages preserves npm community ranking and shows author in details", async () => {
+  setSearchPage("keywords:pi-package queue", [
+    {
+      name: "queue-copilot",
+      version: "2.0.0",
+      description: "Copilot queue tools",
+      author: "ayagmar",
+    },
+    {
+      name: "alpha-tool",
+      version: "1.0.0",
+      description: "Queue utilities for Pi",
+      author: "someone",
+    },
+  ]);
 
   const { pi, ctx } = createMockHarness({ hasUI: true });
   let renderedLines: string[] = [];
@@ -336,6 +322,112 @@ void test("browseRemotePackages ranks community matches locally and shows author
     assert.ok(bestMatchIndex < secondaryMatchIndex);
     assert.ok(renderedLines.some((line) => line.includes("by ayagmar")));
   } finally {
+    clearSearchCache();
+  }
+});
+
+void test("browseRemotePackages refresh bypasses fresh persistent and runtime search caches", async () => {
+  setSearchPage("demo", [
+    {
+      name: "old-result",
+      version: "1.0.0",
+      description: "Cached result",
+    },
+  ]);
+
+  const originalFetch = globalThis.fetch;
+  let fetchCalls = 0;
+  globalThis.fetch = (() => {
+    fetchCalls += 1;
+    return Promise.resolve(
+      new Response(
+        JSON.stringify({
+          total: 1,
+          objects: [
+            {
+              package: {
+                name: "fresh-result",
+                version: "2.0.0",
+                description: "Fresh result",
+              },
+            },
+          ],
+        }),
+        { status: 200, headers: { "content-type": "application/json" } }
+      )
+    );
+  }) as typeof fetch;
+
+  const { pi, ctx } = createMockHarness({ hasUI: true });
+  let browserCalls = 0;
+  let refreshedLines: string[] = [];
+
+  (
+    ctx.ui as unknown as {
+      custom: (factory: unknown, options?: unknown) => Promise<unknown>;
+    }
+  ).custom = (factory) =>
+    captureCustomComponent(
+      factory,
+      ctx.ui.theme,
+      (lines) => lines.some((line) => line.includes("/ search")),
+      (component, lines, completion) => {
+        browserCalls += 1;
+        if (browserCalls === 1) {
+          component.handleInput?.("r");
+          return completion;
+        }
+
+        refreshedLines = lines;
+        return { type: "cancel" };
+      }
+    );
+
+  try {
+    await browseRemotePackages(ctx, "demo", pi);
+
+    assert.equal(fetchCalls, 1);
+    assert.equal(browserCalls, 2);
+    assert.ok(refreshedLines.some((line) => line.includes("fresh-result@2.0.0")));
+    assert.ok(!refreshedLines.some((line) => line.includes("old-result@1.0.0")));
+  } finally {
+    globalThis.fetch = originalFetch;
+    clearSearchCache();
+  }
+});
+
+void test("browseRemotePackages handles exhausted npm rate limits without a command error", async () => {
+  const originalFetch = globalThis.fetch;
+  let fetchCalls = 0;
+  globalThis.fetch = (() => {
+    fetchCalls += 1;
+    return Promise.resolve(
+      new Response("rate limited", { status: 429, headers: { "retry-after": "0" } })
+    );
+  }) as typeof fetch;
+
+  const { pi, ctx, notifications } = createMockHarness({ hasUI: true });
+  (
+    ctx.ui as unknown as {
+      custom: (factory: unknown, options?: unknown) => Promise<unknown>;
+    }
+  ).custom = (factory) =>
+    captureCustomComponent(factory, ctx.ui.theme, (_component, _lines, completion) => completion);
+
+  try {
+    await browseRemotePackages(ctx, "rate-limited-query", pi);
+
+    assert.equal(fetchCalls, 3);
+    assert.ok(
+      notifications.some(
+        (entry) =>
+          entry.level === "warning" &&
+          entry.message.includes("rate-limited (HTTP 429)") &&
+          entry.message.includes("Try again shortly")
+      )
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
     clearSearchCache();
   }
 });
@@ -388,11 +480,7 @@ void test("clearMetadataCacheCommand clears the community browse runtime cache",
     await browseRemotePackages(ctx, "keywords:pi-package", pi);
     assert.equal(fetchCalls, 1);
 
-    setSearchCache({
-      query: "demo",
-      results: [{ name: "demo-pkg", description: "Demo package" }],
-      timestamp: Date.now(),
-    });
+    setSearchPage("demo", [{ name: "demo-pkg", description: "Demo package" }]);
 
     await clearMetadataCacheCommand(ctx, pi);
     await browseRemotePackages(ctx, "keywords:pi-package", pi);
@@ -484,17 +572,13 @@ void test("browseRemotePackages returns to results after installing from package
 });
 
 void test("browseRemotePackages returns to package details after a cancelled load", async () => {
-  setSearchCache({
-    query: "demo",
-    results: [
-      {
-        name: "demo-pkg",
-        version: "1.0.0",
-        description: "Demo package",
-      },
-    ],
-    timestamp: Date.now(),
-  });
+  setSearchPage("demo", [
+    {
+      name: "demo-pkg",
+      version: "1.0.0",
+      description: "Demo package",
+    },
+  ]);
 
   const { pi, ctx, notifications, selectPrompts } = createMockHarness({ hasUI: true });
   const customResults: unknown[] = [

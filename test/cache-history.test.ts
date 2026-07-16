@@ -19,6 +19,8 @@ void test("clearMetadataCacheCommand clears runtime search cache and records his
   setSearchCache({
     query: "demo",
     results: [{ name: "demo", description: "demo package" }],
+    total: 1,
+    offset: 0,
     timestamp: Date.now(),
   });
 

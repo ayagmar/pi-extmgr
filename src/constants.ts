@@ -10,9 +10,6 @@ export const DISABLED_SUFFIX = ".disabled";
 /** Number of items to display per page in paginated views */
 export const PAGE_SIZE = 20;
 
-/** Default cache time-to-live: 5 minutes */
-export const CACHE_TTL = 5 * 60 * 1000;
-
 /**
  * Timeout values for various operations (in milliseconds)
  *

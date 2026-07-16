@@ -84,6 +84,8 @@ export type UnifiedItem = LocalUnifiedItem | PackageUnifiedItem;
 export interface SearchCache {
   query: string;
   results: NpmPackage[];
+  total: number;
+  offset: number;
   timestamp: number;
 }
 
