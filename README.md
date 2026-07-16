@@ -59,7 +59,7 @@ version manager, or install project-local with `pi install npm:pi-extmgr -l`.
   - Unsaved-change guard when leaving (save/discard/stay)
 - **Package management**
   - Install, update, remove from UI and command line
-  - Quick actions (`A`, `u`, `X`) and bulk update (`U`)
+  - Quick actions (`A`, `u`, `X`) and coordinated bulk package actions (`B`)
 - **Remote discovery and install**
   - npm search/browse with server-side pagination, inline browse search, keyboard page navigation, and rate-limit-aware retries
   - Path- and git-like queries are handled explicitly instead of surfacing unrelated npm results
@@ -99,13 +99,16 @@ Open the manager:
 | `Enter` / `A` | Actions on selected item                              |
 | `/` / `Ctrl+F`| Search visible items                                  |
 | `Tab` / `Shift+Tab` | Cycle filters                                  |
-| `1-5`         | Filters: All / Local / Packages / Updates / Disabled  |
+| `1-7`         | Filters: All / Local / Packages / Updates / Disabled / Favorites / Recent |
 | `c`           | Configure selected package extensions                 |
 | `u`           | Update selected package directly                      |
 | `V`           | View full details for selected item                   |
 | `X`           | Remove selected item (package/local extension)        |
 | `i`           | Quick install by source                               |
 | `f`           | Remote package search                                 |
+| `B`           | Bulk actions for selected packages                    |
+| `W` / `L` / `D` | Save / load / delete manager views                  |
+| `*`           | Toggle favorite for selected item                     |
 | `U`           | Update all packages                                   |
 | `t`           | Auto-update wizard                                    |
 | `P` / `M`     | Quick actions palette                                 |
@@ -128,6 +131,11 @@ Open the manager:
 /extensions uninstall [source]   # Alias: remove
 /extensions update [source]      # Update one package (or all when omitted)
 /extensions auto-update [every]  # No arg opens wizard in UI; accepts 1d, 1w, 1mo, never, etc.
+/extensions doctor                # Inspect ownership and package compatibility
+/extensions profile list           # List named profiles
+/extensions profile save <name>   # Save the current package profile
+/extensions profile apply <name|path> # Safely apply a profile
+/extensions profile delete <name> # Delete a named profile
 /extensions history [options]    # View change history (supports filters)
 /extensions clear-cache          # Clear persistent + runtime extmgr caches
 ```
@@ -196,7 +204,10 @@ Examples:
 - **Auto-update/update badges cover npm + git packages**: extmgr now uses pi's package manager APIs for structured update detection instead of parsing `pi list` output.
 - **Settings/cache writes are hardened**: extmgr serializes writes and uses safe file replacement to reduce JSON corruption issues.
 - **Invalid JSON is handled safely**: malformed `auto-update.json` / metadata cache files are backed up and reset; invalid `.pi/settings.json` is not overwritten during package-extension toggles.
-- **Reload is built-in**: When extmgr asks to reload, it calls `ctx.reload()` directly.
+- **Reload is built-in**: When extmgr asks to reload, it calls `ctx.reload()` directly. Successful mutations persist a versioned reload-required marker; cancellation and failure do not. The marker survives reopening the manager and clears after a successful reload.
+- **Saved manager state**: Views, favorites, recent items, and bulk selections are stored atomically in `~/.pi/agent/.extmgr-cache/views-<project>.json`. Named profiles are stored in `profiles.json`; project policies load from `.pi/extmgr-policy.json`.
+- **Trash lifecycle**: Local removals move to `~/.pi/agent/.extmgr-trash/` with persistent records. Undo refuses to overwrite a replacement file, and expired or missing records are cleaned up.
+- **Metadata safety**: Missing compatibility, provenance, checksum, or target-version metadata is reported as `unknown`, never `safe`. Target-version previews and exact target badges are intentionally not offered when Pi does not expose structured target metadata.
 
 ## License
 
