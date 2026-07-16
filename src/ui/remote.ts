@@ -752,6 +752,18 @@ async function selectBrowseAction(
   );
 }
 
+type BrowseRequest = {
+  ctx: ExtensionCommandContext;
+  query: string;
+  pi: ExtensionAPI;
+  offset: number;
+  source?: RemoteBrowseSource;
+  forceRefresh: boolean;
+};
+
+let browseNavigationActive = false;
+const browseNavigationQueue: BrowseRequest[] = [];
+
 export async function browseRemotePackages(
   ctx: ExtensionCommandContext,
   query: string,
@@ -760,6 +772,40 @@ export async function browseRemotePackages(
   source?: RemoteBrowseSource,
   forceRefresh = false
 ): Promise<void> {
+  const request: BrowseRequest = {
+    ctx,
+    query,
+    pi,
+    offset,
+    forceRefresh,
+    ...(source ? { source } : {}),
+  };
+  if (browseNavigationActive) {
+    browseNavigationQueue.push(request);
+    return;
+  }
+
+  browseNavigationActive = true;
+  try {
+    let next: BrowseRequest | undefined = request;
+    while (next) {
+      await browseRemotePackagesPage(next);
+      next = browseNavigationQueue.shift();
+    }
+  } finally {
+    browseNavigationQueue.length = 0;
+    browseNavigationActive = false;
+  }
+}
+
+async function browseRemotePackagesPage({
+  ctx,
+  query,
+  pi,
+  offset = 0,
+  source,
+  forceRefresh = false,
+}: BrowseRequest): Promise<void> {
   if (
     !requireCustomUI(
       ctx,
