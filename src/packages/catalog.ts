@@ -7,6 +7,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { type InstalledPackage, type Scope } from "../types/index.js";
 import { normalizePackageIdentity, parsePackageNameAndVersion } from "../utils/package-source.js";
+import { throwIfSettingsErrors } from "../utils/settings-errors.js";
 
 type PiScope = "user" | "project";
 type PiPackageUpdate = Awaited<
@@ -116,9 +117,11 @@ function createDefaultPackageCatalog(cwd: string): PackageCatalog {
       setProgressCallback(packageManager, onProgress);
 
       try {
+        throwIfSettingsErrors(settingsManager, "Package installation");
         await packageManager.install(source, { local: scope === "project" });
         packageManager.addSourceToSettings(source, { local: scope === "project" });
         await settingsManager.flush();
+        throwIfSettingsErrors(settingsManager, "Package installation");
       } finally {
         setProgressCallback(packageManager, undefined);
       }
@@ -128,11 +131,13 @@ function createDefaultPackageCatalog(cwd: string): PackageCatalog {
       setProgressCallback(packageManager, onProgress);
 
       try {
+        throwIfSettingsErrors(settingsManager, "Package removal");
         await packageManager.remove(source, { local: scope === "project" });
         const removed = packageManager.removeSourceFromSettings(source, {
           local: scope === "project",
         });
         await settingsManager.flush();
+        throwIfSettingsErrors(settingsManager, "Package removal");
 
         if (!removed) {
           throw new Error(`No matching package found for ${source}`);

@@ -2004,8 +2004,13 @@ async function handleUnifiedAction(
         if (!confirmed) return "resume";
         const moved = await movePackageBetweenScopes(item.source, item.scope, targetScope, ctx.cwd);
         if (!moved.moved) {
-          ctx.ui.notify(`Package scope move failed: ${moved.conflict ?? "unknown error"}`, "error");
-          return "resume";
+          ctx.ui.notify(
+            `${moved.partial ? "Package scope move partially completed" : "Package scope move failed"}: ${moved.conflict ?? "unknown error"}`,
+            moved.partial ? "warning" : "error"
+          );
+          return moved.partial
+            ? await confirmReload(ctx, "Package scope move partially completed.")
+            : "resume";
         }
         ctx.ui.notify(`Moved ${item.displayName} to ${targetScope} scope.`, "info");
         return await confirmReload(ctx, "Package scope changed.");
