@@ -30,7 +30,7 @@ import {
   setExtensionState,
 } from "../extensions/discovery.js";
 import { undoExtensionTrash } from "../extensions/trash.js";
-import { getInstalledPackages } from "../packages/discovery.js";
+import { getInstalledPackages, getInstalledPackagesAllScopes } from "../packages/discovery.js";
 import {
   applyPackageExtensionStateChanges,
   discoverPackageExtensions,
@@ -63,6 +63,7 @@ import { hasCustomUI, runCustomUI } from "../utils/mode.js";
 import { notify } from "../utils/notify.js";
 import { getPackageSourceKind, normalizePackageIdentity } from "../utils/package-source.js";
 import { normalizePathIdentity } from "../utils/path-identity.js";
+import { comparePackageScopes, movePackageBetweenScopes } from "../packages/scopes.js";
 import { markReloadRequired } from "../utils/reload-state.js";
 import {
   getSavedViewsPath,
@@ -1421,6 +1422,9 @@ const PACKAGE_ACTION_OPTIONS = {
   configure: "Configure extensions",
   enable: "Enable whole package",
   disable: "Disable whole package",
+  compare: "Compare scopes",
+  "move-global": "Move to global scope",
+  "move-project": "Move to project scope",
   update: "Update package",
   remove: "Remove package",
   details: "View details",
@@ -1819,6 +1823,9 @@ async function handleUnifiedAction(
       configure: "configure package extensions",
       enable: "enable package",
       disable: "disable package",
+      compare: "compare package scopes",
+      "move-global": "move package to global scope",
+      "move-project": "move package to project scope",
       update: "update package",
       remove: "remove package",
     } satisfies Record<Exclude<PackageActionSelection, "cancel" | "details">, string>;
@@ -1834,6 +1841,47 @@ async function handleUnifiedAction(
     if (pending === "stay") return "resume";
 
     switch (selection) {
+      case "compare": {
+        const comparisons = comparePackageScopes(await getInstalledPackagesAllScopes(ctx)).filter(
+          (comparison) =>
+            comparison.global?.source === item.source || comparison.project?.source === item.source
+        );
+        const comparison = comparisons[0];
+        if (!comparison) {
+          ctx.ui.notify("No package scope comparison is available.", "warning");
+        } else {
+          ctx.ui.notify(
+            [
+              `Package: ${comparison.name}`,
+              `Global: ${comparison.global?.source ?? "not configured"}`,
+              `Project: ${comparison.project?.source ?? "not configured"}`,
+              `Status: ${comparison.status}`,
+            ].join("\n"),
+            "info"
+          );
+        }
+        return "resume";
+      }
+      case "move-global":
+      case "move-project": {
+        const targetScope = selection === "move-global" ? "global" : "project";
+        if (targetScope === item.scope) {
+          ctx.ui.notify(`Package is already in ${targetScope} scope.`, "info");
+          return "resume";
+        }
+        const confirmed = await ctx.ui.confirm(
+          "Move package scope",
+          `Move ${item.source} from ${item.scope} to ${targetScope}?`
+        );
+        if (!confirmed) return "resume";
+        const moved = await movePackageBetweenScopes(item.source, item.scope, targetScope, ctx.cwd);
+        if (!moved.moved) {
+          ctx.ui.notify(`Package scope move failed: ${moved.conflict ?? "unknown error"}`, "error");
+          return "resume";
+        }
+        ctx.ui.notify(`Moved ${item.displayName} to ${targetScope} scope.`, "info");
+        return await confirmReload(ctx, "Package scope changed.");
+      }
       case "enable":
       case "disable": {
         if (!item.extensionPaths?.length) {

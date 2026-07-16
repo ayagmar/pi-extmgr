@@ -1,3 +1,4 @@
+import { getAgentDir, SettingsManager, type PackageSource } from "@earendil-works/pi-coding-agent";
 import { type InstalledPackage, type Scope } from "../types/index.js";
 import { normalizePackageIdentity } from "../utils/package-source.js";
 
@@ -14,7 +15,9 @@ export function comparePackageScopes(packages: InstalledPackage[]): PackageScope
   const byIdentity = new Map<string, PackageScopeComparison>();
 
   for (const pkg of packages) {
-    const identity = normalizePackageIdentity(pkg.source);
+    const identity = normalizePackageIdentity(pkg.source, {
+      ...(pkg.resolvedPath ? { resolvedPath: pkg.resolvedPath } : {}),
+    });
     const existing = byIdentity.get(identity) ?? {
       identity,
       name: pkg.name,
@@ -28,8 +31,12 @@ export function comparePackageScopes(packages: InstalledPackage[]): PackageScope
   return [...byIdentity.values()]
     .map((entry) => {
       if (entry.global && entry.project) {
-        const globalSource = normalizePackageIdentity(entry.global.source);
-        const projectSource = normalizePackageIdentity(entry.project.source);
+        const globalSource = normalizePackageIdentity(entry.global.source, {
+          ...(entry.global.resolvedPath ? { resolvedPath: entry.global.resolvedPath } : {}),
+        });
+        const projectSource = normalizePackageIdentity(entry.project.source, {
+          ...(entry.project.resolvedPath ? { resolvedPath: entry.project.resolvedPath } : {}),
+        });
         return {
           ...entry,
           status: globalSource === projectSource ? ("overridden" as const) : ("different" as const),
@@ -45,4 +52,87 @@ export function comparePackageScopes(packages: InstalledPackage[]): PackageScope
 
 export function getPackageScopeLabel(scope: Scope): string {
   return scope === "project" ? "project (.pi/settings.json)" : "global (~/.pi/agent/settings.json)";
+}
+
+function sourceOf(value: PackageSource): string {
+  return typeof value === "string" ? value : value.source;
+}
+
+function packageMatches(value: PackageSource, source: string, cwd: string, scope: Scope): boolean {
+  const baseCwd = scope === "project" ? cwd : getAgentDir();
+  return (
+    sourceOf(value) === source ||
+    normalizePackageIdentity(source, { cwd: baseCwd }) ===
+      normalizePackageIdentity(sourceOf(value), { cwd: baseCwd })
+  );
+}
+
+export interface MovePackageScopeResult {
+  source: string;
+  from: Scope;
+  to: Scope;
+  moved: boolean;
+  conflict?: string;
+}
+
+/**
+ * Promote a configured package between scopes while retaining the complete
+ * settings object (including filters and unknown package fields).
+ *
+ * The destination is written before the source is removed. If the second
+ * write fails, the package remains effective rather than disappearing.
+ */
+export async function movePackageBetweenScopes(
+  source: string,
+  from: Scope,
+  to: Scope,
+  cwd: string
+): Promise<MovePackageScopeResult> {
+  if (from === to) {
+    return { source, from, to, moved: false, conflict: "Package is already in that scope." };
+  }
+
+  const settings = SettingsManager.create(cwd, getAgentDir());
+  const globalPackages = [...(settings.getGlobalSettings().packages ?? [])];
+  const projectPackages = [...(settings.getProjectSettings().packages ?? [])];
+  const sourcePackages = from === "global" ? globalPackages : projectPackages;
+  const destinationPackages = to === "global" ? globalPackages : projectPackages;
+  const sourceIndex = sourcePackages.findIndex((entry) => packageMatches(entry, source, cwd, from));
+
+  if (sourceIndex < 0) {
+    return { source, from, to, moved: false, conflict: "Package is not configured in that scope." };
+  }
+
+  const entry = sourcePackages[sourceIndex];
+  if (!entry) {
+    return { source, from, to, moved: false, conflict: "Package is not configured in that scope." };
+  }
+  const destinationIndex = destinationPackages.findIndex((candidate) =>
+    packageMatches(candidate, sourceOf(entry), cwd, to)
+  );
+  if (destinationIndex >= 0) {
+    const destinationEntry = destinationPackages[destinationIndex];
+    if (destinationEntry && JSON.stringify(destinationEntry) !== JSON.stringify(entry)) {
+      return {
+        source,
+        from,
+        to,
+        moved: false,
+        conflict: "The destination has a different package configuration; no changes were made.",
+      };
+    }
+  } else {
+    destinationPackages.push(structuredClone(entry));
+  }
+
+  if (to === "global") settings.setPackages(destinationPackages);
+  else settings.setProjectPackages(destinationPackages);
+  await settings.flush();
+
+  sourcePackages.splice(sourceIndex, 1);
+  if (from === "global") settings.setPackages(sourcePackages);
+  else settings.setProjectPackages(sourcePackages);
+  await settings.flush();
+
+  return { source: sourceOf(entry), from, to, moved: true };
 }
