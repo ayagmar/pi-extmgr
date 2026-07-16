@@ -35,6 +35,7 @@ import {
   installPackageWithOutcome,
 } from "../packages/install.js";
 import { type RemotePackageSort, sortRemotePackages } from "../packages/sorting.js";
+import { validateCompatibility } from "../doctor/compatibility.js";
 import { type BrowseAction, type NpmPackage } from "../types/index.js";
 import { getKnownUpdates } from "../utils/auto-update.js";
 import { parseChoiceByLabel, splitCommandArgs } from "../utils/command.js";
@@ -60,6 +61,7 @@ interface NpmViewInfo {
   dist?: { unpackedSize?: number };
   repository?: { url?: string } | string;
   dependencies?: Record<string, string>;
+  engines?: { node?: string; pi?: string };
 }
 
 interface NpmDownloadsPoint {
@@ -341,6 +343,19 @@ async function buildPackageInfoText(
     ...(info.description ? { description: info.description } : {}),
     ...(info.dependencies ? { dependencies: info.dependencies } : {}),
     ...(repository ? { repository } : {}),
+    ...(info.engines?.node
+      ? {
+          compatibility:
+            validateCompatibility({
+              packageName,
+              engines: { node: info.engines.node },
+              ...(info.engines.pi ? { requiredPi: info.engines.pi } : {}),
+              nodeVersion: process.version,
+            }).node === "compatible"
+              ? ("compatible" as const)
+              : ("incompatible" as const),
+        }
+      : {}),
   });
 
   const lines = [
@@ -997,6 +1012,55 @@ async function browseRemotePackagesPage({
   }
 }
 
+async function confirmMarketplaceInstall(
+  packageName: string,
+  ctx: ExtensionCommandContext,
+  pi: ExtensionAPI,
+  mode: "managed" | "standalone"
+): Promise<"global" | "project" | undefined> {
+  const scopeChoice = parseChoiceByLabel(
+    {
+      global: "Global (~/.pi/agent/settings.json)",
+      project: "Project (.pi/settings.json)",
+      cancel: "Cancel",
+    },
+    await ctx.ui.select("Install scope", [
+      "Global (~/.pi/agent/settings.json)",
+      "Project (.pi/settings.json)",
+      "Cancel",
+    ])
+  );
+  if (!scopeChoice || scopeChoice === "cancel") return undefined;
+
+  const info = await runTaskWithLoader(
+    ctx,
+    {
+      title: "Pre-install review",
+      message: `Inspecting ${packageName} metadata...`,
+    },
+    ({ signal }) => buildPackageInfoText(packageName, ctx, pi, signal)
+  );
+  if (!info) {
+    notify(ctx, "Pre-install review cancelled; nothing was installed.", "info");
+    return undefined;
+  }
+
+  const review = [
+    `Source: npm:${packageName}`,
+    `Scope: ${scopeChoice}`,
+    `Mode: ${mode}`,
+    "",
+    info,
+    "",
+    "Missing provenance or compatibility metadata is unknown, not safe.",
+  ].join("\\n");
+  if (!(await ctx.ui.confirm("Review before install", `${review}\\n\\nInstall now?`))) {
+    notify(ctx, "Installation cancelled.", "info");
+    return undefined;
+  }
+  return scopeChoice;
+}
+
 async function showPackageDetails(
   packageName: string,
   ctx: ExtensionCommandContext,
@@ -1017,7 +1081,12 @@ async function showPackageDetails(
 
   switch (choice) {
     case "installManaged": {
-      const outcome = await installPackageWithOutcome(`npm:${packageName}`, ctx, pi);
+      const scope = await confirmMarketplaceInstall(packageName, ctx, pi, "managed");
+      if (!scope) return;
+      const outcome = await installPackageWithOutcome(`npm:${packageName}`, ctx, pi, {
+        scope,
+        skipConfirmation: true,
+      });
       if (outcome.reloaded) {
         return;
       }
@@ -1029,7 +1098,12 @@ async function showPackageDetails(
       return;
     }
     case "installStandalone": {
-      const outcome = await installPackageLocallyWithOutcome(packageName, ctx, pi);
+      const scope = await confirmMarketplaceInstall(packageName, ctx, pi, "standalone");
+      if (!scope) return;
+      const outcome = await installPackageLocallyWithOutcome(packageName, ctx, pi, {
+        scope,
+        skipConfirmation: true,
+      });
       if (outcome.reloaded) {
         return;
       }
