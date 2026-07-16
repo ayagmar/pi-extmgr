@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { setLocalCompletionIndexForTests } from "../src/commands/completion.js";
 import {
   getExtensionsAutocompleteItems,
   resolveCommand,
@@ -40,6 +41,41 @@ void test("autocomplete offers static command arguments without network requests
     getExtensionsAutocompleteItems("history --f")?.map((item) => item.value),
     ["--failed"]
   );
+});
+
+void test("autocomplete uses only preloaded package and profile names", () => {
+  const originalFetch = globalThis.fetch;
+  let fetchCalls = 0;
+  globalThis.fetch = (() => {
+    fetchCalls += 1;
+    throw new Error("autocomplete must not use the network");
+  }) as typeof fetch;
+  setLocalCompletionIndexForTests({
+    installedPackages: ["npm:alpha", "git:https://example.com/team/demo.git@main"],
+    savedProfiles: ["team", "workstation"],
+  });
+  try {
+    assert.deepEqual(
+      getExtensionsAutocompleteItems("remove npm:a")?.map((item) => item.value),
+      ["npm:alpha"]
+    );
+    assert.deepEqual(
+      getExtensionsAutocompleteItems("update git:")?.map((item) => item.value),
+      ["git:https://example.com/team/demo.git@main"]
+    );
+    assert.deepEqual(
+      getExtensionsAutocompleteItems("profile apply te")?.map((item) => item.value),
+      ["team"]
+    );
+    assert.deepEqual(
+      getExtensionsAutocompleteItems("history --action package_r")?.map((item) => item.value),
+      ["package_remove"]
+    );
+    assert.equal(fetchCalls, 0);
+  } finally {
+    globalThis.fetch = originalFetch;
+    setLocalCompletionIndexForTests();
+  }
 });
 
 void test("runResolvedCommand install respects --project scope", async () => {

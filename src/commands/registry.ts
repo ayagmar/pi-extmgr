@@ -9,6 +9,7 @@ import { showRemote } from "../ui/remote.js";
 import { showInstalledPackagesLegacy, showInteractive, showListOnly } from "../ui/unified.js";
 import { notify } from "../utils/notify.js";
 import { handleAutoUpdateSubcommand } from "./auto-update.js";
+import { getLocalCompletionIndex } from "./completion.js";
 import { clearMetadataCacheCommand } from "./cache.js";
 import { handleHistorySubcommand } from "./history.js";
 import { handleInstallSubcommand, INSTALL_USAGE } from "./install.js";
@@ -212,24 +213,59 @@ export function runResolvedCommand(
   return runner(resolved.args, ctx, pi);
 }
 
+function completionItems(options: string[], prefix: string): AutocompleteItem[] | null {
+  const matches = options.filter((option) => option.toLowerCase().startsWith(prefix.toLowerCase()));
+  return matches.length > 0 ? matches.map((value) => ({ value, label: value })) : null;
+}
+
 export function getExtensionsAutocompleteItems(prefix: string): AutocompleteItem[] | null {
-  const normalizedPrefix = prefix ?? "";
-  const commandPrefix = normalizedPrefix.trimStart();
-  const whitespace = commandPrefix.lastIndexOf(" ");
-  if (whitespace >= 0) {
-    const command = commandPrefix.slice(0, whitespace).replace(/^\//, "").split(/\s+/)[0] ?? "";
-    const argumentPrefix = commandPrefix.slice(whitespace + 1).toLowerCase();
+  const commandPrefix = (prefix ?? "").trimStart();
+  if (commandPrefix.includes(" ")) {
+    const trailingSpace = /\s$/.test(commandPrefix);
+    const tokens = commandPrefix.replace(/^\//, "").split(/\s+/).filter(Boolean);
+    const command = tokens.shift()?.toLowerCase() ?? "";
+    const activePrefix = trailingSpace ? "" : (tokens.pop() ?? "");
+    const completedArgs = tokens;
+    const local = getLocalCompletionIndex();
+
+    if ((command === "remove" || command === "uninstall") && completedArgs.length === 0) {
+      return completionItems(local.installedPackages, activePrefix);
+    }
+    if (command === "update" && completedArgs.length === 0) {
+      return completionItems(["--all", "--preview", ...local.installedPackages], activePrefix);
+    }
+    if (command === "profile") {
+      const actions = ["export", "save", "list", "delete", "dry-run", "apply", "compare"];
+      if (completedArgs.length === 0) return completionItems(actions, activePrefix);
+      const action = completedArgs[0];
+      if (["delete", "dry-run", "apply", "compare"].includes(action ?? "")) {
+        return completionItems(local.savedProfiles, activePrefix);
+      }
+      return null;
+    }
+    if (command === "history") {
+      const historyActions = [
+        "extension_toggle",
+        "extension_delete",
+        "package_install",
+        "package_update",
+        "package_remove",
+        "cache_clear",
+        "auto_update_config",
+      ];
+      if (completedArgs.at(-1) === "--action") {
+        return completionItems(historyActions, activePrefix);
+      }
+      return completionItems(
+        ["--action", "--failed", "--success", "--global", "--limit", "--package", "--since"],
+        activePrefix
+      );
+    }
     const argumentOptions: Record<string, string[]> = {
       install: ["--global", "--project"],
-      remove: ["--global", "--project"],
-      update: ["--all", "--preview"],
       "auto-update": ["daily", "weekly", "monthly", "never"],
-      history: ["--failed", "--success", "--global", "--limit", "--since"],
-      profile: ["export", "dry-run", "compare"],
     };
-    const options = argumentOptions[command] ?? [];
-    const matches = options.filter((option) => option.startsWith(argumentPrefix));
-    return matches.length > 0 ? matches.map((value) => ({ value, label: value })) : null;
+    return completionItems(argumentOptions[command] ?? [], activePrefix);
   }
 
   const items = Object.values(COMMAND_DEFINITIONS).flatMap((def) => {

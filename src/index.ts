@@ -16,6 +16,7 @@ import {
   showNonInteractiveHelp,
   showUnknownCommandMessage,
 } from "./commands/registry.js";
+import { refreshLocalCompletionIndex } from "./commands/completion.js";
 import { installPackage } from "./packages/install.js";
 import {
   type ContextProvider,
@@ -59,6 +60,9 @@ export default function extensionsManager(pi: ExtensionAPI) {
     getArgumentCompletions: getExtensionsAutocompleteItems,
     handler: async (args, ctx) => {
       await executeExtensionsCommand(args, ctx, pi);
+      await refreshLocalCompletionIndex(ctx.cwd).catch((error) => {
+        console.warn("[extmgr] Failed to refresh local completions:", error);
+      });
     },
   });
 
@@ -69,6 +73,9 @@ export default function extensionsManager(pi: ExtensionAPI) {
   async function bootstrapSession(ctx: ExtensionCommandContext | ExtensionContext): Promise<void> {
     // Restore persisted auto-update config into session entries so sync lookups are valid.
     await hydrateAutoUpdateConfig(pi, ctx);
+    await refreshLocalCompletionIndex(ctx.cwd).catch((error) => {
+      console.warn("[extmgr] Failed to load local completions:", error);
+    });
 
     if (!ctx.hasUI) {
       stopAutoUpdateTimer();
