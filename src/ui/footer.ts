@@ -7,15 +7,18 @@ export interface FooterState {
   selectedType?: UnifiedItem["type"];
   expandable: boolean;
   pendingChanges: number;
+  selectedPackages: number;
 }
 
 export function buildFooterState(
   staged: Map<string, State>,
   byId: Map<string, UnifiedItem>,
-  selectedItem?: UnifiedItem
+  selectedItem?: UnifiedItem,
+  selectedPackages = 0
 ): FooterState {
   const state: FooterState = {
     pendingChanges: getPendingToggleChangeCount(staged, byId),
+    selectedPackages,
     expandable: selectedItem?.type === "package" && Boolean(selectedItem.extensionPaths?.length),
   };
 
@@ -59,12 +62,16 @@ export function buildFooterShortcuts(state: FooterState): string {
 
   if (state.selectedType === "package") {
     if (state.expandable) parts.push("E expand");
-    parts.push("Space select · B update selected");
+    parts.push("Space select · B bulk actions");
     parts.push("Enter/A actions");
     parts.push("V details");
     parts.push("c configure · scope actions in menu");
     parts.push("u update");
     parts.push("X remove");
+  }
+
+  if (state.selectedPackages > 0) {
+    parts.push(`B bulk actions (${state.selectedPackages})`);
   }
 
   if (state.pendingChanges > 0) {

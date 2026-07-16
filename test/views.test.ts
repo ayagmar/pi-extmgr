@@ -18,6 +18,7 @@ void test("saved views normalize versioned view, favorite, and recent state", ()
       filter: "favorites",
       searchQuery: "demo",
       selectedItemId: "pkg:demo",
+      selectedItemIds: ["pkg:demo", "pkg:other"],
       createdAt: 1,
       updatedAt: 2,
     },
@@ -27,6 +28,7 @@ void test("saved views normalize versioned view, favorite, and recent state", ()
   assert.deepEqual(result.favorites, ["demo"]);
   assert.equal(result.recent.length, 20);
   assert.equal(result.lastView?.selectedItemId, "pkg:demo");
+  assert.deepEqual(result.lastView?.selectedItemIds, ["pkg:demo", "pkg:other"]);
 });
 
 void test("saved views use an atomic replacement write", async () => {
