@@ -124,6 +124,7 @@ const packageInfoCache = new PackageInfoCache(
 const packageInfoRequests = new RequestGeneration();
 
 export function clearRemotePackageInfoCache(): void {
+  packageInfoRequests.cancel();
   packageInfoCache.clear();
 }
 
