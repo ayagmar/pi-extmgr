@@ -4,7 +4,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { removeLocalExtension } from "../src/extensions/discovery.js";
-import { moveToExtensionTrash, undoExtensionTrash } from "../src/extensions/trash.js";
+import {
+  listExtensionTrash,
+  moveToExtensionTrash,
+  purgeExtensionTrash,
+  undoExtensionTrash,
+} from "../src/extensions/trash.js";
 
 void test("removeLocalExtension moves files to trash and exposes undo", async () => {
   const home = await mkdtemp(join(tmpdir(), "pi-extmgr-trash-home-"));
@@ -27,6 +32,43 @@ void test("removeLocalExtension moves files to trash and exposes undo", async ()
     if (previousHome === undefined) delete process.env.HOME;
     else process.env.HOME = previousHome;
     await rm(home, { recursive: true, force: true });
+  }
+});
+
+void test("trash records persist, clean up, and never overwrite a replacement", async () => {
+  const root = await mkdtemp(join(tmpdir(), "pi-extmgr-trash-lifecycle-"));
+  const trash = join(root, "trash");
+  const source = join(root, "extension.ts");
+  try {
+    await writeFile(source, "old\n", "utf8");
+    const record = await moveToExtensionTrash(source, trash);
+    assert.equal((await listExtensionTrash(trash)).length, 1);
+
+    await writeFile(source, "replacement\n", "utf8");
+    await assert.rejects(() => undoExtensionTrash(record), /already exists/);
+    assert.equal(await readFile(source, "utf8"), "replacement\n");
+
+    await purgeExtensionTrash(record);
+    assert.deepEqual(await listExtensionTrash(trash), []);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+void test("expired and missing trash records are removed from persistent listings", async () => {
+  const root = await mkdtemp(join(tmpdir(), "pi-extmgr-trash-expired-"));
+  const trash = join(root, "trash");
+  const source = join(root, "extension.ts");
+  try {
+    await writeFile(source, "old\n", "utf8");
+    const record = await moveToExtensionTrash(source, trash);
+    assert.deepEqual(
+      await listExtensionTrash(trash, { now: record.trashedAt + 10, retentionMs: 1 }),
+      []
+    );
+    assert.deepEqual(await listExtensionTrash(trash), []);
+  } finally {
+    await rm(root, { recursive: true, force: true });
   }
 });
 
