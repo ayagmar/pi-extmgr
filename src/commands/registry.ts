@@ -155,8 +155,8 @@ const COMMAND_DEFINITIONS: Record<CommandId, CommandDefinition> = {
   profile: {
     id: "profile",
     description: "Export, compare, or dry-run a package profile",
-    runInteractive: (tokens, ctx) => handleProfileSubcommand(tokens, ctx),
-    runNonInteractive: (tokens, ctx) => handleProfileSubcommand(tokens, ctx),
+    runInteractive: (tokens, ctx, pi) => handleProfileSubcommand(tokens, ctx, pi),
+    runNonInteractive: (tokens, ctx, pi) => handleProfileSubcommand(tokens, ctx, pi),
   },
 };
 

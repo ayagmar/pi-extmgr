@@ -1,7 +1,15 @@
 import assert from "node:assert/strict";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 import { applyProfile, planProfileApplication } from "../src/profiles/apply.js";
-import { compareProfiles, validateProfilePolicy } from "../src/profiles/compare.js";
+import {
+  compareProfiles,
+  loadProjectProfilePolicy,
+  validateProfilePolicy,
+} from "../src/profiles/compare.js";
+import { deleteNamedProfile, readProfileStore, saveNamedProfile } from "../src/profiles/store.js";
 import { normalizeProfile } from "../src/profiles/schema.js";
 
 void test("profile application produces a dry-run plan without mutating state", async () => {
@@ -43,6 +51,42 @@ void test("profile comparison and policy validation expose actionable difference
     validateProfilePolicy(right, { allowedScopes: ["global"], requireChecksums: true }).length,
     2
   );
+});
+
+void test("named profiles persist atomically and can be deleted", async () => {
+  const root = await mkdtemp(join(tmpdir(), "pi-extmgr-profile-store-"));
+  const path = join(root, "profiles.json");
+  try {
+    await saveNamedProfile(path, normalizeProfile({ name: " team ", packages: [] }));
+    assert.equal((await readProfileStore(path)).profiles.team?.name, "team");
+    assert.equal(await deleteNamedProfile(path, "team"), true);
+    assert.equal(Object.keys((await readProfileStore(path)).profiles).length, 0);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+void test("project policy loading rejects malformed policies and validates requirements", async () => {
+  const root = await mkdtemp(join(tmpdir(), "pi-extmgr-policy-"));
+  try {
+    await writeFile(
+      join(root, "policy.json"),
+      JSON.stringify({ schemaVersion: 1, allowedScopes: ["project"], requireChecksums: true }),
+      "utf8"
+    );
+    const policy = await loadProjectProfilePolicy(root, join(root, "policy.json"));
+    assert.equal(
+      validateProfilePolicy(
+        normalizeProfile({ packages: [{ source: "npm:demo", scope: "global" }] }),
+        policy ?? {}
+      ).length,
+      2
+    );
+    await writeFile(join(root, "bad.json"), "{invalid", "utf8");
+    await assert.rejects(() => loadProjectProfilePolicy(root, join(root, "bad.json")));
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });
 
 void test("profile schema preserves exact package versions, refs, filters, scopes, and checksums", () => {
