@@ -29,6 +29,17 @@ void test("autocomplete includes base commands and aliases", () => {
   assert.ok(removeItems.some((item) => item.value === "uninstall"));
 });
 
+void test("autocomplete offers static command arguments without network requests", () => {
+  assert.deepEqual(
+    getExtensionsAutocompleteItems("install --p")?.map((item) => item.value),
+    ["--project"]
+  );
+  assert.deepEqual(
+    getExtensionsAutocompleteItems("history --f")?.map((item) => item.value),
+    ["--failed"]
+  );
+});
+
 void test("runResolvedCommand install respects --project scope", async () => {
   const installs: { source: string; scope: "global" | "project" }[] = [];
   const restoreCatalog = mockPackageCatalog({

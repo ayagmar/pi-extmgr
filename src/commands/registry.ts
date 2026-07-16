@@ -170,6 +170,24 @@ export function runResolvedCommand(
 }
 
 export function getExtensionsAutocompleteItems(prefix: string): AutocompleteItem[] | null {
+  const normalizedPrefix = prefix ?? "";
+  const commandPrefix = normalizedPrefix.trimStart();
+  const whitespace = commandPrefix.lastIndexOf(" ");
+  if (whitespace >= 0) {
+    const command = commandPrefix.slice(0, whitespace).replace(/^\//, "").split(/\s+/)[0] ?? "";
+    const argumentPrefix = commandPrefix.slice(whitespace + 1).toLowerCase();
+    const argumentOptions: Record<string, string[]> = {
+      install: ["--global", "--project"],
+      remove: ["--global", "--project"],
+      update: ["--all", "--preview"],
+      "auto-update": ["daily", "weekly", "monthly", "never"],
+      history: ["--failed", "--success", "--global", "--limit", "--since"],
+    };
+    const options = argumentOptions[command] ?? [];
+    const matches = options.filter((option) => option.startsWith(argumentPrefix));
+    return matches.length > 0 ? matches.map((value) => ({ value, label: value })) : null;
+  }
+
   const items = Object.values(COMMAND_DEFINITIONS).flatMap((def) => {
     const base = [{ value: def.id, description: def.description }];
     const aliases = (def.aliases ?? []).map((alias) => ({
