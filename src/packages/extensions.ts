@@ -24,6 +24,7 @@ import { resolveConfiguredNpmRootCommand } from "../utils/npm-exec.js";
 interface PackageSettingsObject {
   source: string;
   extensions?: string[];
+  [key: string]: unknown;
 }
 
 interface SettingsFile {
@@ -252,6 +253,7 @@ function toPackageSettingsObject(
 
   if (existing && typeof existing.source === "string") {
     return {
+      ...structuredClone(existing),
       source: existing.source,
       ...(Array.isArray(existing.extensions) ? { extensions: [...existing.extensions] } : {}),
     };
@@ -340,8 +342,11 @@ export async function applyPackageExtensionStateChanges(
 
     packageEntry.extensions = updateExtensionMarkers(packageEntry.extensions, normalizedChanges);
 
+    if (packageEntry.extensions.length === 0) {
+      delete packageEntry.extensions;
+    }
     const normalizedPackageEntry =
-      packageEntry.extensions.length > 0 ? packageEntry : packageEntry.source;
+      Object.keys(packageEntry).length > 1 ? packageEntry : packageEntry.source;
 
     if (index === -1) {
       packages.push(normalizedPackageEntry);

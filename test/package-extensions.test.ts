@@ -701,6 +701,53 @@ void test("setPackageExtensionState preserves unrelated settings fields", async 
   }
 });
 
+void test("setPackageExtensionState preserves unknown package fields and resource filters", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "pi-extmgr-cwd-"));
+  const agentDir = await mkdtemp(join(tmpdir(), "pi-extmgr-agent-"));
+  const oldAgentDir = process.env.PI_CODING_AGENT_DIR;
+  process.env.PI_CODING_AGENT_DIR = agentDir;
+  const settingsPath = join(agentDir, "settings.json");
+
+  try {
+    const originalPackage = {
+      source: "npm:demo-pkg@1.0.0",
+      extensions: ["-extensions/main.ts"],
+      skills: [],
+      prompts: ["prompts/review.md"],
+      themes: ["+themes/custom.json"],
+      autoload: false,
+      futurePiField: { keep: true },
+    };
+    await writeFile(settingsPath, JSON.stringify({ packages: [originalPackage] }, null, 2), "utf8");
+
+    const result = await setPackageExtensionState(
+      originalPackage.source,
+      "extensions/main.ts",
+      "global",
+      "enabled",
+      cwd
+    );
+    assert.equal(result.ok, true);
+
+    const saved = JSON.parse(await readFile(settingsPath, "utf8")) as {
+      packages: Array<Record<string, unknown>>;
+    };
+    assert.deepEqual(saved.packages[0], {
+      source: originalPackage.source,
+      skills: [],
+      prompts: ["prompts/review.md"],
+      themes: ["+themes/custom.json"],
+      autoload: false,
+      futurePiField: { keep: true },
+    });
+  } finally {
+    if (oldAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+    else process.env.PI_CODING_AGENT_DIR = oldAgentDir;
+    await rm(cwd, { recursive: true, force: true });
+    await rm(agentDir, { recursive: true, force: true });
+  }
+});
+
 void test("setPackageExtensionState preserves non-marker extension tokens", async () => {
   const cwd = await mkdtemp(join(tmpdir(), "pi-extmgr-cwd-"));
   const agentDir = await mkdtemp(join(tmpdir(), "pi-extmgr-agent-"));
