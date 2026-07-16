@@ -110,7 +110,17 @@ export type UnifiedAction =
   | {
       type: "action";
       itemId: string;
-      action?: "menu" | "update" | "remove" | "details" | "configure" | "enable" | "disable";
+      action?:
+        | "menu"
+        | "update"
+        | "remove"
+        | "details"
+        | "configure"
+        | "enable"
+        | "disable"
+        | "compare"
+        | "move-global"
+        | "move-project";
     };
 
 export type BrowseAction =

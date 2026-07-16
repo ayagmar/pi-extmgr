@@ -62,7 +62,7 @@ export function buildFooterShortcuts(state: FooterState): string {
     parts.push("Space select · B update selected");
     parts.push("Enter/A actions");
     parts.push("V details");
-    parts.push("c configure");
+    parts.push("c configure · scope actions in menu");
     parts.push("u update");
     parts.push("X remove");
   }
