@@ -105,7 +105,7 @@ export type UnifiedAction =
   | {
       type: "action";
       itemId: string;
-      action?: "menu" | "update" | "remove" | "details" | "configure";
+      action?: "menu" | "update" | "remove" | "details" | "configure" | "enable" | "disable";
     };
 
 export type BrowseAction =

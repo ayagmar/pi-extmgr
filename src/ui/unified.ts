@@ -31,7 +31,10 @@ import {
 } from "../extensions/discovery.js";
 import { undoExtensionTrash } from "../extensions/trash.js";
 import { getInstalledPackages } from "../packages/discovery.js";
-import { discoverPackageExtensions } from "../packages/extensions.js";
+import {
+  applyPackageExtensionStateChanges,
+  discoverPackageExtensions,
+} from "../packages/extensions.js";
 import {
   removePackageWithOutcome,
   showInstalledPackagesList,
@@ -1315,6 +1318,8 @@ const LOCAL_ACTION_OPTIONS = {
 
 const PACKAGE_ACTION_OPTIONS = {
   configure: "Configure extensions",
+  enable: "Enable whole package",
+  disable: "Disable whole package",
   update: "Update package",
   remove: "Remove package",
   details: "View details",
@@ -1639,6 +1644,8 @@ async function handleUnifiedAction(
 
     const pendingDestinationBySelection = {
       configure: "configure package extensions",
+      enable: "enable package",
+      disable: "disable package",
       update: "update package",
       remove: "remove package",
     } satisfies Record<Exclude<PackageActionSelection, "cancel" | "details">, string>;
@@ -1654,6 +1661,29 @@ async function handleUnifiedAction(
     if (pending === "stay") return "resume";
 
     switch (selection) {
+      case "enable":
+      case "disable": {
+        if (!item.extensionPaths?.length) {
+          ctx.ui.notify("No package extension entrypoints were discovered.", "warning");
+          return "resume";
+        }
+        const target: State = selection === "enable" ? "enabled" : "disabled";
+        const result = await applyPackageExtensionStateChanges(
+          item.source,
+          item.scope,
+          item.extensionPaths.map((extensionPath) => ({ extensionPath, target })),
+          ctx.cwd
+        );
+        if (!result.ok) {
+          ctx.ui.notify(`Package toggle failed: ${result.error}`, "error");
+          return "resume";
+        }
+        ctx.ui.notify(
+          `${target === "enabled" ? "Enabled" : "Disabled"} ${item.displayName}.`,
+          "info"
+        );
+        return await confirmReload(ctx, "Package extension state changed.");
+      }
       case "configure": {
         const outcome = await configurePackageExtensions(pkg, ctx, pi);
         return outcome.reloaded;
