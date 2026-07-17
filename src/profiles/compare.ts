@@ -1,5 +1,5 @@
 import { readFile } from "node:fs/promises";
-import { join } from "node:path";
+import { getProjectConfigPath } from "../utils/pi-paths.js";
 import { planProfileApplication } from "./apply.js";
 import { type ExtmgrProfile } from "./schema.js";
 
@@ -56,9 +56,11 @@ export function validateProfilePolicy(
 
 export async function loadProjectProfilePolicy(
   cwd: string,
-  path?: string
+  path?: string,
+  projectTrusted = false
 ): Promise<ProfilePolicy | undefined> {
-  const policyPath = path ?? join(cwd, ".pi", "extmgr-policy.json");
+  if (!path && !projectTrusted) return undefined;
+  const policyPath = path ?? getProjectConfigPath(cwd, "extmgr-policy.json");
   try {
     const raw = JSON.parse(await readFile(policyPath, "utf8")) as unknown;
     if (!raw || typeof raw !== "object" || Array.isArray(raw)) {

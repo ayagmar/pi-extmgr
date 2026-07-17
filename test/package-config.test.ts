@@ -94,7 +94,7 @@ void test("buildPackageConfigRows only includes manifest entrypoints that still 
       resolvedPath: pkgRoot,
     };
 
-    const discovered = await discoverPackageExtensions([pkg], cwd);
+    const discovered = await discoverPackageExtensions([pkg], cwd, { projectTrusted: true });
     const rows = await buildPackageConfigRows(discovered);
 
     assert.equal(rows.length, 1);
@@ -148,7 +148,7 @@ void test("applyPackageExtensionChanges applies changed rows and preserves non-m
       resolvedPath: pkgRoot,
     };
 
-    const discovered = await discoverPackageExtensions([pkg], cwd);
+    const discovered = await discoverPackageExtensions([pkg], cwd, { projectTrusted: true });
     const rows = await buildPackageConfigRows(discovered);
 
     const staged = new Map<string, State>();
@@ -157,7 +157,7 @@ void test("applyPackageExtensionChanges applies changed rows and preserves non-m
     staged.set(row.id, "enabled");
 
     const { pi } = createPiRecorder();
-    const result = await applyPackageExtensionChanges(rows, staged, pkg, cwd, pi);
+    const result = await applyPackageExtensionChanges(rows, staged, pkg, cwd, pi, true);
 
     assert.equal(result.changed, 1);
     assert.equal(result.errors.length, 0);
@@ -211,7 +211,7 @@ void test("applyPackageExtensionChanges collapses marker-only package config bac
       resolvedPath: pkgRoot,
     };
 
-    const discovered = await discoverPackageExtensions([pkg], cwd);
+    const discovered = await discoverPackageExtensions([pkg], cwd, { projectTrusted: true });
     const rows = await buildPackageConfigRows(discovered);
 
     const staged = new Map<string, State>();
@@ -220,7 +220,7 @@ void test("applyPackageExtensionChanges collapses marker-only package config bac
     staged.set(row.id, "enabled");
 
     const { pi } = createPiRecorder();
-    const result = await applyPackageExtensionChanges(rows, staged, pkg, cwd, pi);
+    const result = await applyPackageExtensionChanges(rows, staged, pkg, cwd, pi, true);
 
     assert.equal(result.changed, 1);
     assert.equal(result.errors.length, 0);
@@ -278,7 +278,7 @@ void test("applyPackageExtensionChanges batches multiple row changes in one save
       resolvedPath: pkgRoot,
     };
 
-    const discovered = await discoverPackageExtensions([pkg], cwd);
+    const discovered = await discoverPackageExtensions([pkg], cwd, { projectTrusted: true });
     const rows = await buildPackageConfigRows(discovered);
 
     const staged = new Map<string, State>();
@@ -290,7 +290,7 @@ void test("applyPackageExtensionChanges batches multiple row changes in one save
     staged.set(secondRow.id, "enabled");
 
     const { pi } = createPiRecorder();
-    const result = await applyPackageExtensionChanges(rows, staged, pkg, cwd, pi);
+    const result = await applyPackageExtensionChanges(rows, staged, pkg, cwd, pi, true);
 
     assert.equal(result.changed, 2);
     assert.equal(result.errors.length, 0);
@@ -328,7 +328,7 @@ void test("applyPackageExtensionChanges reports settings parse failure and logs 
       resolvedPath: pkgRoot,
     };
 
-    const discovered = await discoverPackageExtensions([pkg], cwd);
+    const discovered = await discoverPackageExtensions([pkg], cwd, { projectTrusted: true });
     const rows = await buildPackageConfigRows(discovered);
 
     const staged = new Map<string, State>();
@@ -337,7 +337,7 @@ void test("applyPackageExtensionChanges reports settings parse failure and logs 
     staged.set(row.id, "disabled");
 
     const { pi, entries } = createPiRecorder();
-    const result = await applyPackageExtensionChanges(rows, staged, pkg, cwd, pi);
+    const result = await applyPackageExtensionChanges(rows, staged, pkg, cwd, pi, true);
 
     assert.equal(result.changed, 0);
     assert.equal(result.errors.length, 1);

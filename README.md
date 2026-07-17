@@ -66,18 +66,18 @@ version manager, or install project-local with `pi install npm:pi-extmgr -l`.
   - Install by source (`npm:`, `git:`, `https://`, `ssh://`, `git@...`, local path)
   - Supports direct GitHub `.ts` installs and standalone local install for self-contained packages
   - Long-running discovery/detail screens now show dedicated loading UI, and cancellable reads can be aborted with `Esc`
-- **Auto-update**
+- **Scheduled update checks**
   - Interactive wizard (`t` in manager, or `/extensions auto-update`)
   - Persistent schedule restored on startup and session switch
   - Background checks + status bar updates for installed npm + git packages
 - **Operational visibility**
   - Session history (`/extensions history`)
   - Cache controls (`/extensions clear-cache` clears persistent + runtime extmgr caches)
-  - Status line summary (`pkg count • auto-update • known updates`)
-  - History now records local extension deletions and auto-update configuration changes
+  - Status line summary (`pkg count • scheduled update checks • known updates`)
+  - History now records local extension deletions and scheduled update checks configuration changes
 - **Interactive + non-interactive support**
   - Works in TUI and non-UI modes
-  - Non-interactive commands for list/install/remove/update/auto-update
+  - Non-interactive commands for list/install/remove/update/scheduled update checks (checks discover updates; package updates remain explicit)
 
 ## Usage
 
@@ -110,7 +110,7 @@ Open the manager:
 | `W` / `L` / `D` | Save / load / delete manager views                  |
 | `*`           | Toggle favorite for selected item                     |
 | `U`           | Update all packages                                   |
-| `t`           | Auto-update wizard                                    |
+| `t`           | Scheduled update checks wizard                                    |
 | `P` / `M`     | Quick actions palette                                 |
 | `R`           | Browse remote packages                                |
 | `?` / `H`     | Help                                                  |
@@ -199,10 +199,10 @@ Examples:
 - **Package extension config**: Select a package and press `c` (or Enter/A → Configure) to enable/disable individual package entrypoints.
   - After saving package extension config, run /reload to apply changes.
 - **Two install modes**:
-  - **Managed** (npm): Auto-updates with `pi update`, stored in pi's package cache, supports Pi package manifest/convention loading
+  - **Managed** (npm): uses explicit `pi update` updates, stored in pi's package cache, supports Pi package manifest/convention loading
   - **Local** (standalone): Copies to `~/.pi/agent/extensions/{package}/`, so it only accepts runnable standalone layouts (manifest-declared/root entrypoints), requires `tar` on `PATH`, and rejects packages whose runtime `dependencies` are not already bundled with the package contents
-- **Auto-update schedule is persistent**: `/extensions auto-update 1d` stays active across future Pi sessions and is restored when switching sessions.
-- **Auto-update/update badges cover npm + git packages**: extmgr now uses pi's package manager APIs for structured update detection instead of parsing `pi list` output.
+- **Scheduled update-check schedule is persistent**: `/extensions auto-update 1d` stays active across future Pi sessions and is restored when switching sessions.
+- **Scheduled update-check badges cover npm + git packages**: extmgr now uses pi's package manager APIs for structured update detection instead of parsing `pi list` output.
 - **Settings/cache writes are hardened**: extmgr serializes writes and uses safe file replacement to reduce JSON corruption issues.
 - **Invalid JSON is handled safely**: malformed `auto-update.json` / metadata cache files are backed up and reset; invalid `.pi/settings.json` is not overwritten during package-extension toggles.
 - **Reload is built-in**: When extmgr asks to reload, it calls `ctx.reload()` directly. Successful mutations persist a versioned reload-required marker; cancellation and failure do not. The marker survives reopening the manager and clears after a successful reload.

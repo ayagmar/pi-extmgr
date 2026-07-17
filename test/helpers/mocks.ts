@@ -28,6 +28,7 @@ export interface MockHarnessOptions {
   selectResult?: string;
   confirmResult?: boolean;
   confirmImpl?: (title: string, message?: string) => boolean | Promise<boolean>;
+  projectTrusted?: boolean;
 }
 
 const OK: ExecResult = { code: 0, stdout: "ok", stderr: "", killed: false };
@@ -170,7 +171,9 @@ export function createMockHarness(options: MockHarnessOptions = {}): {
 
   const ctx = {
     hasUI: options.hasUI ?? false,
+    mode: options.hasUI ? "tui" : "print",
     cwd: options.cwd ?? "/tmp",
+    isProjectTrusted: () => options.projectTrusted ?? true,
     ui,
     reload: () => {
       reloadCalls += 1;

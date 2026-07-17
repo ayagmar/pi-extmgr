@@ -1,4 +1,5 @@
 import { type ExtensionAPI, type ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
+import { basename } from "node:path";
 import {
   type ChangeAction,
   formatChangeEntry,
@@ -165,7 +166,7 @@ function showHistoryHelp(ctx: ExtensionCommandContext): void {
     "  --failed         Show only failed entries",
     "  --package <q>    Filter by package/source/extension id",
     "  --since <d>      Show only entries newer than duration (e.g. 30m, 24h, 7d, 1mo)",
-    "  --global         Read all persisted sessions from ~/.pi/agent/sessions (non-interactive mode only)",
+    "  --global         Read all persisted Pi sessions (non-interactive mode only)",
     "",
     "Examples:",
     "  /extensions history --failed --limit 50",
@@ -178,13 +179,7 @@ function showHistoryHelp(ctx: ExtensionCommandContext): void {
 }
 
 function formatSessionSuffix(sessionFile: string): string {
-  const marker = "/.pi/agent/sessions/";
-  const normalized = sessionFile.replace(/\\/g, "/");
-  const index = normalized.indexOf(marker);
-  if (index >= 0) {
-    return normalized.slice(index + marker.length);
-  }
-  return sessionFile;
+  return basename(sessionFile) || sessionFile;
 }
 
 export async function handleHistorySubcommand(

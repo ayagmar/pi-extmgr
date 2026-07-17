@@ -25,6 +25,7 @@ import { readSummary } from "../utils/fs.js";
 import { fetchWithTimeout } from "../utils/network.js";
 import { execNpm } from "../utils/npm-exec.js";
 import { normalizePackageIdentity } from "../utils/package-source.js";
+import { isProjectTrusted } from "../utils/mode.js";
 import { getPackageCatalog } from "./catalog.js";
 
 const NPM_SEARCH_API = "https://registry.npmjs.org/-/v1/search";
@@ -279,7 +280,7 @@ export async function getInstalledPackages(
 ): Promise<InstalledPackage[]> {
   throwIfAborted(signal);
 
-  const packages = await getPackageCatalog(ctx.cwd).listInstalledPackages();
+  const packages = await getPackageCatalog(ctx.cwd, isProjectTrusted(ctx)).listInstalledPackages();
   if (packages.length === 0) {
     return [];
   }
@@ -303,7 +304,9 @@ export async function isSourceInstalled(
   ctx: ExtensionCommandContext | ExtensionContext,
   options?: { scope?: "global" | "project" }
 ): Promise<boolean> {
-  const installed = await getPackageCatalog(ctx.cwd).listInstalledPackages({ dedupe: false });
+  const installed = await getPackageCatalog(ctx.cwd, isProjectTrusted(ctx)).listInstalledPackages({
+    dedupe: false,
+  });
   const expected = normalizePackageIdentity(source, { cwd: ctx.cwd });
 
   return installed.some((pkg) => {
@@ -317,7 +320,7 @@ export async function isSourceInstalled(
 export async function getInstalledPackagesAllScopes(
   ctx: ExtensionCommandContext | ExtensionContext
 ): Promise<InstalledPackage[]> {
-  return getPackageCatalog(ctx.cwd).listInstalledPackages({ dedupe: false });
+  return getPackageCatalog(ctx.cwd, isProjectTrusted(ctx)).listInstalledPackages({ dedupe: false });
 }
 
 async function hydratePackageFromResolvedPath(pkg: InstalledPackage): Promise<void> {

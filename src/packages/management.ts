@@ -13,7 +13,7 @@ import { runTaskWithLoader } from "../ui/async-task.js";
 import { parseChoiceByLabel } from "../utils/command.js";
 import { formatInstalledPackageLabel } from "../utils/format.js";
 import { logPackageRemove, logPackageUpdate } from "../utils/history.js";
-import { requireUI } from "../utils/mode.js";
+import { isProjectTrusted, requireUI } from "../utils/mode.js";
 import { notify, error as notifyError, success } from "../utils/notify.js";
 import { normalizePackageIdentity } from "../utils/package-source.js";
 import { clearUpdatesAvailable } from "../utils/settings.js";
@@ -58,7 +58,10 @@ async function updatePackageInternal(
   const updateIdentity = normalizePackageIdentity(source, { cwd: ctx.cwd });
 
   try {
-    const updates = await getPackageCatalog(ctx.cwd).checkForAvailableUpdates();
+    const updates = await getPackageCatalog(
+      ctx.cwd,
+      isProjectTrusted(ctx)
+    ).checkForAvailableUpdates();
     const hasUpdate = updates.some(
       (update) => normalizePackageIdentity(update.source) === updateIdentity
     );
@@ -80,7 +83,7 @@ async function updatePackageInternal(
         fallbackWithoutLoader: true,
       },
       async ({ setMessage }) => {
-        await getPackageCatalog(ctx.cwd).update(source, (event) => {
+        await getPackageCatalog(ctx.cwd, isProjectTrusted(ctx)).update(source, (event) => {
           setMessage(getProgressMessage(event, `Updating ${source}...`));
         });
         return undefined;
@@ -113,7 +116,10 @@ async function updatePackagesInternal(
   showProgress(ctx, "Updating", "all packages");
 
   try {
-    const updates = await getPackageCatalog(ctx.cwd).checkForAvailableUpdates();
+    const updates = await getPackageCatalog(
+      ctx.cwd,
+      isProjectTrusted(ctx)
+    ).checkForAvailableUpdates();
     if (updates.length === 0) {
       notify(ctx, "All packages are already up to date.", "info");
       logPackageUpdate(pi, BULK_UPDATE_LABEL, BULK_UPDATE_LABEL, undefined, true);
@@ -131,7 +137,7 @@ async function updatePackagesInternal(
         fallbackWithoutLoader: true,
       },
       async ({ setMessage }) => {
-        await getPackageCatalog(ctx.cwd).update(undefined, (event) => {
+        await getPackageCatalog(ctx.cwd, isProjectTrusted(ctx)).update(undefined, (event) => {
           setMessage(getProgressMessage(event, "Updating all packages..."));
         });
         return undefined;
@@ -301,9 +307,13 @@ async function executeRemovalTargets(
           fallbackWithoutLoader: true,
         },
         async ({ setMessage }) => {
-          await getPackageCatalog(ctx.cwd).remove(target.source, target.scope, (event) => {
-            setMessage(getProgressMessage(event, `Removing ${target.source}...`));
-          });
+          await getPackageCatalog(ctx.cwd, isProjectTrusted(ctx)).remove(
+            target.source,
+            target.scope,
+            (event) => {
+              setMessage(getProgressMessage(event, `Removing ${target.source}...`));
+            }
+          );
           return undefined;
         }
       );

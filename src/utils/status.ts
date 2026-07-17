@@ -8,6 +8,7 @@ import {
   getAgentDir,
 } from "@earendil-works/pi-coding-agent";
 import { getPackageCatalog, type PackageCatalog } from "../packages/catalog.js";
+import { isProjectTrusted } from "./mode.js";
 import { getAutoUpdateStatus } from "./auto-update.js";
 import { normalizePackageIdentity } from "./package-source.js";
 import { getAutoUpdateConfigAsync, saveAutoUpdateConfig } from "./settings.js";
@@ -38,7 +39,7 @@ export async function updateExtmgrStatus(
 
   try {
     const [packages, autoUpdateConfig] = await Promise.all([
-      getPackageCatalog(ctx.cwd).listInstalledPackages(),
+      getPackageCatalog(ctx.cwd, isProjectTrusted(ctx)).listInstalledPackages(),
       getAutoUpdateConfigAsync(ctx),
     ]);
     const statusParts: string[] = [];

@@ -7,6 +7,7 @@ import {
   type ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
 import { getPackageCatalog } from "../packages/catalog.js";
+import { isProjectTrusted } from "./mode.js";
 import { parseChoiceByLabel } from "./command.js";
 import { logAutoUpdateConfig } from "./history.js";
 import { notify } from "./notify.js";
@@ -101,7 +102,10 @@ export async function checkForUpdates(
   ctx: ExtensionCommandContext | ExtensionContext,
   onUpdateAvailable?: (packages: string[]) => void
 ): Promise<string[]> {
-  const updates = await getPackageCatalog(ctx.cwd).checkForAvailableUpdates();
+  const updates = await getPackageCatalog(
+    ctx.cwd,
+    isProjectTrusted(ctx)
+  ).checkForAvailableUpdates();
   const updatesAvailable = updates.map((update) => normalizePackageIdentity(update.source));
   const updatedPackageNames = updates.map((update) => update.displayName);
 
@@ -128,7 +132,7 @@ export function getAutoUpdateStatus(ctx: ExtensionCommandContext | ExtensionCont
   const config = getAutoUpdateConfig(ctx);
 
   if (!config.enabled || config.intervalMs === 0) {
-    return "⏸ auto-update off";
+    return "⏸ scheduled checks off";
   }
 
   const indicator = isAutoUpdateRunning() ? "↻" : "⏸";
@@ -153,7 +157,7 @@ export async function promptAutoUpdateWizard(
   onUpdateAvailable?: (packages: string[]) => void
 ): Promise<void> {
   if (!ctx.hasUI) {
-    notify(ctx, "Auto-update wizard requires interactive mode.", "warning");
+    notify(ctx, "Scheduled update checks wizard requires interactive mode.", "warning");
     return;
   }
 
@@ -161,7 +165,7 @@ export async function promptAutoUpdateWizard(
   const choice = parseChoiceByLabel(
     AUTO_UPDATE_WIZARD_CHOICES,
     await ctx.ui.select(
-      `Auto-update (${current.displayText})`,
+      `Scheduled update checks (${current.displayText})`,
       Object.values(AUTO_UPDATE_WIZARD_CHOICES)
     )
   );
@@ -184,7 +188,7 @@ export async function promptAutoUpdateWizard(
       return;
   }
 
-  const input = await ctx.ui.input("Auto-update interval", current.displayText || "1d");
+  const input = await ctx.ui.input("Scheduled update-check interval", current.displayText || "1d");
   if (!input?.trim()) return;
 
   const parsed = parseDuration(input.trim());
@@ -225,7 +229,7 @@ export function enableAutoUpdate(
 
   startAutoUpdateTimer(pi, getCtx, onUpdateAvailable);
 
-  notify(ctx, `Auto-update enabled: ${displayText}`, "info");
+  notify(ctx, `Scheduled update checks enabled: ${displayText}`, "info");
 }
 
 /**
@@ -245,5 +249,5 @@ export function disableAutoUpdate(
   });
   logAutoUpdateConfig(pi, "disabled", true);
 
-  notify(ctx, "Auto-update disabled", "info");
+  notify(ctx, "Scheduled update checks disabled", "info");
 }

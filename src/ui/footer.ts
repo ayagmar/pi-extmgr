@@ -71,5 +71,5 @@ export function buildFooterShortcuts(state: FooterState, keybindings?: Keybindin
   }
   if (state.pendingChanges > 0) parts.push(`S save (${state.pendingChanges})`);
 
-  return `${parts.join(" · ")}\nMore: 1-7 filters · W/L/D views · * favorite · i install · f search · U update all · t auto-update · P palette · R browse · ? help · ${cancel}`;
+  return `${parts.join(" · ")}\nMore: 1-7 filters · W/L/D views · * favorite · i install · f search · U update all · t scheduled checks · P palette · R browse · ? help · ${cancel}`;
 }

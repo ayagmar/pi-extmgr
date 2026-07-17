@@ -607,10 +607,7 @@ void test("installPackageLocally removes temporary extraction artifacts after su
         return Promise.reject(new Error(`Unexpected fetch URL: ${url}`));
       }
 
-      return Promise.resolve({
-        ok: true,
-        arrayBuffer: () => Promise.resolve(new Uint8Array([1, 2, 3]).buffer),
-      } as Response);
+      return Promise.resolve(new Response(new Uint8Array([1, 2, 3]), { status: 200 }));
     }) as typeof fetch;
 
     const { pi, ctx, entries } = createMockHarness({
@@ -682,10 +679,7 @@ void test("installPackageLocally rejects standalone packages with unresolved run
         return Promise.reject(new Error(`Unexpected fetch URL: ${url}`));
       }
 
-      return Promise.resolve({
-        ok: true,
-        arrayBuffer: () => Promise.resolve(new Uint8Array([1, 2, 3]).buffer),
-      } as Response);
+      return Promise.resolve(new Response(new Uint8Array([1, 2, 3]), { status: 200 }));
     }) as typeof fetch;
 
     const { pi, ctx, entries } = createMockHarness({

@@ -69,7 +69,7 @@ function showNonInteractiveHelp(ctx: ExtensionCommandContext): void {
     "  /extensions history [opts]   - Show history (supports filters)",
     "  /extensions doctor           - Inspect runtime ownership/conflicts",
     "  /extensions profile <action> - Export, compare, or dry-run a profile",
-    "  /extensions auto-update <d>  - Configure auto-update (e.g. 1d, 1w, 1mo, never)",
+    "  /extensions auto-update <d>  - Configure scheduled update checks (e.g. 1d, 1w, 1mo, never)",
     "",
     "History examples:",
     "  /extensions history --failed --limit 50",
@@ -165,7 +165,7 @@ const COMMAND_DEFINITIONS: Record<CommandId, CommandDefinition> = {
   },
   "auto-update": {
     id: "auto-update",
-    description: "Configure auto-update schedule",
+    description: "Configure scheduled update checks",
     runInteractive: (tokens, ctx, pi) => handleAutoUpdateSubcommand(tokens, ctx, pi),
     runNonInteractive: (tokens, ctx, pi) => handleAutoUpdateSubcommand(tokens, ctx, pi),
   },
