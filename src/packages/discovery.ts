@@ -108,6 +108,12 @@ export function isCacheValid(query: string, offset = 0): boolean {
   return cache ? Date.now() - cache.timestamp < CACHE_LIMITS.searchTTL : false;
 }
 
+export async function hydrateSearchCache(query: string, offset = 0): Promise<SearchCache | null> {
+  const cached = await getCachedSearch(query, offset);
+  if (cached) setSearchCache(cached);
+  return cached;
+}
+
 function getNpmPackageAuthor(
   pkg: NonNullable<NpmSearchResultObject["package"]>
 ): string | undefined {
@@ -250,9 +256,8 @@ export async function searchNpmPackages(
       return runtimeCached;
     }
 
-    const persisted = await getCachedSearch(query, offset);
+    const persisted = await hydrateSearchCache(query, offset);
     if (persisted) {
-      setSearchCache(persisted);
       if (ctx.hasUI) {
         ctx.ui.notify(`Using ${persisted.results.length} cached results`, "info");
       }
