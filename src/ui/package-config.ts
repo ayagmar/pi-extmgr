@@ -30,6 +30,7 @@ import { requireCustomUI, runCustomUI } from "../utils/mode.js";
 import { notify } from "../utils/notify.js";
 import { getPackageSourceKind } from "../utils/package-source.js";
 import { getSettingsListSelectedIndex } from "../utils/settings-list.js";
+import { activeKeyHint } from "../utils/key-hints.js";
 import { confirmReload } from "../utils/ui-helpers.js";
 import { runTaskWithLoader } from "./async-task.js";
 import { getChangeMarker, getPackageIcon, getScopeIcon, getStatusIcon } from "./theme.js";
@@ -130,7 +131,7 @@ async function showConfigurePanel(
   ctx: ExtensionCommandContext
 ): Promise<ConfigurePanelAction | undefined> {
   return runCustomUI(ctx, "Package extension configuration", () =>
-    ctx.ui.custom<ConfigurePanelAction>((tui, theme, _keybindings, done) => {
+    ctx.ui.custom<ConfigurePanelAction>((tui, theme, keybindings, done) => {
       const container = new Container();
       const titleText = new Text("", 2, 0);
       const subtitleText = new Text("", 2, 0);
@@ -148,10 +149,15 @@ async function showConfigurePanel(
         subtitleText.setText(
           theme.fg(
             "muted",
-            `${rows.length} extension path${rows.length === 1 ? "" : "s"} • Space/Enter toggle • S save • Esc cancel`
+            `${rows.length} extension path${rows.length === 1 ? "" : "s"} • Space toggle • S save • ${activeKeyHint(keybindings, "tui.select.cancel", "cancel")}`
           )
         );
-        footerText.setText(theme.fg("dim", "↑↓ Navigate | Space/Enter Toggle | S Save | Esc Back"));
+        footerText.setText(
+          theme.fg(
+            "dim",
+            `${activeKeyHint(keybindings, "tui.select.up", "navigate")} / ${activeKeyHint(keybindings, "tui.select.down", "navigate")} · Space toggle · S save · ${activeKeyHint(keybindings, "tui.select.cancel", "back")}`
+          )
+        );
 
         for (const settingsItem of settingsItems) {
           const row = rowById.get(settingsItem.id);
