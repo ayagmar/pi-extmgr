@@ -66,18 +66,20 @@ import { getPackageSourceKind, normalizePackageIdentity } from "../utils/package
 import { normalizePathIdentity } from "../utils/path-identity.js";
 import { comparePackageScopes, movePackageBetweenScopes } from "../packages/scopes.js";
 import { markReloadRequired, readReloadState } from "../utils/reload-state.js";
-import {
-  getSavedViewsPath,
-  type SavedView,
-  readSavedViews,
-  writeSavedViews,
-} from "../utils/views.js";
+import { getSavedViewsPath, readSavedViews, writeSavedViews } from "../utils/views.js";
 import { updateExtmgrStatus } from "../utils/status.js";
 import { confirmReload, formatListOutput } from "../utils/ui-helpers.js";
 import { runTaskWithLoader } from "./async-task.js";
 import { buildFooterShortcuts, buildFooterState, getPendingToggleChangeCount } from "./footer.js";
 import { showHelp } from "./help.js";
 import { configurePackageExtensions } from "./package-config.js";
+import {
+  managerStateToView,
+  UNIFIED_FILTER_OPTIONS,
+  type UnifiedFilter,
+  type UnifiedManagerViewState,
+  viewToManagerState,
+} from "./manager/state.js";
 import { showRemote } from "./remote.js";
 import { getChangeMarker, getPackageIcon, getScopeIcon, getStatusIcon } from "./theme.js";
 
@@ -535,55 +537,6 @@ function buildManagerSummary(
   }
 
   return parts.join(" • ");
-}
-
-type UnifiedFilter = "all" | "local" | "packages" | "updates" | "disabled" | "favorites" | "recent";
-
-interface UnifiedManagerViewState {
-  filter: UnifiedFilter;
-  searchQuery: string;
-  selectedItemId?: string;
-  selectedItemIds: string[];
-}
-
-const UNIFIED_FILTER_OPTIONS: Array<{ id: UnifiedFilter; key: string; label: string }> = [
-  { id: "all", key: "1", label: "All" },
-  { id: "local", key: "2", label: "Local" },
-  { id: "packages", key: "3", label: "Packages" },
-  { id: "updates", key: "4", label: "Updates" },
-  { id: "disabled", key: "5", label: "Disabled" },
-  { id: "favorites", key: "6", label: "Favorites" },
-  { id: "recent", key: "7", label: "Recent" },
-];
-
-function isUnifiedFilter(value: string): value is UnifiedFilter {
-  return UNIFIED_FILTER_OPTIONS.some((option) => option.id === value);
-}
-
-function viewToManagerState(view: SavedView | undefined): UnifiedManagerViewState | undefined {
-  if (!view || !isUnifiedFilter(view.filter)) return undefined;
-  return {
-    filter: view.filter,
-    searchQuery: view.searchQuery,
-    ...(view.selectedItemId ? { selectedItemId: view.selectedItemId } : {}),
-    selectedItemIds: [...(view.selectedItemIds ?? [])],
-  };
-}
-
-function managerStateToView(
-  state: UnifiedManagerViewState,
-  name: string,
-  now = Date.now()
-): SavedView {
-  return {
-    name,
-    filter: state.filter,
-    searchQuery: state.searchQuery,
-    ...(state.selectedItemId ? { selectedItemId: state.selectedItemId } : {}),
-    selectedItemIds: [...state.selectedItemIds],
-    createdAt: now,
-    updatedAt: now,
-  };
 }
 
 function getCurrentUnifiedItemState(
