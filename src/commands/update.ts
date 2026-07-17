@@ -1,5 +1,6 @@
 import { type ExtensionAPI, type ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import { getPackageCatalog } from "../packages/catalog.js";
+import { isProjectTrusted } from "../utils/mode.js";
 import { getInstalledPackagesAllScopes } from "../packages/discovery.js";
 import { updatePackage, updatePackages } from "../packages/management.js";
 import { buildUpdatePreview } from "../packages/update-preview.js";
@@ -14,7 +15,7 @@ export async function handleUpdateSubcommand(
     try {
       const [installed, available] = await Promise.all([
         getInstalledPackagesAllScopes(ctx),
-        getPackageCatalog(ctx.cwd).checkForAvailableUpdates(),
+        getPackageCatalog(ctx.cwd, isProjectTrusted(ctx)).checkForAvailableUpdates(),
       ]);
       const preview = buildUpdatePreview(installed, available).filter((pkg) => pkg.updateAvailable);
       notify(

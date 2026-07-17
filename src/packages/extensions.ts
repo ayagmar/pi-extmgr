@@ -1,11 +1,16 @@
 import { execFile } from "node:child_process";
 import { type Dirent } from "node:fs";
-import { mkdir, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
-import { getAgentDir } from "@earendil-works/pi-coding-agent";
+import {
+  DefaultPackageManager,
+  getAgentDir,
+  SettingsManager,
+  type ResolvedResource,
+} from "@earendil-works/pi-coding-agent";
 import {
   type InstalledPackage,
   type PackageExtensionEntry,
@@ -20,15 +25,12 @@ import {
   resolveRelativePathSelection,
 } from "../utils/relative-path-selection.js";
 import { resolveConfiguredNpmRootCommand } from "../utils/npm-exec.js";
+import { throwIfSettingsErrors } from "../utils/settings-errors.js";
 
 interface PackageSettingsObject {
   source: string;
   extensions?: string[];
   [key: string]: unknown;
-}
-
-interface SettingsFile {
-  packages?: (string | PackageSettingsObject)[];
 }
 
 export interface PackageManifest {
@@ -164,75 +166,21 @@ async function toPackageRoot(pkg: InstalledPackage, cwd: string): Promise<string
   return undefined;
 }
 
-function getSettingsPath(scope: Scope, cwd: string): string {
-  if (scope === "project") {
-    return join(cwd, ".pi", "settings.json");
-  }
-  return join(getAgentDir(), "settings.json");
+function createSettingsManager(cwd: string, projectTrusted: boolean): SettingsManager {
+  return SettingsManager.create(cwd, getAgentDir(), { projectTrusted });
 }
 
-async function readSettingsFile(
-  path: string,
-  options?: { strict?: boolean }
-): Promise<SettingsFile> {
-  try {
-    const raw = await readFile(path, "utf8");
-    if (!raw.trim()) {
-      return {};
-    }
-
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(raw) as unknown;
-    } catch (error) {
-      if (options?.strict) {
-        throw new Error(
-          `Invalid JSON in ${path}: ${error instanceof Error ? error.message : String(error)}`
-        );
-      }
-      return {};
-    }
-
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-      if (options?.strict) {
-        throw new Error(`Invalid settings format in ${path}: expected a JSON object`);
-      }
-      return {};
-    }
-
-    return parsed as SettingsFile;
-  } catch (error) {
-    if (error instanceof Error && "code" in error && error.code === "ENOENT") {
-      return {};
-    }
-
-    if (options?.strict) {
-      throw error;
-    }
-
-    return {};
-  }
-}
-
-async function writeSettingsFile(path: string, settings: SettingsFile): Promise<void> {
-  const settingsDir = dirname(path);
-  await mkdir(settingsDir, { recursive: true });
-
-  const content = `${JSON.stringify(settings, null, 2)}\n`;
-  const tmpPath = `${path}.${process.pid}.${Date.now()}.tmp`;
-
-  try {
-    await writeFile(tmpPath, content, "utf8");
-    await rename(tmpPath, path);
-  } catch {
-    await writeFile(path, content, "utf8");
-  } finally {
-    await rm(tmpPath, { force: true }).catch(() => undefined);
-  }
+function getScopedPackages(
+  settings: SettingsManager,
+  scope: Scope
+): (string | PackageSettingsObject)[] {
+  const packages =
+    scope === "project" ? settings.getProjectSettings().packages : settings.getPackages();
+  return packages ? [...packages] : [];
 }
 
 function findPackageSettingsIndex(
-  packages: SettingsFile["packages"] extends infer T ? NonNullable<T> : never,
+  packages: (string | PackageSettingsObject)[],
   normalizedSource: string
 ): number {
   return packages.findIndex((pkg) => {
@@ -304,10 +252,13 @@ function updateExtensionMarkers(
 
 export async function validatePackageExtensionSettings(
   scope: Scope,
-  cwd: string
+  cwd: string,
+  projectTrusted = false
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
-    await readSettingsFile(getSettingsPath(scope, cwd), { strict: true });
+    const settings = createSettingsManager(cwd, projectTrusted);
+    throwIfSettingsErrors(settings, "Package extension configuration");
+    getScopedPackages(settings, scope);
     return { ok: true };
   } catch (error) {
     return {
@@ -321,17 +272,18 @@ export async function applyPackageExtensionStateChanges(
   packageSource: string,
   scope: Scope,
   changes: readonly { extensionPath: string; target: State }[],
-  cwd: string
+  cwd: string,
+  projectTrusted = false
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
     if (changes.length === 0) {
       return { ok: true };
     }
 
-    const settingsPath = getSettingsPath(scope, cwd);
-    const settings = await readSettingsFile(settingsPath, { strict: true });
+    const settings = createSettingsManager(cwd, projectTrusted);
+    throwIfSettingsErrors(settings, "Package extension configuration");
     const normalizedSource = normalizeSource(packageSource);
-    const packages = [...(settings.packages ?? [])];
+    const packages = getScopedPackages(settings, scope);
     const index = findPackageSettingsIndex(packages, normalizedSource);
     const packageEntry = toPackageSettingsObject(packages[index], packageSource);
 
@@ -354,8 +306,13 @@ export async function applyPackageExtensionStateChanges(
       packages[index] = normalizedPackageEntry;
     }
 
-    settings.packages = packages;
-    await writeSettingsFile(settingsPath, settings);
+    if (scope === "project") {
+      settings.setProjectPackages(packages);
+    } else {
+      settings.setPackages(packages);
+    }
+    await settings.flush();
+    throwIfSettingsErrors(settings, "Package extension configuration");
 
     return { ok: true };
   } catch (error) {
@@ -427,10 +384,11 @@ function getPackageFilterState(filters: string[] | undefined, extensionPath: str
 
 async function readPackageFilterMap(
   scope: Scope,
-  cwd: string
+  cwd: string,
+  projectTrusted: boolean
 ): Promise<Map<string, string[] | undefined>> {
-  const settings = await readSettingsFile(getSettingsPath(scope, cwd));
-  const packages = settings.packages ?? [];
+  const settings = createSettingsManager(cwd, projectTrusted);
+  const packages = getScopedPackages(settings, scope);
   const filterMap = new Map<string, string[] | undefined>();
 
   for (const entry of packages) {
@@ -606,15 +564,60 @@ export function discoverPackageExtensionEntrypoints(
 
 export async function discoverPackageExtensions(
   packages: InstalledPackage[],
-  cwd: string
+  cwd: string,
+  options?: { projectTrusted?: boolean }
 ): Promise<PackageExtensionEntry[]> {
   const entries: PackageExtensionEntry[] = [];
+  const projectTrusted = options?.projectTrusted ?? false;
   const [globalFilterMap, projectFilterMap] = await Promise.all([
-    readPackageFilterMap("global", cwd),
-    readPackageFilterMap("project", cwd),
+    readPackageFilterMap("global", cwd, projectTrusted),
+    readPackageFilterMap("project", cwd, projectTrusted),
   ]);
 
   for (const pkg of packages) {
+    const packageManager = new DefaultPackageManager({
+      cwd,
+      agentDir: getAgentDir(),
+      settingsManager: createSettingsManager(cwd, projectTrusted),
+    });
+    let resolvedResources: ResolvedResource[] = [];
+    try {
+      if (!pkg.resolvedPath) throw new Error("package path is not characterized");
+      const resolved = await packageManager.resolveExtensionSources([pkg.source], {
+        local: pkg.scope === "project",
+      });
+      resolvedResources = resolved.extensions.filter(
+        (resource) =>
+          resource.metadata.scope === (pkg.scope === "project" ? "project" : "user") &&
+          normalizeSource(resource.metadata.source) === normalizeSource(pkg.source)
+      );
+    } catch {
+      // Compatibility adapter for package records not representable by Pi's resolver.
+    }
+
+    if (resolvedResources.length > 0) {
+      for (const resource of resolvedResources) {
+        const packageRoot = resource.metadata.baseDir;
+        const extensionPath = packageRoot
+          ? normalizeRelativePath(relative(packageRoot, resource.path))
+          : normalizeRelativePath(resource.path);
+        entries.push({
+          id: `pkg-ext:${pkg.scope}:${pkg.source}:${extensionPath}`,
+          packageSource: pkg.source,
+          packageName: pkg.name,
+          packageScope: pkg.scope,
+          extensionPath,
+          absolutePath: resource.path,
+          displayName: `${pkg.name}/${extensionPath}`,
+          summary: (await fileExists(resource.path))
+            ? await readSummary(resource.path)
+            : "package extension",
+          state: resource.enabled ? "enabled" : "disabled",
+        });
+      }
+      continue;
+    }
+
     const packageRoot = await toPackageRoot(pkg, cwd);
     if (!packageRoot) continue;
 
@@ -654,7 +657,14 @@ export async function setPackageExtensionState(
   extensionPath: string,
   scope: Scope,
   target: State,
-  cwd: string
+  cwd: string,
+  projectTrusted = false
 ): Promise<{ ok: true } | { ok: false; error: string }> {
-  return applyPackageExtensionStateChanges(packageSource, scope, [{ extensionPath, target }], cwd);
+  return applyPackageExtensionStateChanges(
+    packageSource,
+    scope,
+    [{ extensionPath, target }],
+    cwd,
+    projectTrusted
+  );
 }

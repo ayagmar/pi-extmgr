@@ -11,6 +11,11 @@ type AnyContext = ExtensionCommandContext | ExtensionContext;
 
 export type UICapability = "none" | "dialog" | "custom";
 
+/** Missing trust information is intentionally treated as untrusted. */
+export function isProjectTrusted(ctx: AnyContext): boolean {
+  return typeof ctx.isProjectTrusted === "function" && ctx.isProjectTrusted();
+}
+
 export function getUICapability(ctx: AnyContext): UICapability {
   if (!ctx.hasUI) {
     return "none";

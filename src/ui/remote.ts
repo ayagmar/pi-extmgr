@@ -1047,12 +1047,12 @@ async function confirmMarketplaceInstall(
   const scopeChoice = parseChoiceByLabel(
     {
       global: "Global (~/.pi/agent/settings.json)",
-      project: "Project (.pi/settings.json)",
+      project: ".pi/settings.json",
       cancel: "Cancel",
     },
     await ctx.ui.select("Install scope", [
       "Global (~/.pi/agent/settings.json)",
-      "Project (.pi/settings.json)",
+      ".pi/settings.json",
       "Cancel",
     ])
   );

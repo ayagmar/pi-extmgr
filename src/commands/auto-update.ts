@@ -41,13 +41,13 @@ export async function handleAutoUpdateSubcommand(
 
   if (!duration) {
     const status = getAutoUpdateStatus(ctx);
-    notify(ctx, `Auto-update: ${status}`, "info");
+    notify(ctx, `Scheduled update checks: ${status}`, "info");
 
     const usage = [
       "Usage: /extensions auto-update <duration>",
       "",
       "Duration examples:",
-      "  never   - Disable auto-updates",
+      "  never   - Disable scheduled update checks",
       "  1h      - Check every hour",
       "  2h      - Check every 2 hours",
       "  1d      - Check daily",

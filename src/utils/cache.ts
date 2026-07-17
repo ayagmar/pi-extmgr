@@ -2,16 +2,20 @@
  * Persistent cache for package metadata to reduce npm API calls
  */
 import { access, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
-import { homedir } from "node:os";
 import { join } from "node:path";
 import { CACHE_LIMITS } from "../constants.js";
 import { type InstalledPackage, type SearchCache } from "../types/index.js";
 import { parseNpmSource } from "./format.js";
 
-const CACHE_DIR = process.env.PI_EXTMGR_CACHE_DIR
-  ? process.env.PI_EXTMGR_CACHE_DIR
-  : join(homedir(), ".pi", "agent", ".extmgr-cache");
-const CACHE_FILE = join(CACHE_DIR, "metadata.json");
+import { getExtmgrCacheDir } from "./pi-paths.js";
+
+function cacheDir(): string {
+  return getExtmgrCacheDir();
+}
+
+function cacheFile(): string {
+  return join(cacheDir(), "metadata.json");
+}
 const CURRENT_SEARCH_CACHE_STRATEGY = "npm-registry-v1-page";
 const CACHED_PACKAGE_FIELDS = [
   "description",
@@ -200,18 +204,18 @@ function normalizeCacheFromDisk(input: unknown): CacheData {
  */
 async function ensureCacheDir(): Promise<void> {
   try {
-    await access(CACHE_DIR);
+    await access(cacheDir());
   } catch {
-    await mkdir(CACHE_DIR, { recursive: true });
+    await mkdir(cacheDir(), { recursive: true });
   }
 }
 
 async function backupCorruptCacheFile(): Promise<void> {
   const stamp = new Date().toISOString().replace(/[:.]/g, "-");
-  const backupPath = join(CACHE_DIR, `metadata.invalid-${stamp}.json`);
+  const backupPath = join(cacheDir(), `metadata.invalid-${stamp}.json`);
 
   try {
-    await rename(CACHE_FILE, backupPath);
+    await rename(cacheFile(), backupPath);
     console.warn(`[extmgr] Invalid metadata cache JSON. Backed up to ${backupPath}.`);
   } catch (error) {
     console.warn("[extmgr] Failed to backup invalid cache file:", error);
@@ -226,7 +230,7 @@ async function loadCache(): Promise<CacheData> {
 
   try {
     await ensureCacheDir();
-    const data = await readFile(CACHE_FILE, "utf8");
+    const data = await readFile(cacheFile(), "utf8");
     const trimmed = data.trim();
 
     if (!trimmed) {
@@ -306,14 +310,14 @@ async function saveCache(): Promise<void> {
   };
 
   const content = `${JSON.stringify(data, null, 2)}\n`;
-  const tmpPath = join(CACHE_DIR, `metadata.${process.pid}.${Date.now()}.tmp`);
+  const tmpPath = join(cacheDir(), `metadata.${process.pid}.${Date.now()}.tmp`);
 
   try {
     await writeFile(tmpPath, content, "utf8");
-    await rename(tmpPath, CACHE_FILE);
+    await rename(tmpPath, cacheFile());
   } catch {
     // Fallback for filesystems where rename-overwrite can fail.
-    await writeFile(CACHE_FILE, content, "utf8");
+    await writeFile(cacheFile(), content, "utf8");
   } finally {
     await rm(tmpPath, { force: true }).catch(() => undefined);
   }

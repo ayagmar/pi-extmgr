@@ -8,6 +8,7 @@ import {
   type PackageSource,
 } from "@earendil-works/pi-coding-agent";
 import { getPackageCatalog } from "../packages/catalog.js";
+import { isProjectTrusted } from "../utils/mode.js";
 import { getInstalledPackagesAllScopes } from "../packages/discovery.js";
 import { type InstalledPackage } from "../types/index.js";
 import { runTaskWithLoader } from "../ui/async-task.js";
@@ -66,7 +67,9 @@ async function toProfilePackage(
 
 async function currentProfile(ctx: ExtensionCommandContext): Promise<ExtmgrProfile> {
   const packages = await getInstalledPackagesAllScopes(ctx);
-  const settings = SettingsManager.create(ctx.cwd, getAgentDir());
+  const settings = SettingsManager.create(ctx.cwd, getAgentDir(), {
+    projectTrusted: isProjectTrusted(ctx),
+  });
   const profiles = await Promise.all(
     packages.map((pkg) => {
       const scopedSettings =
@@ -156,7 +159,9 @@ async function persistProfileConfiguration(
   desired: ExtmgrProfile,
   ctx: ExtensionCommandContext
 ): Promise<void> {
-  const settings = SettingsManager.create(ctx.cwd, getAgentDir());
+  const settings = SettingsManager.create(ctx.cwd, getAgentDir(), {
+    projectTrusted: isProjectTrusted(ctx),
+  });
   throwIfSettingsErrors(settings, "Profile application");
   const global = settings.getGlobalSettings();
   const project = settings.getProjectSettings();
@@ -206,7 +211,7 @@ async function applyProfileFromCommand(
   ctx: ExtensionCommandContext,
   pi: ExtensionAPI
 ): Promise<void> {
-  const policy = await loadProjectProfilePolicy(ctx.cwd);
+  const policy = await loadProjectProfilePolicy(ctx.cwd, undefined, isProjectTrusted(ctx));
   const violations = policy ? validateProfilePolicy(desired, policy) : [];
   if (violations.length > 0) {
     notify(
@@ -250,7 +255,7 @@ async function applyProfileFromCommand(
       ctx,
       { title: "Apply profile", message: `Applying ${desired.name}...`, cancellable: false },
       async ({ setMessage }) => {
-        const catalog = getPackageCatalog(ctx.cwd);
+        const catalog = getPackageCatalog(ctx.cwd, isProjectTrusted(ctx));
         for (const pkg of plan.remove) {
           setMessage(`Removing ${pkg.source}...`);
           await catalog.remove(pkg.source, pkg.scope);

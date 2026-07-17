@@ -3,11 +3,11 @@
  * This persists extension management actions to the session
  */
 
-import { type Dirent } from "node:fs";
-import { readdir, readFile } from "node:fs/promises";
-import { homedir } from "node:os";
-import { join } from "node:path";
-import { type ExtensionAPI, type ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
+import {
+  SessionManager,
+  type ExtensionAPI,
+  type ExtensionCommandContext,
+} from "@earendil-works/pi-coding-agent";
 
 export type ChangeAction =
   | "extension_toggle"
@@ -50,7 +50,6 @@ export interface GlobalHistoryEntry {
 }
 
 const EXT_CHANGE_CUSTOM_TYPE = "extmgr-change";
-const DEFAULT_SESSION_DIR = join(homedir(), ".pi", "agent", "sessions");
 
 /**
  * Log an extension change to the session
@@ -284,32 +283,6 @@ export function queryPackageTimeline(
   );
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
-}
-
-async function walkSessionFiles(dir: string): Promise<string[]> {
-  const result: string[] = [];
-
-  let entries: Dirent<string>[];
-  try {
-    entries = await readdir(dir, { withFileTypes: true, encoding: "utf8" });
-  } catch {
-    return result;
-  }
-
-  for (const entry of entries) {
-    const fullPath = join(dir, entry.name);
-    if (entry.isDirectory()) {
-      result.push(...(await walkSessionFiles(fullPath)));
-    } else if (entry.isFile() && entry.name.endsWith(".jsonl")) {
-      result.push(fullPath);
-    }
-  }
-
-  return result;
-}
-
 function pushGlobalHistoryEntry(
   entries: GlobalHistoryEntry[],
   nextEntry: GlobalHistoryEntry,
@@ -350,45 +323,32 @@ function pushGlobalHistoryEntry(
  */
 export async function queryGlobalHistory(
   filters: HistoryFilters = {},
-  sessionDir = DEFAULT_SESSION_DIR
+  sessionDir?: string
 ): Promise<GlobalHistoryEntry[]> {
-  const files = await walkSessionFiles(sessionDir);
   const matchedEntries: GlobalHistoryEntry[] = [];
   const limit = filters.limit ?? 20;
+  let sessions: Awaited<ReturnType<typeof SessionManager.listAll>>;
+  try {
+    sessions = sessionDir
+      ? await SessionManager.listAll(sessionDir)
+      : await SessionManager.listAll();
+  } catch {
+    return matchedEntries;
+  }
 
-  for (const file of files) {
-    let text: string;
+  for (const session of sessions) {
+    let entries: ReturnType<ReturnType<typeof SessionManager.open>["getEntries"]>;
     try {
-      text = await readFile(file, "utf8");
+      entries = SessionManager.open(session.path, sessionDir).getEntries();
     } catch {
       continue;
     }
 
-    const lines = text.split("\n").filter(Boolean);
-    for (const line of lines) {
-      let parsed: unknown;
-      try {
-        parsed = JSON.parse(line) as unknown;
-      } catch {
-        continue;
-      }
-
-      if (!isRecord(parsed)) continue;
-
-      if (
-        parsed.type !== "custom" ||
-        parsed.customType !== EXT_CHANGE_CUSTOM_TYPE ||
-        !parsed.data
-      ) {
-        continue;
-      }
-
-      const change = asChangeEntry(parsed.data);
-      if (!change || !matchesHistoryFilters(change, filters)) {
-        continue;
-      }
-
-      pushGlobalHistoryEntry(matchedEntries, { change, sessionFile: file }, limit);
+    for (const entry of entries) {
+      if (entry.type !== "custom" || entry.customType !== EXT_CHANGE_CUSTOM_TYPE) continue;
+      const change = asChangeEntry(entry.data);
+      if (!change || !matchesHistoryFilters(change, filters)) continue;
+      pushGlobalHistoryEntry(matchedEntries, { change, sessionFile: session.path }, limit);
     }
   }
 
@@ -428,7 +388,7 @@ export function formatChangeEntry(entry: ExtensionChangeEntry): string {
       return `[${time}] ${icon} Cache cleared`;
 
     case "auto_update_config":
-      return `[${time}] ${icon} Auto-update ${entry.detail ?? "configuration changed"}`;
+      return `[${time}] ${icon} Scheduled update checks ${entry.detail ?? "configuration changed"}`;
 
     default:
       return `[${time}] ${icon} Unknown action`;

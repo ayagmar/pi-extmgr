@@ -12,8 +12,11 @@ function sourceOf(source: PackageSource): string {
   return typeof source === "string" ? source : source.source;
 }
 
-export async function refreshLocalCompletionIndex(cwd: string): Promise<LocalCompletionIndex> {
-  const settings = SettingsManager.create(cwd, getAgentDir());
+export async function refreshLocalCompletionIndex(
+  cwd: string,
+  projectTrusted = false
+): Promise<LocalCompletionIndex> {
+  const settings = SettingsManager.create(cwd, getAgentDir(), { projectTrusted });
   const installedPackages = [
     ...(settings.getGlobalSettings().packages ?? []),
     ...(settings.getProjectSettings().packages ?? []),

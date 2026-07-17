@@ -1,6 +1,6 @@
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
-import { homedir } from "node:os";
 import { dirname, join } from "node:path";
+import { getExtmgrCacheDir } from "./pi-paths.js";
 
 export interface ReloadRequiredState {
   version: 1;
@@ -17,10 +17,13 @@ const DEFAULT_STATE: ReloadRequiredState = {
   reasons: [],
 };
 
-const STATE_DIR = process.env.PI_EXTMGR_CACHE_DIR
-  ? process.env.PI_EXTMGR_CACHE_DIR
-  : join(homedir(), ".pi", "agent", ".extmgr-cache");
-const STATE_FILE = join(STATE_DIR, "reload-required.json");
+function stateDir(): string {
+  return getExtmgrCacheDir();
+}
+
+function stateFile(): string {
+  return join(stateDir(), "reload-required.json");
+}
 
 let writeQueue: Promise<void> = Promise.resolve();
 
@@ -67,12 +70,12 @@ async function writeStateToDisk(path: string, state: ReloadRequiredState): Promi
   }
 }
 
-export async function readReloadState(path = STATE_FILE): Promise<ReloadRequiredState> {
+export async function readReloadState(path = stateFile()): Promise<ReloadRequiredState> {
   await writeQueue;
   return readStateFromDisk(path);
 }
 
-export async function markReloadRequired(reason: string, path = STATE_FILE): Promise<void> {
+export async function markReloadRequired(reason: string, path = stateFile()): Promise<void> {
   const normalizedReason = reason.trim() || "Extension configuration changed";
   writeQueue = writeQueue.then(async () => {
     const current = await readStateFromDisk(path);
@@ -91,11 +94,11 @@ export async function markReloadRequired(reason: string, path = STATE_FILE): Pro
   await writeQueue;
 }
 
-export async function clearReloadRequired(path = STATE_FILE): Promise<void> {
+export async function clearReloadRequired(path = stateFile()): Promise<void> {
   writeQueue = writeQueue.then(() => writeStateToDisk(path, cloneDefault()));
   await writeQueue;
 }
 
 export function getReloadRequiredStatePath(): string {
-  return STATE_FILE;
+  return stateFile();
 }

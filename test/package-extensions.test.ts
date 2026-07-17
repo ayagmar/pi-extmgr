@@ -60,7 +60,7 @@ void test("discoverPackageExtensions expands manifest glob entrypoints", async (
       },
     ];
 
-    const discovered = await discoverPackageExtensions(installed, cwd);
+    const discovered = await discoverPackageExtensions(installed, cwd, { projectTrusted: true });
     assert.deepEqual(
       discovered.map((entry) => entry.extensionPath),
       ["extensions/a.ts", "extensions/b.ts"]
@@ -93,7 +93,7 @@ void test("discoverPackageExtensions resolves manifest directory entrypoints", a
       },
     ];
 
-    const discovered = await discoverPackageExtensions(installed, cwd);
+    const discovered = await discoverPackageExtensions(installed, cwd, { projectTrusted: true });
     assert.deepEqual(
       discovered.map((entry) => entry.extensionPath),
       ["extensions/index.ts", "extensions/sub/feature.js"]
@@ -130,7 +130,7 @@ void test("discoverPackageExtensions resolves directory tokens with trailing sla
       },
     ];
 
-    const discovered = await discoverPackageExtensions(installed, cwd);
+    const discovered = await discoverPackageExtensions(installed, cwd, { projectTrusted: true });
     assert.deepEqual(
       discovered.map((entry) => entry.extensionPath),
       ["extensions/index.ts", "extensions/sub/feature.js"]
@@ -166,7 +166,7 @@ void test("discoverPackageExtensions ignores manifest entrypoints with leading s
       },
     ];
 
-    const discovered = await discoverPackageExtensions(installed, cwd);
+    const discovered = await discoverPackageExtensions(installed, cwd, { projectTrusted: true });
     assert.deepEqual(discovered, []);
   } finally {
     await rm(cwd, { recursive: true, force: true });
@@ -199,7 +199,7 @@ void test("discoverPackageExtensions ignores manifest exact entrypoints that are
       },
     ];
 
-    const discovered = await discoverPackageExtensions(installed, cwd);
+    const discovered = await discoverPackageExtensions(installed, cwd, { projectTrusted: true });
     assert.deepEqual(
       discovered.map((entry) => entry.extensionPath),
       ["index.ts"]
@@ -232,7 +232,7 @@ void test("discoverPackageExtensions falls back to convention extensions directo
       },
     ];
 
-    const discovered = await discoverPackageExtensions(installed, cwd);
+    const discovered = await discoverPackageExtensions(installed, cwd, { projectTrusted: true });
     assert.deepEqual(
       discovered.map((entry) => entry.extensionPath),
       ["extensions/index.ts", "extensions/nested/feature.js"]
@@ -277,7 +277,7 @@ void test("discoverPackageExtensions reads manifest entrypoints and project filt
     },
   ];
 
-  const discovered = await discoverPackageExtensions(installed, cwd);
+  const discovered = await discoverPackageExtensions(installed, cwd, { projectTrusted: true });
   assert.equal(discovered.length, 1);
   assert.equal(discovered[0]?.extensionPath, "index.ts");
   assert.equal(discovered[0]?.state, "disabled");
@@ -325,7 +325,7 @@ void test("discoverPackageExtensions treats explicit empty extensions filter as 
       },
     ];
 
-    const discovered = await discoverPackageExtensions(installed, cwd);
+    const discovered = await discoverPackageExtensions(installed, cwd, { projectTrusted: true });
     assert.equal(discovered.length, 2);
     assert.ok(discovered.every((entry) => entry.state === "disabled"));
   } finally {
@@ -385,7 +385,7 @@ void test("discoverPackageExtensions applies include and exclude filter patterns
       },
     ];
 
-    const discovered = await discoverPackageExtensions(installed, cwd);
+    const discovered = await discoverPackageExtensions(installed, cwd, { projectTrusted: true });
     const byPath = new Map(discovered.map((entry) => [entry.extensionPath, entry.state]));
 
     assert.equal(byPath.get("extensions/a.ts"), "enabled");
@@ -432,7 +432,7 @@ void test("discoverPackageExtensions handles invalid filter glob patterns safely
       },
     ];
 
-    const discovered = await discoverPackageExtensions(installed, cwd);
+    const discovered = await discoverPackageExtensions(installed, cwd, { projectTrusted: true });
     assert.equal(discovered.length, 1);
     assert.equal(discovered[0]?.state, "disabled");
   } finally {
@@ -515,7 +515,7 @@ void test("discoverPackageExtensions resolves npm project package without resolv
       },
     ];
 
-    const discovered = await discoverPackageExtensions(installed, cwd);
+    const discovered = await discoverPackageExtensions(installed, cwd, { projectTrusted: true });
     assert.equal(discovered.length, 1);
     assert.equal(discovered[0]?.extensionPath, "index.ts");
   } finally {
@@ -548,7 +548,7 @@ void test("discoverPackageExtensions resolves npm global package via PI_PACKAGE_
       },
     ];
 
-    const discovered = await discoverPackageExtensions(installed, cwd);
+    const discovered = await discoverPackageExtensions(installed, cwd, { projectTrusted: true });
     assert.equal(discovered.length, 1);
     assert.equal(discovered[0]?.extensionPath, "index.ts");
   } finally {
@@ -584,7 +584,7 @@ void test("discoverPackageExtensions resolves file:// package sources", async ()
       },
     ];
 
-    const discovered = await discoverPackageExtensions(installed, cwd);
+    const discovered = await discoverPackageExtensions(installed, cwd, { projectTrusted: true });
     assert.equal(discovered.length, 1);
     assert.equal(discovered[0]?.extensionPath, "index.ts");
   } finally {
@@ -614,7 +614,7 @@ void test("discoverPackageExtensions handles resolved package.json paths", async
       },
     ];
 
-    const discovered = await discoverPackageExtensions(installed, cwd);
+    const discovered = await discoverPackageExtensions(installed, cwd, { projectTrusted: true });
     assert.equal(discovered.length, 1);
     assert.equal(discovered[0]?.extensionPath, "index.ts");
   } finally {

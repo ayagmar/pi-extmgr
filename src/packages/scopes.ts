@@ -1,4 +1,5 @@
-import { getAgentDir, SettingsManager, type PackageSource } from "@earendil-works/pi-coding-agent";
+import { SettingsManager, type PackageSource } from "@earendil-works/pi-coding-agent";
+import { CONFIG_DIR_NAME, getAgentDir } from "../utils/pi-paths.js";
 import { type InstalledPackage, type Scope } from "../types/index.js";
 import { normalizePackageIdentity } from "../utils/package-source.js";
 import { throwIfSettingsErrors } from "../utils/settings-errors.js";
@@ -52,7 +53,9 @@ export function comparePackageScopes(packages: InstalledPackage[]): PackageScope
 }
 
 export function getPackageScopeLabel(scope: Scope): string {
-  return scope === "project" ? "project (.pi/settings.json)" : "global (~/.pi/agent/settings.json)";
+  return scope === "project"
+    ? `project (${CONFIG_DIR_NAME}/settings.json)`
+    : "global (~/.pi/agent/settings.json)";
 }
 
 function sourceOf(value: PackageSource): string {
@@ -88,13 +91,14 @@ export async function movePackageBetweenScopes(
   source: string,
   from: Scope,
   to: Scope,
-  cwd: string
+  cwd: string,
+  projectTrusted = false
 ): Promise<MovePackageScopeResult> {
   if (from === to) {
     return { source, from, to, moved: false, conflict: "Package is already in that scope." };
   }
 
-  const settings = SettingsManager.create(cwd, getAgentDir());
+  const settings = SettingsManager.create(cwd, getAgentDir(), { projectTrusted });
   try {
     throwIfSettingsErrors(settings, "Package scope move");
   } catch (error) {

@@ -50,7 +50,7 @@ void test("movePackageBetweenScopes preserves filters, unknown fields, and effec
       "utf8"
     );
 
-    const result = await movePackageBetweenScopes("npm:demo@1.2.3", "global", "project", cwd);
+    const result = await movePackageBetweenScopes("npm:demo@1.2.3", "global", "project", cwd, true);
     assert.equal(result.moved, true);
 
     const globalSettings = JSON.parse(await readFile(join(agentDir, "settings.json"), "utf8")) as {
@@ -93,7 +93,7 @@ void test("movePackageBetweenScopes refuses a conflicting destination", async ()
       JSON.stringify({ packages: ["npm:demo@2.0.0"] }),
       "utf8"
     );
-    const result = await movePackageBetweenScopes("npm:demo@1.0.0", "global", "project", cwd);
+    const result = await movePackageBetweenScopes("npm:demo@1.0.0", "global", "project", cwd, true);
     assert.equal(result.moved, false);
     assert.match(result.conflict ?? "", /different package configuration/);
   } finally {
@@ -117,7 +117,7 @@ void test("package mutations refuse malformed settings without reporting success
       () => getPackageCatalog(cwd).install("npm:demo", "global"),
       /Package installation refused/
     );
-    const moved = await movePackageBetweenScopes("npm:demo", "global", "project", cwd);
+    const moved = await movePackageBetweenScopes("npm:demo", "global", "project", cwd, true);
     assert.equal(moved.moved, false);
     assert.match(moved.conflict ?? "", /Package scope move refused/);
     assert.equal(await readFile(join(agentDir, "settings.json"), "utf8"), "{ invalid");

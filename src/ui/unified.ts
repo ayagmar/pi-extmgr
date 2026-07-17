@@ -60,7 +60,7 @@ import {
   logExtensionToggle,
   queryPackageTimeline,
 } from "../utils/history.js";
-import { hasCustomUI, runCustomUI } from "../utils/mode.js";
+import { hasCustomUI, isProjectTrusted, runCustomUI } from "../utils/mode.js";
 import { notify } from "../utils/notify.js";
 import { getPackageSourceKind, normalizePackageIdentity } from "../utils/package-source.js";
 import { normalizePathIdentity } from "../utils/path-identity.js";
@@ -152,7 +152,9 @@ async function showInteractiveOnce(
       ]);
 
       setMessage("Loading package extension states...");
-      const packageExtensions = await discoverPackageExtensions(installedPackages, ctx.cwd);
+      const packageExtensions = await discoverPackageExtensions(installedPackages, ctx.cwd, {
+        projectTrusted: isProjectTrusted(ctx),
+      });
 
       return { localEntries, installedPackages, packageExtensions };
     }
@@ -1438,7 +1440,7 @@ const PALETTE_OPTIONS = {
   search: "🔎 Search packages",
   browse: "🌐 Browse community packages",
   updateAll: "⬆️ Update all packages",
-  autoUpdate: "🔁 Auto-update settings",
+  autoUpdate: "🔁 Scheduled update checks settings",
   help: "❓ Help",
   back: "Back",
 } as const;
@@ -1452,7 +1454,7 @@ const QUICK_DESTINATION_LABELS: Record<QuickDestination, string> = {
   search: "Search",
   browse: "Remote",
   "update-all": "Update",
-  "auto-update": "Auto-update",
+  "auto-update": "Scheduled update checks",
   help: "Help",
 };
 
@@ -1734,7 +1736,7 @@ async function handleUnifiedAction(
         fallbackWithoutLoader: true,
       },
       async ({ setMessage }) => {
-        const catalog = getPackageCatalog(ctx.cwd);
+        const catalog = getPackageCatalog(ctx.cwd, isProjectTrusted(ctx));
         const completed: string[] = [];
         const failed: string[] = [];
         const skipped: string[] = [];
@@ -1772,7 +1774,8 @@ async function handleUnifiedAction(
                 item.source,
                 item.scope,
                 item.extensionPaths.map((extensionPath) => ({ extensionPath, target })),
-                ctx.cwd
+                ctx.cwd,
+                isProjectTrusted(ctx)
               );
               if (!changed.ok) throw new Error(changed.error);
             }
@@ -2010,7 +2013,13 @@ async function handleUnifiedAction(
           `Move ${item.source} from ${item.scope} to ${targetScope}?`
         );
         if (!confirmed) return "resume";
-        const moved = await movePackageBetweenScopes(item.source, item.scope, targetScope, ctx.cwd);
+        const moved = await movePackageBetweenScopes(
+          item.source,
+          item.scope,
+          targetScope,
+          ctx.cwd,
+          isProjectTrusted(ctx)
+        );
         if (!moved.moved) {
           ctx.ui.notify(
             `${moved.partial ? "Package scope move partially completed" : "Package scope move failed"}: ${moved.conflict ?? "unknown error"}`,
@@ -2034,7 +2043,8 @@ async function handleUnifiedAction(
           item.source,
           item.scope,
           item.extensionPaths.map((extensionPath) => ({ extensionPath, target })),
-          ctx.cwd
+          ctx.cwd,
+          isProjectTrusted(ctx)
         );
         if (!result.ok) {
           ctx.ui.notify(`Package toggle failed: ${result.error}`, "error");

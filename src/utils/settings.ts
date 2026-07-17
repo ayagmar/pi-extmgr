@@ -4,7 +4,6 @@
  */
 
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
-import { homedir } from "node:os";
 import { join } from "node:path";
 import {
   type ExtensionAPI,
@@ -31,10 +30,15 @@ const DEFAULT_CONFIG: AutoUpdateConfig = {
 };
 
 const SETTINGS_KEY = "extmgr-auto-update";
-const SETTINGS_DIR = process.env.PI_EXTMGR_CACHE_DIR
-  ? process.env.PI_EXTMGR_CACHE_DIR
-  : join(homedir(), ".pi", "agent", ".extmgr-cache");
-const SETTINGS_FILE = join(SETTINGS_DIR, "auto-update.json");
+import { getExtmgrCacheDir } from "./pi-paths.js";
+
+function settingsDir(): string {
+  return getExtmgrCacheDir();
+}
+
+function settingsFile(): string {
+  return join(settingsDir(), "auto-update.json");
+}
 
 let settingsWriteQueue: Promise<void> = Promise.resolve();
 
@@ -139,7 +143,7 @@ function getSessionConfig(
  */
 async function ensureSettingsDir(): Promise<void> {
   try {
-    await mkdir(SETTINGS_DIR, { recursive: true });
+    await mkdir(settingsDir(), { recursive: true });
   } catch (error) {
     console.warn("[extmgr] Failed to create settings directory:", error);
   }
@@ -147,10 +151,10 @@ async function ensureSettingsDir(): Promise<void> {
 
 async function backupCorruptSettingsFile(): Promise<void> {
   const stamp = new Date().toISOString().replace(/[:.]/g, "-");
-  const backupPath = join(SETTINGS_DIR, `auto-update.invalid-${stamp}.json`);
+  const backupPath = join(settingsDir(), `auto-update.invalid-${stamp}.json`);
 
   try {
-    await rename(SETTINGS_FILE, backupPath);
+    await rename(settingsFile(), backupPath);
     console.warn(
       `[extmgr] Invalid auto-update settings JSON. Backed up to ${backupPath} and reset to defaults.`
     );
@@ -164,11 +168,11 @@ async function backupCorruptSettingsFile(): Promise<void> {
  */
 async function readConfigFromDisk(): Promise<AutoUpdateConfig | undefined> {
   try {
-    if (!(await fileExists(SETTINGS_FILE))) {
+    if (!(await fileExists(settingsFile()))) {
       return undefined;
     }
 
-    const raw = await readFile(SETTINGS_FILE, "utf8");
+    const raw = await readFile(settingsFile(), "utf8");
     if (!raw.trim()) {
       return undefined;
     }
@@ -193,14 +197,14 @@ async function writeConfigToDisk(config: AutoUpdateConfig): Promise<void> {
   await ensureSettingsDir();
 
   const content = `${JSON.stringify(config, null, 2)}\n`;
-  const tmpPath = join(SETTINGS_DIR, `auto-update.${process.pid}.${Date.now()}.tmp`);
+  const tmpPath = join(settingsDir(), `auto-update.${process.pid}.${Date.now()}.tmp`);
 
   try {
     await writeFile(tmpPath, content, "utf8");
-    await rename(tmpPath, SETTINGS_FILE);
+    await rename(tmpPath, settingsFile());
   } catch {
     // Fallback for filesystems where rename-overwrite can fail.
-    await writeFile(SETTINGS_FILE, content, "utf8");
+    await writeFile(settingsFile(), content, "utf8");
   } finally {
     await rm(tmpPath, { force: true }).catch(() => undefined);
   }

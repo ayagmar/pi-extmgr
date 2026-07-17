@@ -56,7 +56,7 @@ function getSettingsNpmCommand(cwd: string): string[] | undefined {
     return cached.getNpmCommand();
   }
 
-  const settingsManager = SettingsManager.create(cwd, agentDir);
+  const settingsManager = SettingsManager.create(cwd, agentDir, { projectTrusted: false });
   settingsManagersByPath.set(cacheKey, settingsManager);
   return settingsManager.getNpmCommand();
 }

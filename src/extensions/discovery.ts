@@ -7,8 +7,13 @@
 
 import { type Dirent } from "node:fs";
 import { readdir, rename } from "node:fs/promises";
-import { homedir } from "node:os";
 import { basename, dirname, join, relative } from "node:path";
+import {
+  CONFIG_DIR_NAME,
+  getGlobalExtensionsDir,
+  getProjectExtensionsDir,
+  getExtmgrTrashDir,
+} from "../utils/pi-paths.js";
 import { DISABLED_SUFFIX } from "../constants.js";
 import { readPackageManifest } from "../packages/extensions.js";
 import { type ExtensionEntry, type Scope, type State } from "../types/index.js";
@@ -42,11 +47,15 @@ interface RootConfig {
 export async function discoverExtensions(cwd: string): Promise<ExtensionEntry[]> {
   const roots: RootConfig[] = [
     {
-      root: join(homedir(), ".pi", "agent", "extensions"),
+      root: getGlobalExtensionsDir(),
       scope: "global",
-      label: "~/.pi/agent/extensions",
+      label: "global extensions",
     },
-    { root: join(cwd, ".pi", "extensions"), scope: "project", label: ".pi/extensions" },
+    {
+      root: getProjectExtensionsDir(cwd),
+      scope: "project",
+      label: `${CONFIG_DIR_NAME}/extensions`,
+    },
   ];
 
   const all: ExtensionEntry[] = [];
@@ -350,8 +359,8 @@ export async function removeLocalExtension(
   | { ok: false; error: string }
 > {
   try {
-    const globalRoot = join(homedir(), ".pi", "agent", "extensions");
-    const projectRoot = join(cwd, ".pi", "extensions");
+    const globalRoot = getGlobalExtensionsDir();
+    const projectRoot = getProjectExtensionsDir(cwd);
 
     const activeExists = await fileExists(entry.activePath);
     const disabledExists = await fileExists(entry.disabledPath);
@@ -366,7 +375,7 @@ export async function removeLocalExtension(
     const isIndexFile = /^index\.(ts|js)$/i.test(normalizedBase);
     const isInsideExtensionDir = parentDir !== globalRoot && parentDir !== projectRoot;
 
-    const trashRoot = join(homedir(), ".pi", "agent", ".extmgr-trash");
+    const trashRoot = getExtmgrTrashDir();
     if (isIndexFile && isInsideExtensionDir) {
       const trashRecord = await moveToExtensionTrash(parentDir, trashRoot);
       return { ok: true, removedPath: parentDir, removedDirectory: true, trashRecord };

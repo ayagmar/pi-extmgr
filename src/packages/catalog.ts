@@ -29,7 +29,7 @@ export interface PackageCatalog {
   update(source?: string, onProgress?: (event: ProgressEvent) => void): Promise<void>;
 }
 
-type PackageCatalogFactory = (cwd: string) => PackageCatalog;
+type PackageCatalogFactory = (cwd: string, projectTrusted?: boolean) => PackageCatalog;
 
 let packageCatalogFactory: PackageCatalogFactory = createDefaultPackageCatalog;
 
@@ -83,9 +83,9 @@ function setProgressCallback(
   packageManager.setProgressCallback(onProgress);
 }
 
-function createDefaultPackageCatalog(cwd: string): PackageCatalog {
+function createDefaultPackageCatalog(cwd: string, projectTrusted = false): PackageCatalog {
   const agentDir = getAgentDir();
-  const settingsManager = SettingsManager.create(cwd, agentDir);
+  const settingsManager = SettingsManager.create(cwd, agentDir, { projectTrusted });
   const packageManager = new DefaultPackageManager({ cwd, agentDir, settingsManager });
 
   return {
@@ -159,8 +159,8 @@ function createDefaultPackageCatalog(cwd: string): PackageCatalog {
   };
 }
 
-export function getPackageCatalog(cwd: string): PackageCatalog {
-  return packageCatalogFactory(cwd);
+export function getPackageCatalog(cwd: string, projectTrusted = false): PackageCatalog {
+  return packageCatalogFactory(cwd, projectTrusted);
 }
 
 export function setPackageCatalogFactory(factory?: PackageCatalogFactory): void {

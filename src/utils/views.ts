@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { homedir } from "node:os";
+import { getExtmgrCacheDir } from "./pi-paths.js";
 
 export interface SavedView {
   name: string;
@@ -114,9 +114,7 @@ export async function writeSavedViews(path: string, data: SavedViewsFile): Promi
 }
 
 export function getSavedViewsPath(cwd?: string): string {
-  const directory = process.env.PI_EXTMGR_CACHE_DIR
-    ? process.env.PI_EXTMGR_CACHE_DIR
-    : join(homedir(), ".pi", "agent", ".extmgr-cache");
+  const directory = getExtmgrCacheDir();
   const suffix = cwd ? `-${createHash("sha256").update(cwd).digest("hex").slice(0, 12)}` : "";
   return join(directory, `views${suffix}.json`);
 }

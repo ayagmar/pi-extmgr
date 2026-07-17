@@ -26,7 +26,7 @@ import {
 import { type InstalledPackage, type PackageExtensionEntry, type State } from "../types/index.js";
 import { fileExists } from "../utils/fs.js";
 import { logExtensionToggle } from "../utils/history.js";
-import { requireCustomUI, runCustomUI } from "../utils/mode.js";
+import { isProjectTrusted, requireCustomUI, runCustomUI } from "../utils/mode.js";
 import { notify } from "../utils/notify.js";
 import { getPackageSourceKind } from "../utils/package-source.js";
 import { getSettingsListSelectedIndex } from "../utils/settings-list.js";
@@ -275,7 +275,8 @@ export async function applyPackageExtensionChanges(
   staged: Map<string, State>,
   pkg: InstalledPackage,
   cwd: string,
-  pi: ExtensionAPI
+  pi: ExtensionAPI,
+  projectTrusted = false
 ): Promise<{ changed: number; errors: string[] }> {
   const errors: string[] = [];
   const changedRows = [...rows]
@@ -304,7 +305,8 @@ export async function applyPackageExtensionChanges(
     pkg.source,
     pkg.scope,
     changedRows.map(({ row, target }) => ({ extensionPath: row.extensionPath, target })),
-    cwd
+    cwd,
+    projectTrusted
   );
 
   if (!result.ok) {
@@ -332,7 +334,11 @@ export async function configurePackageExtensions(
     return { changed: 0, reloaded: false };
   }
 
-  const validation = await validatePackageExtensionSettings(pkg.scope, ctx.cwd);
+  const validation = await validatePackageExtensionSettings(
+    pkg.scope,
+    ctx.cwd,
+    isProjectTrusted(ctx)
+  );
   if (!validation.ok) {
     notify(ctx, validation.error, "error");
     return { changed: 0, reloaded: false };
@@ -348,7 +354,9 @@ export async function configurePackageExtensions(
         cancellable: false,
       },
       async () => {
-        const discovered = await discoverPackageExtensions([pkg], ctx.cwd);
+        const discovered = await discoverPackageExtensions([pkg], ctx.cwd, {
+          projectTrusted: isProjectTrusted(ctx),
+        });
         const rows = await buildPackageConfigRows(discovered);
         return { rows };
       }
@@ -399,7 +407,14 @@ export async function configurePackageExtensions(
       }
     }
 
-    const apply = await applyPackageExtensionChanges(rows, staged, pkg, ctx.cwd, pi);
+    const apply = await applyPackageExtensionChanges(
+      rows,
+      staged,
+      pkg,
+      ctx.cwd,
+      pi,
+      isProjectTrusted(ctx)
+    );
 
     if (apply.changed === 0) {
       if (apply.errors.length > 0) {

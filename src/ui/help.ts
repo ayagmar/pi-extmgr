@@ -32,7 +32,7 @@ export function buildHelpLines(): string[] {
     "  f / R                Search / browse remote packages",
     "  W / L / D            Save / load / delete a manager view",
     "  *                    Toggle favorite",
-    "  t                    Auto-update settings",
+    "  t                    Scheduled update checks settings",
     "  P / M                Quick actions palette",
     "",
     "Sources and safety",

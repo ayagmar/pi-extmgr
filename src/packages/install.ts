@@ -2,7 +2,6 @@
  * Package installation logic
  */
 import { cp, mkdir, rm, writeFile } from "node:fs/promises";
-import { homedir } from "node:os";
 import { join } from "node:path";
 import {
   type ExtensionAPI,
@@ -10,13 +9,18 @@ import {
   type ProgressEvent,
 } from "@earendil-works/pi-coding-agent";
 import { TIMEOUTS } from "../constants.js";
+import { getAgentDir, getProjectExtensionsDir } from "../utils/pi-paths.js";
 import { runTaskWithLoader } from "../ui/async-task.js";
 import { parseChoiceByLabel } from "../utils/command.js";
 import { normalizePackageSource } from "../utils/format.js";
 import { fileExists } from "../utils/fs.js";
 import { logPackageInstall } from "../utils/history.js";
-import { tryOperation } from "../utils/mode.js";
-import { fetchWithTimeout } from "../utils/network.js";
+import { isProjectTrusted, tryOperation } from "../utils/mode.js";
+import {
+  downloadToFile,
+  fetchWithTimeout,
+  MAX_COMPRESSED_DOWNLOAD_BYTES,
+} from "../utils/network.js";
 import { notify, error as notifyError, success } from "../utils/notify.js";
 import { execNpm } from "../utils/npm-exec.js";
 import { normalizePackageIdentity } from "../utils/package-source.js";
@@ -45,7 +49,7 @@ export interface InstallOutcome {
 
 const INSTALL_SCOPE_CHOICES = {
   global: "Global (~/.pi/agent/settings.json)",
-  project: "Project (.pi/settings.json)",
+  project: ".pi/settings.json",
   cancel: "Cancel",
 } as const;
 
@@ -71,9 +75,9 @@ async function resolveInstallScope(
 
 function getExtensionInstallDir(ctx: ExtensionCommandContext, scope: InstallScope): string {
   if (scope === "project") {
-    return join(ctx.cwd, ".pi", "extensions");
+    return getProjectExtensionsDir(ctx.cwd);
   }
-  return join(homedir(), ".pi", "agent", "extensions");
+  return join(getAgentDir(), "extensions");
 }
 
 async function ensureTarAvailable(
@@ -204,9 +208,13 @@ async function installPackageInternal(
         fallbackWithoutLoader: true,
       },
       async ({ setMessage }) => {
-        await getPackageCatalog(ctx.cwd).install(normalized, scope, (event) => {
-          setMessage(getProgressMessage(event, `Installing ${normalized}...`));
-        });
+        await getPackageCatalog(ctx.cwd, isProjectTrusted(ctx)).install(
+          normalized,
+          scope,
+          (event) => {
+            setMessage(getProgressMessage(event, `Installing ${normalized}...`));
+          }
+        );
         return undefined;
       }
     );
@@ -429,13 +437,13 @@ async function installPackageLocallyInternal(
 
       showProgress(ctx, "Downloading", `${packageName}@${version}`);
 
-      const response = await fetchWithTimeout(tarballUrl, TIMEOUTS.packageInstall);
-      if (!response.ok) {
-        throw new Error(`Download failed: ${response.status} ${response.statusText}`);
-      }
-
-      const buffer = await response.arrayBuffer();
-      await writeFile(tarballPath, new Uint8Array(buffer));
+      await downloadToFile(
+        tarballUrl,
+        tarballPath,
+        TIMEOUTS.packageInstall,
+        MAX_COMPRESSED_DOWNLOAD_BYTES,
+        ctx.signal
+      );
 
       return { tarballPath };
     },

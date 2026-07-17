@@ -3,7 +3,11 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { type ExtensionAPI, type ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
+import {
+  SessionManager,
+  type ExtensionAPI,
+  type ExtensionCommandContext,
+} from "@earendil-works/pi-coding-agent";
 import { clearMetadataCacheCommand } from "../src/commands/cache.js";
 import { getSearchCache, setSearchCache } from "../src/packages/discovery.js";
 import {
@@ -44,35 +48,62 @@ void test("queryGlobalHistory keeps the latest matching entries without loading 
 
   try {
     await mkdir(join(sessionDir, "nested"), { recursive: true });
-    await writeFile(
-      join(sessionDir, "first.jsonl"),
-      [
-        JSON.stringify({ type: "custom", customType: "other", data: {} }),
-        "not json",
-        JSON.stringify({
-          type: "custom",
-          customType: "extmgr-change",
-          data: { action: "cache_clear", timestamp: 10, success: true },
-        }),
-      ].join("\n"),
-      "utf8"
-    );
-    await writeFile(
-      join(sessionDir, "nested", "second.jsonl"),
-      [
-        JSON.stringify({
-          type: "custom",
-          customType: "extmgr-change",
-          data: { action: "package_install", timestamp: 30, success: true, packageName: "demo" },
-        }),
-        JSON.stringify({
-          type: "custom",
-          customType: "extmgr-change",
-          data: { action: "package_update", timestamp: 20, success: true, packageName: "demo" },
-        }),
-      ].join("\n"),
-      "utf8"
-    );
+    const first = SessionManager.create(join(sessionDir, "first-project"), sessionDir);
+    first.appendMessage({ role: "user", content: "history", timestamp: Date.now() });
+    first.appendMessage({
+      role: "assistant",
+      content: [],
+      api: "test",
+      provider: "test",
+      model: "test",
+      usage: {
+        input: 0,
+        output: 0,
+        cacheRead: 0,
+        cacheWrite: 0,
+        totalTokens: 0,
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+      },
+      stopReason: "stop",
+      timestamp: Date.now(),
+    });
+    first.appendCustomEntry("extmgr-change", {
+      action: "cache_clear",
+      timestamp: 10,
+      success: true,
+    });
+    const second = SessionManager.create(join(sessionDir, "second-project"), sessionDir);
+    second.appendMessage({ role: "user", content: "history", timestamp: Date.now() });
+    second.appendMessage({
+      role: "assistant",
+      content: [],
+      api: "test",
+      provider: "test",
+      model: "test",
+      usage: {
+        input: 0,
+        output: 0,
+        cacheRead: 0,
+        cacheWrite: 0,
+        totalTokens: 0,
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+      },
+      stopReason: "stop",
+      timestamp: Date.now(),
+    });
+    second.appendCustomEntry("extmgr-change", {
+      action: "package_install",
+      timestamp: 30,
+      success: true,
+      packageName: "demo",
+    });
+    second.appendCustomEntry("extmgr-change", {
+      action: "package_update",
+      timestamp: 20,
+      success: true,
+      packageName: "demo",
+    });
+    await writeFile(join(sessionDir, "malformed.jsonl"), "not json\n", "utf8");
 
     const changes = await queryGlobalHistory({ limit: 2 }, sessionDir);
 
@@ -139,5 +170,5 @@ void test("history records local extension deletion and auto-update config chang
   assert.ok(firstChange);
   assert.ok(secondChange);
   assert.match(formatChangeEntry(firstChange), /Deleted/);
-  assert.match(formatChangeEntry(secondChange), /Auto-update set to weekly/);
+  assert.match(formatChangeEntry(secondChange), /Scheduled update checks set to weekly/);
 });
