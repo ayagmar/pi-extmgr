@@ -37,6 +37,22 @@ void test("removeLocalExtension moves files to trash and exposes undo", async ()
   }
 });
 
+void test("trash record failures restore the original extension", async () => {
+  const root = await mkdtemp(join(tmpdir(), "pi-extmgr-trash-rollback-"));
+  const trash = join(root, "trash");
+  const source = join(root, "extension.ts");
+  try {
+    await mkdir(trash, { recursive: true });
+    await mkdir(join(trash, "records.json"));
+    await writeFile(source, "original\n", "utf8");
+
+    await assert.rejects(() => moveToExtensionTrash(source, trash));
+    assert.equal(await readFile(source, "utf8"), "original\n");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 void test("trash records persist, clean up, and never overwrite a replacement", async () => {
   const root = await mkdtemp(join(tmpdir(), "pi-extmgr-trash-lifecycle-"));
   const trash = join(root, "trash");

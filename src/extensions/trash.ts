@@ -108,10 +108,23 @@ export async function moveToExtensionTrash(path: string, trashRoot: string): Pro
 
   await rename(path, trashPath);
   const record: TrashRecord = { originalPath: path, trashPath, trashedAt: Date.now() };
-  await updateTrashFile(trashRoot, (file) => ({
-    version: 1,
-    records: [...file.records.filter((item) => item.trashPath !== trashPath), record],
-  }));
+  try {
+    await updateTrashFile(trashRoot, (file) => ({
+      version: 1,
+      records: [...file.records.filter((item) => item.trashPath !== trashPath), record],
+    }));
+  } catch (error) {
+    try {
+      if (!(await fileExists(path))) {
+        await rename(trashPath, path);
+      }
+    } catch (rollbackError) {
+      throw new Error(
+        `Trash record could not be saved and the extension could not be restored: ${rollbackError instanceof Error ? rollbackError.message : String(rollbackError)}`
+      );
+    }
+    throw error;
+  }
   return record;
 }
 
