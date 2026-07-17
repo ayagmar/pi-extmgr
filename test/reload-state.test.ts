@@ -58,13 +58,12 @@ void test("declining an interactive reload keeps the successful mutation pending
 
     assert.equal(reloaded, false);
     assert.equal(reloads, 0);
-    assert.deepEqual(await readReloadState(path), {
-      version: 1,
-      required: true,
-      changedAt: (await readReloadState(path)).changedAt,
-      changes: 1,
-      reasons: ["Package installed."],
-    });
+    const state = await readReloadState(path);
+    assert.equal(state.version, 1);
+    assert.equal(state.required, true);
+    assert.equal(typeof state.changedAt, "number");
+    assert.equal(state.changes, 1);
+    assert.deepEqual(state.reasons, ["Package installed."]);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
