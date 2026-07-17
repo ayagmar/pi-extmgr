@@ -5,12 +5,7 @@ import { homedir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
-import {
-  DefaultPackageManager,
-  getAgentDir,
-  SettingsManager,
-  type ResolvedResource,
-} from "@earendil-works/pi-coding-agent";
+import { getAgentDir, SettingsManager } from "@earendil-works/pi-coding-agent";
 import {
   type InstalledPackage,
   type PackageExtensionEntry,
@@ -18,6 +13,7 @@ import {
   type State,
 } from "../types/index.js";
 import { parseNpmSource } from "../utils/format.js";
+import { resolveConfiguredPackageExtensions, resourcesForPackage } from "./extension-resolution.js";
 import { fileExists, readSummary } from "../utils/fs.js";
 import {
   matchesFilterPattern,
@@ -432,6 +428,7 @@ async function collectExtensionFilesFromDir(
     const absolutePath = join(startDir, entry.name);
 
     if (entry.isDirectory()) {
+      if (entry.name === "node_modules" || entry.name === ".git") continue;
       collected.push(...(await collectExtensionFilesFromDir(packageRoot, absolutePath)));
       continue;
     }
@@ -575,24 +572,10 @@ export async function discoverPackageExtensions(
     readPackageFilterMap("project", cwd, projectTrusted),
   ]);
 
-  const packageManager = new DefaultPackageManager({
-    cwd,
-    agentDir: getAgentDir(),
-    settingsManager: createSettingsManager(cwd, projectTrusted),
-  });
-  let canonicalResources: ResolvedResource[] = [];
-  try {
-    canonicalResources = (await packageManager.resolve(async () => "skip")).extensions;
-  } catch {
-    // Individual records can still use the compatibility adapter below.
-  }
+  const canonicalResources = await resolveConfiguredPackageExtensions(cwd, projectTrusted);
 
   for (const pkg of packages) {
-    const resolvedResources = canonicalResources.filter(
-      (resource) =>
-        resource.metadata.scope === (pkg.scope === "project" ? "project" : "user") &&
-        normalizeSource(resource.metadata.source) === normalizeSource(pkg.source)
-    );
+    const resolvedResources = resourcesForPackage(canonicalResources, pkg.source, pkg.scope);
 
     if (resolvedResources.length > 0) {
       for (const resource of resolvedResources) {
@@ -617,6 +600,10 @@ export async function discoverPackageExtensions(
       continue;
     }
 
+    // Compatibility gap: Pi's resolver only returns actively configured resources.
+    // Characterization callers may provide detached package records, and standalone
+    // installs permit a root index fallback that Pi package conventions do not expose.
+    // Keep this bounded scanner for those cases only; never descend into dependencies.
     const packageRoot = await toPackageRoot(pkg, cwd);
     if (!packageRoot) continue;
 
