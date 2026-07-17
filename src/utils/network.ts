@@ -90,7 +90,9 @@ export async function downloadToFile(
     const reader = response.body.getReader();
     let total = 0;
     while (true) {
+      combinedSignal.throwIfAborted();
       const chunk = await reader.read();
+      combinedSignal.throwIfAborted();
       if (chunk.done) break;
       total += chunk.value.byteLength;
       if (total > maxBytes) {
