@@ -171,7 +171,7 @@ void test("/extensions shows package sizes inline when known", async () => {
   }
 });
 
-void test("/extensions uses Enter for local actions instead of toggling state", async () => {
+void test("/extensions uses the configured confirm binding for local actions", async () => {
   const cwd = await mkdtemp(join(tmpdir(), "pi-extmgr-unified-enter-"));
   const projectExtensionsRoot = join(cwd, ".pi", "extensions");
 
@@ -188,12 +188,13 @@ void test("/extensions uses Enter for local actions instead of toggling state", 
         ctx.ui.theme,
         (lines) => lines.some((line) => line.includes("i install")),
         (component, _lines, completion) => {
-          component.handleInput?.("\r");
+          component.handleInput?.("\u001b[13;5u");
           return completion.then((value) => {
             rawAction = value;
             return { type: "cancel" };
           });
-        }
+        },
+        { keybindings: { "tui.select.confirm": "ctrl+enter" } }
       );
 
     await showInteractive(ctx, pi);

@@ -40,6 +40,7 @@ export interface CaptureCustomComponentOptions {
   height?: number;
   matcher?: (lines: string[]) => boolean;
   mismatchTimeoutMs?: number;
+  keybindings?: Partial<Record<string, KeyId | KeyId[]>>;
 }
 
 export function captureCustomComponent<T>(
@@ -51,6 +52,17 @@ export function captureCustomComponent<T>(
     lines: string[],
     completion: Promise<unknown>
   ) => T | Promise<T>
+): Promise<T | unknown>;
+export function captureCustomComponent<T>(
+  factory: unknown,
+  theme: unknown,
+  matcher: (lines: string[]) => boolean,
+  onReady: (
+    component: TestCustomComponent,
+    lines: string[],
+    completion: Promise<unknown>
+  ) => T | Promise<T>,
+  options?: CaptureCustomComponentOptions
 ): Promise<T | unknown>;
 export function captureCustomComponent<T>(
   factory: unknown,
@@ -102,6 +114,21 @@ export async function captureCustomComponent<T>(
 
   const width = options?.width ?? 120;
   const height = options?.height ?? 40;
+  const configuredKeybindings = options?.keybindings
+    ? {
+        ...mockKeybindings,
+        matches(data: string, keybinding: string): boolean {
+          const keys = options.keybindings?.[keybinding] ?? DEFAULT_KEYBINDINGS[keybinding];
+          const keyList = Array.isArray(keys) ? keys : keys ? [keys] : [];
+          return keyList.some((key) => matchesKey(data, key));
+        },
+        getKeys(keybinding: string): KeyId[] {
+          const keys = options.keybindings?.[keybinding] ?? DEFAULT_KEYBINDINGS[keybinding];
+          return keys ? (Array.isArray(keys) ? [...keys] : [keys]) : [];
+        },
+      }
+    : mockKeybindings;
+
   const component = await (
     factory as (
       tui: unknown,
@@ -112,7 +139,7 @@ export async function captureCustomComponent<T>(
   )(
     { requestRender: noop, terminal: { rows: height, columns: width } },
     theme,
-    mockKeybindings,
+    configuredKeybindings,
     resolveCompletion
   );
 
