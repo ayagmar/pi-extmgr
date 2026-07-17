@@ -25,6 +25,7 @@ import {
   clearSearchCache,
   getInstalledPackagesAllScopes,
   getSearchCache,
+  hydrateSearchCache,
   isCacheValid,
   searchNpmPackages,
 } from "../packages/discovery.js";
@@ -896,6 +897,10 @@ async function browseRemotePackagesPage({
   let searchPage: Awaited<ReturnType<typeof searchNpmPackages>> | undefined;
   if (!forceRefresh && isCacheValid(plan.searchQuery, offset)) {
     searchPage = getSearchCache(plan.searchQuery, offset) ?? undefined;
+  }
+
+  if (!searchPage && !forceRefresh) {
+    searchPage = (await hydrateSearchCache(plan.searchQuery, offset)) ?? undefined;
   }
 
   if (!searchPage) {
