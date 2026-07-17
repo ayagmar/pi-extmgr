@@ -26,6 +26,7 @@ import {
 } from "../utils/relative-path-selection.js";
 import { resolveConfiguredNpmRootCommand } from "../utils/npm-exec.js";
 import { throwIfSettingsErrors } from "../utils/settings-errors.js";
+import { getProjectConfigDir } from "../utils/pi-paths.js";
 
 interface PackageSettingsObject {
   source: string;
@@ -101,11 +102,11 @@ async function resolveNpmPackageRoot(
 
   const packageName = parsed.name;
   const projectCandidates = [
-    join(cwd, ".pi", "npm", "node_modules", packageName),
+    join(getProjectConfigDir(cwd), "npm", "node_modules", packageName),
     join(cwd, "node_modules", packageName),
   ];
 
-  const packageDir = process.env.PI_PACKAGE_DIR || join(homedir(), ".pi", "agent");
+  const packageDir = process.env.PI_PACKAGE_DIR || getAgentDir();
   const globalCandidates = [join(packageDir, "npm", "node_modules", packageName)];
 
   const npmGlobalRoot = await getGlobalNpmRoot(cwd);
@@ -574,26 +575,24 @@ export async function discoverPackageExtensions(
     readPackageFilterMap("project", cwd, projectTrusted),
   ]);
 
+  const packageManager = new DefaultPackageManager({
+    cwd,
+    agentDir: getAgentDir(),
+    settingsManager: createSettingsManager(cwd, projectTrusted),
+  });
+  let canonicalResources: ResolvedResource[] = [];
+  try {
+    canonicalResources = (await packageManager.resolve(async () => "skip")).extensions;
+  } catch {
+    // Individual records can still use the compatibility adapter below.
+  }
+
   for (const pkg of packages) {
-    const packageManager = new DefaultPackageManager({
-      cwd,
-      agentDir: getAgentDir(),
-      settingsManager: createSettingsManager(cwd, projectTrusted),
-    });
-    let resolvedResources: ResolvedResource[] = [];
-    try {
-      if (!pkg.resolvedPath) throw new Error("package path is not characterized");
-      const resolved = await packageManager.resolveExtensionSources([pkg.source], {
-        local: pkg.scope === "project",
-      });
-      resolvedResources = resolved.extensions.filter(
-        (resource) =>
-          resource.metadata.scope === (pkg.scope === "project" ? "project" : "user") &&
-          normalizeSource(resource.metadata.source) === normalizeSource(pkg.source)
-      );
-    } catch {
-      // Compatibility adapter for package records not representable by Pi's resolver.
-    }
+    const resolvedResources = canonicalResources.filter(
+      (resource) =>
+        resource.metadata.scope === (pkg.scope === "project" ? "project" : "user") &&
+        normalizeSource(resource.metadata.source) === normalizeSource(pkg.source)
+    );
 
     if (resolvedResources.length > 0) {
       for (const resource of resolvedResources) {
