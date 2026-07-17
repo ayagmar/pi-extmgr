@@ -647,3 +647,18 @@ void test("/extensions keeps staged changes when staying in the manager", async 
     await rm(cwd, { recursive: true, force: true });
   }
 });
+
+void test("manager hints use the active public selection bindings", async () => {
+  const { buildFooterShortcuts } = await import("../src/ui/footer.js");
+  const hints = buildFooterShortcuts(
+    { selectedType: "package", expandable: false, pendingChanges: 0, selectedPackages: 2 },
+    {
+      getKeys: (key: string) => (key === "tui.select.confirm" ? ["ctrl+enter"] : ["alt+left"]),
+    } as never
+  );
+
+  assert.match(hints, /Ctrl\+enter actions/);
+  assert.match(hints, /Alt\+left clear\/cancel/);
+  assert.match(hints, /2 selected/);
+  assert.match(hints, /B bulk actions/);
+});

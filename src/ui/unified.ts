@@ -256,7 +256,8 @@ async function showInteractiveOnce(
                     byId,
                     browser.getSelectedItem(),
                     browser.getBulkSelectedCount()
-                  )
+                  ),
+                  keybindings
                 )
               )
             );
@@ -523,8 +524,12 @@ function buildManagerSummary(
     parts.push(theme.fg("warning", `${pendingCount} unsaved`));
   }
 
+  if (packageCount > 0) {
+    parts.push(theme.fg("muted", "Space selects packages"));
+  }
+
   if ((options?.selectedCount ?? 0) > 0) {
-    parts.push(theme.fg("accent", `${options?.selectedCount} selected`));
+    parts.push(theme.fg("accent", `${options?.selectedCount} selected · B to act`));
   }
 
   return parts.join(" • ");
@@ -1787,6 +1792,9 @@ async function handleUnifiedAction(
       `${results.completed.length} succeeded`,
       `${results.failed.length} failed`,
       `${results.skipped.length} skipped`,
+      results.completed.length > 0
+        ? "Reload required: confirm Reload Required to apply changes."
+        : "Reload required: no",
       ...results.failed.map((failure) => `- ${failure}`),
       ...results.skipped.map((skipped) => `- ${skipped}`),
     ].join("\n");

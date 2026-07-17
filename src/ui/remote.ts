@@ -46,6 +46,7 @@ import { fetchWithTimeout } from "../utils/network.js";
 import { notify } from "../utils/notify.js";
 import { execNpm } from "../utils/npm-exec.js";
 import { getPackageSourceKind } from "../utils/package-source.js";
+import { activeKeyHint } from "../utils/key-hints.js";
 import { RequestGeneration, runTaskWithLoader } from "./async-task.js";
 
 interface PackageInfoCacheEntry {
@@ -649,6 +650,16 @@ class RemotePackageBrowser implements Focusable {
     lines.push(truncateToWidth(this.buildSummaryLine(), safeWidth, ""));
     lines.push("");
 
+    if (this.packages.length === 0) {
+      lines.push(
+        truncateToWidth(
+          this.theme.fg("warning", "  No packages found. Try / search or Esc to go back."),
+          safeWidth,
+          ""
+        )
+      );
+    }
+
     const { startIndex, endIndex } = this.getVisibleRange();
     for (const pkg of this.packages.slice(startIndex, endIndex)) {
       lines.push(this.renderPackageLine(pkg, safeWidth));
@@ -697,16 +708,12 @@ class RemotePackageBrowser implements Focusable {
   }
 
   private buildFooterLine(): string {
-    const parts = ["Enter details", "/ search"];
+    const parts = [activeKeyHint(this.keybindings, "tui.select.confirm", "details"), "/ search"];
 
-    if (this.showPrevious) {
-      parts.push("p prev");
-    }
-    if (this.showLoadMore) {
-      parts.push("n next");
-    }
-
-    parts.push("o sort", "r refresh", "i install", "m menu", "Esc back");
+    if (this.showPrevious) parts.push("p previous");
+    if (this.showLoadMore) parts.push("n next");
+    parts.push("o sort", "r refresh", "i install", "m menu");
+    parts.push(activeKeyHint(this.keybindings, "tui.select.cancel", "back"));
     return `  ${this.theme.fg("dim", parts.join(" · "))}`;
   }
 
