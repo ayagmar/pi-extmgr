@@ -219,6 +219,27 @@ async function showConfigurePanel(
           syncThemedContent();
         },
         handleInput(data: string) {
+          if (keybindings.matches(data, "tui.select.cancel")) {
+            done({ type: "cancel" });
+            return;
+          }
+
+          if (keybindings.matches(data, "tui.select.confirm")) {
+            const selectedIndex = getSettingsListSelectedIndex(settingsList) ?? 0;
+            const selectedRow = rows[selectedIndex];
+            if (selectedRow && !selectedRow.available) {
+              notify(
+                ctx,
+                `${selectedRow.extensionPath} is missing on disk and cannot be toggled.`,
+                "warning"
+              );
+              return;
+            }
+            settingsList.handleInput?.("\r");
+            tui.requestRender();
+            return;
+          }
+
           if (matchesKey(data, Key.ctrl("s")) || data === "s" || data === "S") {
             done({ type: "save" });
             return;

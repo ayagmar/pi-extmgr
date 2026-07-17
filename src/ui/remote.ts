@@ -512,14 +512,14 @@ class RemotePackageBrowser implements Focusable {
 
   handleBrowseInput(data: string): boolean {
     if (this.searchActive) {
-      if (matchesKey(data, Key.enter)) {
+      if (this.keybindings.matches(data, "tui.select.confirm")) {
         this.searchActive = false;
         this.searchInput.focused = false;
         this.onAction({ type: "search", query: this.searchInput.getValue().trim() });
         return true;
       }
 
-      if (matchesKey(data, Key.escape)) {
+      if (this.keybindings.matches(data, "tui.select.cancel")) {
         this.searchActive = false;
         this.searchInput.focused = false;
         this.searchInput.setValue(this.queryLabel);
@@ -568,7 +568,7 @@ class RemotePackageBrowser implements Focusable {
     }
 
     const selected = this.packages[this.selectedIndex];
-    if (selected && matchesKey(data, Key.enter)) {
+    if (selected && this.keybindings.matches(data, "tui.select.confirm")) {
       this.onAction({ type: "package", name: selected.name });
       return true;
     }
@@ -611,7 +611,7 @@ class RemotePackageBrowser implements Focusable {
       return true;
     }
 
-    if (matchesKey(data, Key.escape)) {
+    if (this.keybindings.matches(data, "tui.select.cancel")) {
       this.onAction({ type: "cancel" });
       return true;
     }

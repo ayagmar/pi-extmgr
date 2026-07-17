@@ -926,13 +926,13 @@ class UnifiedManagerBrowser implements Focusable {
 
   handleManagerInput(data: string): boolean {
     if (this.searchActive) {
-      if (matchesKey(data, Key.enter)) {
+      if (this.keybindings.matches(data, "tui.select.confirm")) {
         this.searchActive = false;
         this.searchInput.focused = false;
         return true;
       }
 
-      if (matchesKey(data, Key.escape)) {
+      if (this.keybindings.matches(data, "tui.select.cancel")) {
         this.searchInput.setValue("");
         this.searchActive = false;
         this.searchInput.focused = false;
@@ -951,7 +951,7 @@ class UnifiedManagerBrowser implements Focusable {
       return true;
     }
 
-    if (matchesKey(data, Key.escape) && this.getSearchQuery()) {
+    if (this.keybindings.matches(data, "tui.select.cancel") && this.getSearchQuery()) {
       this.searchInput.setValue("");
       this.refreshVisibleItems();
       return true;
@@ -1039,7 +1039,7 @@ class UnifiedManagerBrowser implements Focusable {
       return true;
     }
 
-    if (matchesKey(data, Key.enter) && selectedId) {
+    if (this.keybindings.matches(data, "tui.select.confirm") && selectedId) {
       this.onAction({ type: "action", itemId: selectedId, action: "menu" });
       return true;
     }
@@ -1138,7 +1138,7 @@ class UnifiedManagerBrowser implements Focusable {
       return true;
     }
 
-    if (matchesKey(data, Key.escape)) {
+    if (this.keybindings.matches(data, "tui.select.cancel")) {
       this.onAction({ type: "cancel" });
       return true;
     }
