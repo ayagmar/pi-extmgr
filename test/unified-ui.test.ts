@@ -586,7 +586,10 @@ void test("/extensions bulk updates use one flow and summarize partial failures"
     assert.equal(confirmPrompts.filter((title) => title === "Reload Required").length, 1);
     assert.ok(
       notifications.some(
-        (entry) => entry.message.includes("1 succeeded") && entry.message.includes("1 failed")
+        (entry) =>
+          entry.message.includes("1 succeeded") &&
+          entry.message.includes("1 failed") &&
+          entry.message.includes("Reload required")
       )
     );
   } finally {
