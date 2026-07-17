@@ -1069,8 +1069,8 @@ async function confirmMarketplaceInstall(
     info,
     "",
     "Missing provenance or compatibility metadata is unknown, not safe.",
-  ].join("\\n");
-  if (!(await ctx.ui.confirm("Review before install", `${review}\\n\\nInstall now?`))) {
+  ].join("\n");
+  if (!(await ctx.ui.confirm("Review before install", `${review}\n\nInstall now?`))) {
     notify(ctx, "Installation cancelled.", "info");
     return undefined;
   }
