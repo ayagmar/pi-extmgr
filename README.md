@@ -208,7 +208,7 @@ Examples:
 - **Reload is built-in**: When extmgr asks to reload, it calls `ctx.reload()` directly. Successful mutations persist a versioned reload-required marker; cancellation and failure do not. The marker survives reopening the manager and clears after a successful reload.
 - **Saved manager state**: Views, favorites, recent items, and bulk selections are stored atomically in `~/.pi/agent/.extmgr-cache/views-<project>.json`. Named profiles are stored in `profiles.json`; project policies load from `.pi/extmgr-policy.json`.
 - **Trash lifecycle**: Local removals move to `~/.pi/agent/.extmgr-trash/` with persistent records. Undo refuses to overwrite a replacement file, and expired or missing records are cleaned up.
-- **Metadata safety**: Missing compatibility, provenance, checksum, or target-version metadata is reported as `unknown`, never `safe`. Target-version previews and exact target badges are intentionally not offered when Pi does not expose structured target metadata.
+- **Metadata safety**: Missing compatibility, provenance, checksum, or target-version metadata is reported as `unknown`, never `safe`. Target-version previews, exact target badges, and update-policy/maintenance-window enforcement are intentionally deferred because Pi does not expose structured target metadata.
 
 ## License
 

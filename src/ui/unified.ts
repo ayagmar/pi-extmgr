@@ -1887,7 +1887,7 @@ async function handleUnifiedAction(
 
       const confirmed = await ctx.ui.confirm(
         "Delete Local Extension",
-        `Delete ${item.displayName} from disk?\n\nThis cannot be undone.`
+        `Remove ${item.displayName} from disk?\n\nIt will be moved to trash, where you can restore it later.`
       );
       if (!confirmed) return "resume";
 
