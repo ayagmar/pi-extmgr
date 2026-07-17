@@ -40,14 +40,22 @@ import { validateCompatibility } from "../doctor/compatibility.js";
 import { type BrowseAction, type NpmPackage } from "../types/index.js";
 import { getKnownUpdates } from "../utils/auto-update.js";
 import { parseChoiceByLabel, splitCommandArgs } from "../utils/command.js";
-import { formatBytes, normalizePackageSource, parseNpmSource, truncate } from "../utils/format.js";
+import { formatBytes, parseNpmSource, truncate } from "../utils/format.js";
 import { requireCustomUI, runCustomUI } from "../utils/mode.js";
 import { fetchWithTimeout } from "../utils/network.js";
 import { notify } from "../utils/notify.js";
 import { execNpm } from "../utils/npm-exec.js";
-import { getPackageSourceKind } from "../utils/package-source.js";
 import { activeKeyHint } from "../utils/key-hints.js";
 import { RequestGeneration, runTaskWithLoader } from "./async-task.js";
+import {
+  COMMUNITY_BROWSE_QUERY,
+  createCommunityBrowsePlan,
+  createRemoteBrowseQueryPlan,
+  filterRemoteBrowseResults,
+  type RemoteBrowseQueryPlan,
+  type RemoteBrowseSource,
+  resolveRemoteBrowseSource,
+} from "./remote/query.js";
 
 interface PackageInfoCacheEntry {
   timestamp: number;
@@ -142,130 +150,6 @@ const PACKAGE_DETAILS_CHOICES = {
   viewInfo: "View npm info",
   back: "Back to results",
 } as const;
-
-const COMMUNITY_BROWSE_QUERY = "keywords:pi-package";
-
-type RemoteBrowseSource = "community" | "npm";
-
-type RemoteBrowseQueryPlan =
-  | {
-      kind: "browse";
-      rawQuery: typeof COMMUNITY_BROWSE_QUERY;
-      searchQuery: typeof COMMUNITY_BROWSE_QUERY;
-      displayQuery: "";
-      title: "Community packages";
-    }
-  | {
-      kind: "search";
-      rawQuery: string;
-      searchQuery: string;
-      displayQuery: string;
-      title: string;
-      exactPackageName?: string;
-    }
-  | {
-      kind: "unsupported";
-      rawQuery: string;
-      message: string;
-    };
-
-function findExactPackageLookup(query: string): string | undefined {
-  if (!query || /\s/.test(query)) {
-    return undefined;
-  }
-
-  const parsed = parseNpmSource(normalizePackageSource(query));
-  if (!parsed?.name) {
-    return undefined;
-  }
-
-  if (query.startsWith("npm:") || Boolean(parsed.version) || parsed.name.startsWith("@")) {
-    return parsed.name.toLowerCase();
-  }
-
-  return undefined;
-}
-
-function buildUnsupportedSearchMessage(query: string, kind: "local" | "git"): string {
-  const label = truncate(query, 60);
-  const sourceLabel = kind === "local" ? "local path" : "git source";
-  return `"${label}" looks like a ${sourceLabel}. Remote browse searches npm package names and keywords. Use Install by source instead.`;
-}
-
-function createRemoteBrowseQueryPlan(query: string): RemoteBrowseQueryPlan {
-  const trimmed = query.trim();
-  if (!trimmed || trimmed === COMMUNITY_BROWSE_QUERY) {
-    return {
-      kind: "browse",
-      rawQuery: COMMUNITY_BROWSE_QUERY,
-      searchQuery: COMMUNITY_BROWSE_QUERY,
-      displayQuery: "",
-      title: "Community packages",
-    };
-  }
-
-  const sourceKind = getPackageSourceKind(trimmed);
-  if (sourceKind === "local" || sourceKind === "git") {
-    return {
-      kind: "unsupported",
-      rawQuery: trimmed,
-      message: buildUnsupportedSearchMessage(trimmed, sourceKind),
-    };
-  }
-
-  const exactPackageName = findExactPackageLookup(trimmed);
-  return {
-    kind: "search",
-    rawQuery: trimmed,
-    searchQuery: exactPackageName ?? trimmed,
-    displayQuery: trimmed,
-    title: "Remote packages",
-    ...(exactPackageName ? { exactPackageName } : {}),
-  };
-}
-
-function createCommunityBrowsePlan(
-  query: string
-): Exclude<RemoteBrowseQueryPlan, { kind: "unsupported" }> {
-  const trimmed = query.trim();
-  if (!trimmed || trimmed === COMMUNITY_BROWSE_QUERY) {
-    return {
-      kind: "browse",
-      rawQuery: COMMUNITY_BROWSE_QUERY,
-      searchQuery: COMMUNITY_BROWSE_QUERY,
-      displayQuery: "",
-      title: "Community packages",
-    };
-  }
-
-  return {
-    kind: "search",
-    rawQuery: trimmed,
-    searchQuery: `${COMMUNITY_BROWSE_QUERY} ${trimmed}`,
-    displayQuery: trimmed,
-    title: "Community packages",
-  };
-}
-
-function resolveRemoteBrowseSource(query: string, source?: RemoteBrowseSource): RemoteBrowseSource {
-  if (source) {
-    return source;
-  }
-
-  const trimmed = query.trim();
-  return !trimmed || trimmed === COMMUNITY_BROWSE_QUERY ? "community" : "npm";
-}
-
-function filterRemoteBrowseResults(
-  plan: Exclude<RemoteBrowseQueryPlan, { kind: "unsupported" }>,
-  packages: NpmPackage[]
-): NpmPackage[] {
-  if (plan.kind !== "search" || !plan.exactPackageName) {
-    return packages;
-  }
-
-  return packages.filter((pkg) => pkg.name.toLowerCase() === plan.exactPackageName);
-}
 
 function createAbortError(): Error {
   const error = new Error("Operation cancelled");
