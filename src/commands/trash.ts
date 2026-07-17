@@ -30,7 +30,7 @@ async function selectRecord(
   }
   if (!ctx.hasUI) return undefined;
   const choice = await ctx.ui.select(
-    action,
+    action === "restore" ? "Restore" : "Purge",
     records.map((record, index) => `[${index + 1}] ${record.originalPath}`)
   );
   const match = choice?.match(/^\[(\d+)\]/);
@@ -54,7 +54,7 @@ export async function handleTrashSubcommand(
     if (action === "list") {
       formatListOutput(
         ctx,
-        "Trash records",
+        "Trash",
         records.map((record, index) => `[${index + 1}] ${record.originalPath}`)
       );
       return;
@@ -65,18 +65,12 @@ export async function handleTrashSubcommand(
     }
 
     if (action === "purge" && tokens[1]?.toLowerCase() === "all") {
-      if (
-        !(await confirmAction(
-          ctx,
-          "Purge trash",
-          `Permanently delete ${records.length} record(s)?`
-        ))
-      ) {
-        notify(ctx, "Trash purge cancelled.", "info");
+      if (!(await confirmAction(ctx, "Purge", `Permanently delete ${records.length} record(s)?`))) {
+        notify(ctx, "Purge cancelled.", "info");
         return;
       }
       for (const record of records) await purgeExtensionTrash(record);
-      notify(ctx, `Purged ${records.length} trash record(s).`, "info");
+      notify(ctx, `Purged ${records.length} record(s).`, "info");
       return;
     }
 
@@ -86,10 +80,8 @@ export async function handleTrashSubcommand(
       return;
     }
     if (action === "purge") {
-      if (
-        !(await confirmAction(ctx, "Purge trash", `Permanently delete ${record.originalPath}?`))
-      ) {
-        notify(ctx, "Trash purge cancelled.", "info");
+      if (!(await confirmAction(ctx, "Purge", `Permanently delete ${record.originalPath}?`))) {
+        notify(ctx, "Purge cancelled.", "info");
         return;
       }
       await purgeExtensionTrash(record);
@@ -97,8 +89,8 @@ export async function handleTrashSubcommand(
       return;
     }
 
-    if (!(await confirmAction(ctx, "Restore extension", `Restore ${record.originalPath}?`))) {
-      notify(ctx, "Trash restore cancelled.", "info");
+    if (!(await confirmAction(ctx, "Restore", `Restore ${record.originalPath}?`))) {
+      notify(ctx, "Restore cancelled.", "info");
       return;
     }
     await undoExtensionTrash(record);
@@ -107,7 +99,7 @@ export async function handleTrashSubcommand(
   } catch (error) {
     notify(
       ctx,
-      `Trash ${action} failed: ${error instanceof Error ? error.message : String(error)}`,
+      `${action === "restore" ? "Restore" : action === "purge" ? "Purge" : "Trash"} failed: ${error instanceof Error ? error.message : "Unexpected error"}`,
       "error"
     );
   }

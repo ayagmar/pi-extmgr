@@ -4,6 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { handleProfileSubcommand } from "../src/commands/profile.js";
+import { buildHelpLines } from "../src/ui/help.js";
+import { visibleWidth } from "@earendil-works/pi-tui";
 import { createMockHarness } from "./helpers/mocks.js";
 import { mockPackageCatalog } from "./helpers/package-catalog.js";
 
@@ -27,4 +29,12 @@ void test("profile export writes exact installed source, scope, and version", as
     restore();
     await rm(cwd, { recursive: true, force: true });
   }
+});
+
+void test("manager help stays compact and width-safe", () => {
+  const lines = buildHelpLines();
+  assert.ok(lines.includes("Extensions Manager Help"));
+  assert.ok(lines.every((line) => visibleWidth(line) <= 88));
+  assert.ok(lines.some((line) => line.includes("Bulk actions")));
+  assert.ok(lines.some((line) => line.includes("Reload required")));
 });
