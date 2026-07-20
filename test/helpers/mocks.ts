@@ -31,7 +31,15 @@ export interface MockHarnessOptions {
   projectTrusted?: boolean;
 }
 
-const OK: ExecResult = { code: 0, stdout: "ok", stderr: "", killed: false };
+function getDefaultTestCwd(): string {
+  const cwd = process.env.PI_EXTMGR_TEST_CWD;
+  if (!cwd) {
+    throw new Error(
+      "Test harness requires PI_EXTMGR_TEST_CWD; run tests through the package test script."
+    );
+  }
+  return cwd;
+}
 
 export function createMockHarness(options: MockHarnessOptions = {}): {
   pi: ExtensionAPI;
@@ -114,7 +122,7 @@ export function createMockHarness(options: MockHarnessOptions = {}): {
         return { code: 0, stdout: lines.join("\n"), stderr: "", killed: false };
       }
     }
-    return OK;
+    throw new Error(`Unexpected command from test: ${[command, ...args].join(" ")}`);
   };
 
   const execImpl = (command: string, args: string[]): ExecResult | Promise<ExecResult> => {
@@ -172,7 +180,7 @@ export function createMockHarness(options: MockHarnessOptions = {}): {
   const ctx = {
     hasUI: options.hasUI ?? false,
     mode: options.hasUI ? "tui" : "print",
-    cwd: options.cwd ?? "/tmp",
+    cwd: options.cwd ?? getDefaultTestCwd(),
     isProjectTrusted: () => options.projectTrusted ?? true,
     ui,
     reload: () => {
