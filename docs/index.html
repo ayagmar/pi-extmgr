@@ -6,7 +6,7 @@
     <title>pi-extmgr — Extension Manager for Pi</title>
     <meta
       name="description"
-      content="A better way to manage Pi extensions. Browse, install, enable/disable, and remove extensions from one place with Pi's native package flows underneath."
+      content="A better way to manage Pi extensions. Four task-oriented workspaces — Installed, Discover, Profiles, and Health — built on Pi's native package flows."
     />
 
     <!-- Compiled Tailwind CSS -->
@@ -70,8 +70,12 @@
               class="text-neutral-300 hover:text-white underline underline-offset-4"
               >Pi</a
             >
-            extensions from a unified interface. Built on Pi's native package flows, without the
-            extra directory spelunking or config-file editing.
+            extensions across four task-oriented workspaces —
+            <span class="text-neutral-300">Installed</span>,
+            <span class="text-neutral-300">Discover</span>,
+            <span class="text-neutral-300">Profiles</span>, and
+            <span class="text-neutral-300">Health</span>. Built on Pi's native package flows,
+            without the extra directory spelunking or config-file editing.
           </p>
 
           <!-- Live Stats -->
@@ -183,8 +187,14 @@
             <div class="text-neutral-500 mb-2">$ pi install npm:pi-extmgr</div>
             <div class="text-pi-400 mb-4">✓ Extension installed successfully</div>
             <div class="text-neutral-500 mb-2">$ pi</div>
-            <div class="text-neutral-400 mb-2">
+            <div class="text-neutral-400 mb-3">
               &gt; <span class="text-white">/extensions</span>
+            </div>
+            <div class="mb-3 text-sm">
+              <span class="text-neutral-600">Shift+Tab ‹</span>
+              <span class="text-pi-400">&nbsp;[Installed]</span>
+              <span class="text-neutral-500">&nbsp;Discover&nbsp; Profiles&nbsp; Health</span>
+              <span class="text-neutral-600">&nbsp;› Tab</span>
             </div>
             <div class="text-neutral-500">
               <div class="flex items-center gap-2 mb-1">
@@ -205,6 +215,8 @@
             </div>
             <div class="mt-4 text-neutral-500">
               <span class="text-neutral-400">Press</span>
+              <span class="text-white bg-neutral-700 px-1.5 py-0.5 rounded text-xs">Tab</span>
+              <span class="text-neutral-400">to switch workspaces,</span>
               <span class="text-white bg-neutral-700 px-1.5 py-0.5 rounded text-xs">S</span>
               <span class="text-neutral-400">to save changes</span>
             </div>
@@ -222,17 +234,18 @@
             <button
               type="button"
               class="lightbox-trigger block w-full text-left bg-neutral-900 rounded-xl border border-neutral-800 overflow-hidden hover:border-pi-600/50 transition-colors"
-              data-lightbox-src="assets/extension-manager.png"
-              data-lightbox-alt="Extension Manager showing local extensions"
+              data-lightbox-src="assets/installed-workspace.png"
+              data-lightbox-alt="Installed workspace with master/detail layout, workspace tabs, and filters"
             >
               <img
-                src="assets/extension-manager.png"
-                alt="Extension Manager showing local extensions"
+                src="assets/installed-workspace.png"
+                alt="Installed workspace with master/detail layout, workspace tabs, and filters"
                 class="w-full h-auto"
               />
             </button>
             <p class="text-sm text-neutral-500">
-              Unified manager — local extensions and packages in one list (click to enlarge)
+              Installed workspace — local extensions and packages with a responsive master/detail
+              layout (click to enlarge)
             </p>
           </div>
           <div class="space-y-3">
@@ -249,7 +262,8 @@
               />
             </button>
             <p class="text-sm text-neutral-500">
-              Remote browser — search and install from npm (click to enlarge)
+              Discover workspace — search and install from npm with weekly downloads and
+              popularity sorting (click to enlarge)
             </p>
           </div>
         </div>
@@ -259,7 +273,7 @@
     <!-- Features -->
     <section id="features" class="py-20 px-6 border-t border-neutral-800/50">
       <div class="max-w-5xl mx-auto">
-        <div class="grid sm:grid-cols-3 gap-12">
+        <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-x-12 gap-y-12">
           <div>
             <div
               class="w-10 h-10 rounded-lg bg-pi-600/10 border border-pi-600/20 flex items-center justify-center mb-4"
@@ -278,9 +292,10 @@
                 />
               </svg>
             </div>
-            <h3 class="text-white font-medium mb-2">Unified Manager</h3>
+            <h3 class="text-white font-medium mb-2">Installed</h3>
             <p class="text-neutral-400 text-sm leading-relaxed">
-              Local extensions and installed packages in one list. Toggle with Space, save with S.
+              Local extensions and packages in one responsive master/detail list. Toggle with
+              Space, save with S, filter with 1-7.
             </p>
           </div>
           <div>
@@ -301,9 +316,58 @@
                 />
               </svg>
             </div>
-            <h3 class="text-white font-medium mb-2">Remote Discovery</h3>
+            <h3 class="text-white font-medium mb-2">Discover</h3>
             <p class="text-neutral-400 text-sm leading-relaxed">
-              Browse and install from npm or git. Search packages, install by source, done.
+              Browse and install from npm or git with weekly downloads, popularity sorting, and
+              instant results that hydrate in the background.
+            </p>
+          </div>
+          <div>
+            <div
+              class="w-10 h-10 rounded-lg bg-pi-600/10 border border-pi-600/20 flex items-center justify-center mb-4"
+            >
+              <svg
+                class="w-5 h-5 text-pi-400"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+                />
+              </svg>
+            </div>
+            <h3 class="text-white font-medium mb-2">Profiles</h3>
+            <p class="text-neutral-400 text-sm leading-relaxed">
+              Save, export, and apply named package sets with inline current-vs-target diffs.
+              Every apply passes through a review screen.
+            </p>
+          </div>
+          <div>
+            <div
+              class="w-10 h-10 rounded-lg bg-pi-600/10 border border-pi-600/20 flex items-center justify-center mb-4"
+            >
+              <svg
+                class="w-5 h-5 text-pi-400"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"
+                />
+              </svg>
+            </div>
+            <h3 class="text-white font-medium mb-2">Health</h3>
+            <p class="text-neutral-400 text-sm leading-relaxed">
+              Runtime conflicts, compatibility, reload state, and recoverable trash — with a
+              conservative fix-all that never removes packages.
             </p>
           </div>
           <div>
@@ -324,9 +388,33 @@
                 />
               </svg>
             </div>
-            <h3 class="text-white font-medium mb-2">Auto-Update</h3>
+            <h3 class="text-white font-medium mb-2">Scheduled Updates</h3>
             <p class="text-neutral-400 text-sm leading-relaxed">
               Set it and forget it. Persistent schedules, background checks, status bar updates.
+            </p>
+          </div>
+          <div>
+            <div
+              class="w-10 h-10 rounded-lg bg-pi-600/10 border border-pi-600/20 flex items-center justify-center mb-4"
+            >
+              <svg
+                class="w-5 h-5 text-pi-400"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"
+                />
+              </svg>
+            </div>
+            <h3 class="text-white font-medium mb-2">Safe by Default</h3>
+            <p class="text-neutral-400 text-sm leading-relaxed">
+              Staged toggles with unsaved-change guards, recoverable trash for removals, and
+              rollback on failed operations.
             </p>
           </div>
         </div>
@@ -379,55 +467,63 @@
           <h3 class="text-white font-medium mb-4">Quick Reference</h3>
           <div class="grid sm:grid-cols-2 gap-2 font-mono text-sm">
             <div class="flex gap-4 py-2 border-b border-neutral-800/50">
-              <span class="text-pi-400 w-24">/extensions</span>
+              <span class="text-pi-400 w-28 shrink-0">/extensions</span>
               <span class="text-neutral-400">Open manager</span>
             </div>
             <div class="flex gap-4 py-2 border-b border-neutral-800/50">
-              <span class="text-pi-400 w-24">Space / Enter</span>
-              <span class="text-neutral-400">Toggle extension</span>
+              <span class="text-pi-400 w-28 shrink-0">Tab / Shift+Tab</span>
+              <span class="text-neutral-400">Switch workspace</span>
             </div>
             <div class="flex gap-4 py-2 border-b border-neutral-800/50">
-              <span class="text-pi-400 w-24">S</span>
+              <span class="text-pi-400 w-28 shrink-0">Space / Enter</span>
+              <span class="text-neutral-400">Toggle / actions</span>
+            </div>
+            <div class="flex gap-4 py-2 border-b border-neutral-800/50">
+              <span class="text-pi-400 w-28 shrink-0">S</span>
               <span class="text-neutral-400">Save changes</span>
             </div>
             <div class="flex gap-4 py-2 border-b border-neutral-800/50">
-              <span class="text-pi-400 w-24">i</span>
+              <span class="text-pi-400 w-28 shrink-0">1-7</span>
+              <span class="text-neutral-400">Filter items</span>
+            </div>
+            <div class="flex gap-4 py-2 border-b border-neutral-800/50">
+              <span class="text-pi-400 w-28 shrink-0">/</span>
+              <span class="text-neutral-400">Search visible items</span>
+            </div>
+            <div class="flex gap-4 py-2 border-b border-neutral-800/50">
+              <span class="text-pi-400 w-28 shrink-0">i</span>
               <span class="text-neutral-400">Quick install</span>
             </div>
             <div class="flex gap-4 py-2 border-b border-neutral-800/50">
-              <span class="text-pi-400 w-24">f</span>
-              <span class="text-neutral-400">Quick search</span>
+              <span class="text-pi-400 w-28 shrink-0">f / R</span>
+              <span class="text-neutral-400">Search / browse remote</span>
             </div>
             <div class="flex gap-4 py-2 border-b border-neutral-800/50">
-              <span class="text-pi-400 w-24">R</span>
-              <span class="text-neutral-400">Browse remote</span>
+              <span class="text-pi-400 w-28 shrink-0">u / U</span>
+              <span class="text-neutral-400">Update selected / all</span>
             </div>
             <div class="flex gap-4 py-2 border-b border-neutral-800/50">
-              <span class="text-pi-400 w-24">U</span>
-              <span class="text-neutral-400">Update all packages</span>
+              <span class="text-pi-400 w-28 shrink-0">B</span>
+              <span class="text-neutral-400">Bulk package actions</span>
             </div>
             <div class="flex gap-4 py-2 border-b border-neutral-800/50">
-              <span class="text-pi-400 w-24">u</span>
-              <span class="text-neutral-400">Update selected</span>
+              <span class="text-pi-400 w-28 shrink-0">P / M</span>
+              <span class="text-neutral-400">Workspaces &amp; actions</span>
             </div>
             <div class="flex gap-4 py-2 border-b border-neutral-800/50">
-              <span class="text-pi-400 w-24">P</span>
-              <span class="text-neutral-400">Command palette</span>
+              <span class="text-pi-400 w-28 shrink-0">t</span>
+              <span class="text-neutral-400">Update checks wizard</span>
             </div>
             <div class="flex gap-4 py-2 border-b border-neutral-800/50">
-              <span class="text-pi-400 w-24">t</span>
-              <span class="text-neutral-400">Auto-update wizard</span>
-            </div>
-            <div class="flex gap-4 py-2 border-b border-neutral-800/50">
-              <span class="text-pi-400 w-24">X</span>
+              <span class="text-pi-400 w-28 shrink-0">X</span>
               <span class="text-neutral-400">Remove selected</span>
             </div>
             <div class="flex gap-4 py-2 border-b border-neutral-800/50">
-              <span class="text-pi-400 w-24">?</span>
+              <span class="text-pi-400 w-28 shrink-0">?</span>
               <span class="text-neutral-400">Help</span>
             </div>
             <div class="flex gap-4 py-2 sm:col-span-2">
-              <span class="text-pi-400 w-24">Esc</span>
+              <span class="text-pi-400 w-28 shrink-0">Esc</span>
               <span class="text-neutral-400">Exit / cancel</span>
             </div>
           </div>
