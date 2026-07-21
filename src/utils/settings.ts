@@ -13,6 +13,7 @@ import {
 import { parseScheduleDuration } from "./duration.js";
 import { fileExists } from "./fs.js";
 import { normalizePackageIdentity } from "./package-source.js";
+import { getExtmgrCacheDir } from "./pi-paths.js";
 
 export interface AutoUpdateConfig {
   intervalMs: number;
@@ -30,7 +31,6 @@ const DEFAULT_CONFIG: AutoUpdateConfig = {
 };
 
 const SETTINGS_KEY = "extmgr-auto-update";
-import { getExtmgrCacheDir } from "./pi-paths.js";
 
 function settingsDir(): string {
   return getExtmgrCacheDir();

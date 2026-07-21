@@ -9,7 +9,11 @@ import { normalizePathIdentity } from "./path-identity.js";
 
 export type PackageSourceKind = "npm" | "git" | "local" | "unknown";
 
-function sanitizeSource(source: string): string {
+export function packageSourceString(value: string | { source: string }): string {
+  return typeof value === "string" ? value : value.source;
+}
+
+export function normalizeConfiguredPackageSource(source: string): string {
   return source
     .trim()
     .replace(/\s+\((filtered|pinned)\)$/i, "")
@@ -17,7 +21,7 @@ function sanitizeSource(source: string): string {
 }
 
 export function getPackageSourceKind(source: string): PackageSourceKind {
-  const normalized = sanitizeSource(source);
+  const normalized = normalizeConfiguredPackageSource(source);
 
   if (normalized.startsWith("npm:")) return "npm";
 
@@ -91,7 +95,7 @@ export function normalizePackageIdentity(
   source: string,
   options?: { resolvedPath?: string; cwd?: string }
 ): string {
-  const normalized = sanitizeSource(source);
+  const normalized = normalizeConfiguredPackageSource(source);
   const kind = getPackageSourceKind(normalized);
 
   if (kind === "npm") {
@@ -116,13 +120,28 @@ export function normalizePackageIdentity(
 
 export function splitGitRepoAndRef(gitSpec: string): { repo: string; ref?: string | undefined } {
   const lastAt = gitSpec.lastIndexOf("@");
-  if (lastAt <= 0) {
-    return { repo: gitSpec };
-  }
+  if (lastAt <= 0) return { repo: gitSpec };
+
+  // Do not treat URL user-info (https://user@host/...) or the `git@host:`
+  // scp-style transport marker as a ref separator.
+  const authorityEnd = gitSpec.match(/^[a-z][a-z0-9+.-]*:\/\/[^/]*\//i)?.[0].length;
+  if (authorityEnd !== undefined && lastAt < authorityEnd - 1) return { repo: gitSpec };
+  if (gitSpec.startsWith("git@") && lastAt === gitSpec.indexOf("@")) return { repo: gitSpec };
 
   const tail = gitSpec.slice(lastAt + 1);
-  // Refs don't contain path separators or URL separators.
-  if (!tail || tail.includes("/") || tail.includes(":")) {
+  // Git refs may contain path separators (for example feature/team), but
+  // never URL/transport separators or malformed ref punctuation.
+  if (
+    !tail ||
+    tail.includes(":") ||
+    tail.includes("\\") ||
+    tail.includes("..") ||
+    tail.includes("@{") ||
+    tail.startsWith("/") ||
+    tail.endsWith("/") ||
+    tail.endsWith(".") ||
+    [...tail].some((character) => "~^?*[]".includes(character) || /\s/u.test(character))
+  ) {
     return { repo: gitSpec };
   }
 

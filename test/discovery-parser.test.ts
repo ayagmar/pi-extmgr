@@ -125,7 +125,7 @@ void test("isSourceInstalled resolves project-relative local paths against cwd",
   const restoreCatalog = mockPackageCatalog({
     packages: [
       {
-        source: "./vendor/demo",
+        source: "../vendor/demo",
         name: "demo",
         scope: "project",
         resolvedPath: "/workspace/project/vendor/demo",
@@ -147,7 +147,7 @@ void test("isSourceInstalled resolves project-relative local paths without resol
   const restoreCatalog = mockPackageCatalog({
     packages: [
       {
-        source: "./vendor/demo",
+        source: "../vendor/demo",
         name: "demo",
         scope: "project",
       },

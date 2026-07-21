@@ -68,7 +68,7 @@ function showNonInteractiveHelp(ctx: ExtensionCommandContext): void {
     "  /extensions update [source]  - Update one package or all packages",
     "  /extensions history [opts]   - Show history (supports filters)",
     "  /extensions doctor           - Inspect runtime ownership/conflicts",
-    "  /extensions profile <action> - Export, compare, or dry-run a profile",
+    "  /extensions profile <action> - Save, import, check, review, or apply a profile",
     "  /extensions auto-update <d>  - Configure scheduled update checks (e.g. 1d, 1w, 1mo, never)",
     "",
     "History examples:",
@@ -97,7 +97,9 @@ const COMMAND_DEFINITIONS: Record<CommandId, CommandDefinition> = {
     id: "remote",
     description: "Browse community packages",
     aliases: ["packages"],
-    runInteractive: (tokens, ctx, pi) => showRemote(tokens.join(" "), ctx, pi),
+    runInteractive: async (tokens, ctx, pi) => {
+      await showRemote(tokens.join(" "), ctx, pi);
+    },
     runNonInteractive: (_tokens, ctx) => {
       requireInteractiveCommand(ctx, "Remote package browsing");
       showNonInteractiveHelp(ctx);
@@ -112,7 +114,9 @@ const COMMAND_DEFINITIONS: Record<CommandId, CommandDefinition> = {
   search: {
     id: "search",
     description: "Search npm for packages",
-    runInteractive: (tokens, ctx, pi) => showRemote(`search ${tokens.join(" ")}`, ctx, pi),
+    runInteractive: async (tokens, ctx, pi) => {
+      await showRemote(`search ${tokens.join(" ")}`, ctx, pi);
+    },
     runNonInteractive: (_tokens, ctx) => {
       requireInteractiveCommand(ctx, "Search");
       showNonInteractiveHelp(ctx);
@@ -121,8 +125,10 @@ const COMMAND_DEFINITIONS: Record<CommandId, CommandDefinition> = {
   install: {
     id: "install",
     description: "Install a package",
-    runInteractive: (tokens, ctx, pi) =>
-      tokens.length > 0 ? handleInstallSubcommand(tokens, ctx, pi) : showRemote("install", ctx, pi),
+    runInteractive: async (tokens, ctx, pi) => {
+      if (tokens.length > 0) await handleInstallSubcommand(tokens, ctx, pi);
+      else await showRemote("install", ctx, pi);
+    },
     runNonInteractive: (tokens, ctx, pi) =>
       tokens.length > 0
         ? handleInstallSubcommand(tokens, ctx, pi)
@@ -177,7 +183,7 @@ const COMMAND_DEFINITIONS: Record<CommandId, CommandDefinition> = {
   },
   profile: {
     id: "profile",
-    description: "Export, compare, or dry-run a package profile",
+    description: "Save, import, check, review, or apply a package profile",
     runInteractive: (tokens, ctx, pi) => handleProfileSubcommand(tokens, ctx, pi),
     runNonInteractive: (tokens, ctx, pi) => handleProfileSubcommand(tokens, ctx, pi),
   },
@@ -242,12 +248,26 @@ export function getExtensionsAutocompleteItems(prefix: string): AutocompleteItem
       return completionItems(["--all", "--preview", ...local.installedPackages], activePrefix);
     }
     if (command === "profile") {
-      const actions = ["export", "save", "list", "delete", "dry-run", "apply", "compare"];
+      const actions = [
+        "export",
+        "save",
+        "list",
+        "delete",
+        "dry-run",
+        "apply",
+        "compare",
+        "import",
+        "check",
+        "recover",
+      ];
       if (completedArgs.length === 0) return completionItems(actions, activePrefix);
       const action = completedArgs[0];
       if (["delete", "dry-run", "apply", "compare"].includes(action ?? "")) {
         return completionItems(local.savedProfiles, activePrefix);
       }
+      if (action === "import") return completionItems(["--name", "--force"], activePrefix);
+      if (action === "check") return completionItems(["--json", "--strict"], activePrefix);
+      if (action === "recover") return completionItems(["list"], activePrefix);
       return null;
     }
     if (command === "history") {

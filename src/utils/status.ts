@@ -8,9 +8,10 @@ import {
   getAgentDir,
 } from "@earendil-works/pi-coding-agent";
 import { getPackageCatalog, type PackageCatalog } from "../packages/catalog.js";
-import { isProjectTrusted } from "./mode.js";
 import { getAutoUpdateStatus } from "./auto-update.js";
+import { isProjectTrusted } from "./mode.js";
 import { normalizePackageIdentity } from "./package-source.js";
+import { getProjectConfigDir } from "./pi-paths.js";
 import { getAutoUpdateConfigAsync, saveAutoUpdateConfig } from "./settings.js";
 
 type CatalogInstalledPackages = Awaited<ReturnType<PackageCatalog["listInstalledPackages"]>>;
@@ -24,7 +25,7 @@ function filterStaleUpdates(
     installedPackages.map((pkg) =>
       normalizePackageIdentity(pkg.source, {
         ...(pkg.resolvedPath ? { resolvedPath: pkg.resolvedPath } : {}),
-        cwd: pkg.scope === "project" ? cwd : getAgentDir(),
+        cwd: pkg.scope === "project" ? getProjectConfigDir(cwd) : getAgentDir(),
       })
     )
   );

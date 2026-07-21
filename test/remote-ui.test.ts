@@ -3,7 +3,7 @@ import test from "node:test";
 import { visibleWidth } from "@earendil-works/pi-tui";
 import { clearMetadataCacheCommand } from "../src/commands/cache.js";
 import { clearSearchCache, setSearchCache } from "../src/packages/discovery.js";
-import { browseRemotePackages, clearRemotePackageInfoCache } from "../src/ui/remote.js";
+import { browseRemotePackages, clearRemotePackageInfoCache, showRemote } from "../src/ui/remote.js";
 import { captureCustomComponent } from "./helpers/custom-component.js";
 import { createMockHarness } from "./helpers/mocks.js";
 import { mockPackageCatalog } from "./helpers/package-catalog.js";
@@ -17,6 +17,22 @@ function setSearchPage(
 ): void {
   setSearchCache({ query, results, total, offset, timestamp: Date.now() });
 }
+
+void test("remote install reports reloads so parent workspaces stop using stale contexts", async () => {
+  const restoreCatalog = mockPackageCatalog({ packages: [] });
+  try {
+    const { pi, ctx, reloadCount } = createMockHarness({
+      hasUI: true,
+      confirmResult: true,
+      selectResult: "Global (~/.pi/agent/settings.json)",
+    });
+    const reloaded = await showRemote("install npm:demo", ctx, pi);
+    assert.equal(reloaded, true);
+    assert.equal(reloadCount(), 1);
+  } finally {
+    restoreCatalog();
+  }
+});
 
 void test("browseRemotePackages honors an empty in-memory cache", async () => {
   setSearchPage("no-results", []);
@@ -133,6 +149,57 @@ void test("browseRemotePackages shows inline search affordances in the browse UI
     assert.ok(renderedLines.some((line) => line.includes("/ search")));
     assert.ok(renderedLines.some((line) => line.includes("page 1/1")));
     assert.ok(renderedLines.some((line) => line.includes("demo-pkg@1.0.0")));
+  } finally {
+    clearSearchCache();
+  }
+});
+
+void test("browseRemotePackages shows weekly downloads in rows and the detail pane", async () => {
+  setSearchPage("popular", [
+    {
+      name: "popular-pi-package",
+      version: "2.0.0",
+      description: "A popular Pi package",
+      weeklyDownloads: 125_000,
+    },
+  ]);
+
+  const { pi, ctx } = createMockHarness({ hasUI: true });
+  let renderedLines: string[] = [];
+  (ctx.ui as { custom: (factory: unknown) => Promise<unknown> }).custom = (factory) =>
+    captureCustomComponent(factory, ctx.ui.theme, (_component, lines) => {
+      renderedLines = lines;
+      return { type: "cancel" };
+    });
+
+  try {
+    await browseRemotePackages(ctx, "popular", pi);
+    assert.ok(renderedLines.some((line) => line.includes("125K/wk")));
+    assert.ok(renderedLines.some((line) => line.includes("Weekly downloads")));
+  } finally {
+    clearSearchCache();
+  }
+});
+
+void test("browseRemotePackages sorts known weekly downloads by default", async () => {
+  setSearchPage("downloads-default", [
+    { name: "low-downloads", version: "1.0.0", weeklyDownloads: 10 },
+    { name: "high-downloads", version: "1.0.0", weeklyDownloads: 10_000 },
+  ]);
+  const { pi, ctx } = createMockHarness({ hasUI: true });
+  let renderedLines: string[] = [];
+  (ctx.ui as { custom: (factory: unknown) => Promise<unknown> }).custom = (factory) =>
+    captureCustomComponent(factory, ctx.ui.theme, (_component, lines) => {
+      renderedLines = lines;
+      return { type: "cancel" };
+    });
+
+  try {
+    await browseRemotePackages(ctx, "downloads-default", pi);
+    const high = renderedLines.findIndex((line) => line.includes("high-downloads"));
+    const low = renderedLines.findIndex((line) => line.includes("low-downloads"));
+    assert.ok(high >= 0 && low >= 0 && high < low);
+    assert.ok(renderedLines.some((line) => line.includes("sort:downloads")));
   } finally {
     clearSearchCache();
   }
@@ -298,7 +365,7 @@ void test("browseRemotePackages scopes inline community searches to pi packages"
     await browseRemotePackages(ctx, "keywords:pi-package", pi);
 
     assert.equal(customCalls, 2);
-    assert.equal(fetchCalls, 0);
+    assert.equal(fetchCalls, 2);
     assert.ok(searchedLines.some((line) => line.includes("Search: copilot queue")));
     assert.ok(searchedLines.some((line) => line.includes("pi-copilot-queue@2.0.0")));
     assert.ok(!searchedLines.some((line) => line.includes("browse-default@1.0.0")));
@@ -414,7 +481,7 @@ void test("browseRemotePackages refresh bypasses fresh persistent and runtime se
   try {
     await browseRemotePackages(ctx, "demo", pi);
 
-    assert.equal(fetchCalls, 1);
+    assert.equal(fetchCalls, 3);
     assert.equal(browserCalls, 2);
     assert.ok(refreshedLines.some((line) => line.includes("fresh-result@2.0.0")));
     assert.ok(!refreshedLines.some((line) => line.includes("old-result@1.0.0")));
@@ -506,14 +573,14 @@ void test("clearMetadataCacheCommand clears the community browse runtime cache",
 
   try {
     await browseRemotePackages(ctx, "keywords:pi-package", pi);
-    assert.equal(fetchCalls, 1);
+    assert.equal(fetchCalls, 2);
 
     setSearchPage("demo", [{ name: "demo-pkg", description: "Demo package" }]);
 
     await clearMetadataCacheCommand(ctx, pi);
     await browseRemotePackages(ctx, "keywords:pi-package", pi);
 
-    assert.equal(fetchCalls, 2);
+    assert.equal(fetchCalls, 4);
   } finally {
     globalThis.fetch = originalFetch;
     clearSearchCache();

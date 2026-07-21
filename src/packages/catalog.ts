@@ -1,12 +1,16 @@
 import {
   DefaultPackageManager,
   getAgentDir,
-  type PackageSource,
   type ProgressEvent,
   SettingsManager,
 } from "@earendil-works/pi-coding-agent";
 import { type InstalledPackage, type Scope } from "../types/index.js";
-import { normalizePackageIdentity, parsePackageNameAndVersion } from "../utils/package-source.js";
+import {
+  normalizePackageIdentity,
+  packageSourceString,
+  parsePackageNameAndVersion,
+} from "../utils/package-source.js";
+import { getProjectConfigDir } from "../utils/pi-paths.js";
 import { throwIfSettingsErrors } from "../utils/settings-errors.js";
 
 type PiScope = "user" | "project";
@@ -37,10 +41,6 @@ function toScope(scope: PiScope): Scope {
   return scope === "project" ? "project" : "global";
 }
 
-function getPackageSource(pkg: PackageSource): string {
-  return typeof pkg === "string" ? pkg : pkg.source;
-}
-
 function createPackageRecord(
   source: string,
   scope: PiScope,
@@ -62,7 +62,7 @@ function dedupeInstalledPackages(packages: InstalledPackage[], cwd: string): Ins
   const byIdentity = new Map<string, InstalledPackage>();
 
   for (const pkg of packages) {
-    const baseCwd = pkg.scope === "project" ? cwd : getAgentDir();
+    const baseCwd = pkg.scope === "project" ? getProjectConfigDir(cwd) : getAgentDir();
     const identity = normalizePackageIdentity(pkg.source, {
       ...(pkg.resolvedPath ? { resolvedPath: pkg.resolvedPath } : {}),
       cwd: baseCwd,
@@ -91,10 +91,10 @@ function createDefaultPackageCatalog(cwd: string, projectTrusted = false): Packa
   return {
     listInstalledPackages(options) {
       const projectPackages = (settingsManager.getProjectSettings().packages ?? []).map((pkg) =>
-        createPackageRecord(getPackageSource(pkg), "project", packageManager)
+        createPackageRecord(packageSourceString(pkg), "project", packageManager)
       );
       const globalPackages = (settingsManager.getGlobalSettings().packages ?? []).map((pkg) =>
-        createPackageRecord(getPackageSource(pkg), "user", packageManager)
+        createPackageRecord(packageSourceString(pkg), "user", packageManager)
       );
 
       const installed = [...projectPackages, ...globalPackages];
@@ -133,15 +133,15 @@ function createDefaultPackageCatalog(cwd: string, projectTrusted = false): Packa
       try {
         throwIfSettingsErrors(settingsManager, "Package removal");
         await packageManager.remove(source, { local: scope === "project" });
-        const removed = packageManager.removeSourceFromSettings(source, {
+        // Settings may already have been persisted by a reviewed profile
+        // application. The package manager removal remains authoritative; a
+        // missing settings entry is not a reason to report a false mutation
+        // failure or undo a completed physical removal.
+        packageManager.removeSourceFromSettings(source, {
           local: scope === "project",
         });
         await settingsManager.flush();
         throwIfSettingsErrors(settingsManager, "Package removal");
-
-        if (!removed) {
-          throw new Error(`No matching package found for ${source}`);
-        }
       } finally {
         setProgressCallback(packageManager, undefined);
       }

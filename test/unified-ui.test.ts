@@ -12,6 +12,10 @@ import { mockPackageCatalog } from "./helpers/package-catalog.js";
 
 initTheme();
 
+function rendersLocalState(lines: string[], name: string, state: "enabled" | "disabled"): boolean {
+  return lines.some((line) => line.includes(name) && line.includes(`local · project · ${state}`));
+}
+
 void test("/extensions keeps rows compact and moves selected details below the list", async () => {
   const cwd = await mkdtemp(join(tmpdir(), "pi-extmgr-unified-ui-"));
   const projectExtensionsRoot = join(cwd, ".pi", "extensions");
@@ -39,13 +43,13 @@ void test("/extensions keeps rows compact and moves selected details below the l
     await showInteractive(ctx, pi);
 
     const rowLine = renderedLines.find(
-      (line) => line.includes("● [P]") && line.includes("alpha-focus.ts")
+      (line) => line.includes("alpha-focus.ts") && line.includes("local · project · enabled")
     );
     assert.ok(rowLine, "expected compact local extension row");
     assert.ok(!rowLine.includes(summary), "row should not inline the full summary");
     assert.ok(
-      renderedLines.some((line) => line.includes(summary)),
-      "expected selected extension summary in the details area"
+      renderedLines.some((line) => line.includes("Focused detail text should stay")),
+      "expected selected extension summary in the details pane"
     );
     assert.ok(
       renderedLines.some((line) => line.includes("Space toggle")),
@@ -116,13 +120,49 @@ void test("/extensions groups local extensions and packages into sections", asyn
     await showInteractive(ctx, pi);
 
     assert.ok(
-      renderedLines.some((line) => line.includes("Local extensions (")),
+      renderedLines.some((line) => line.includes("Local extensions ·")),
       "expected local section header"
     );
     assert.ok(
-      renderedLines.some((line) => line.includes("Installed packages (")),
+      renderedLines.some((line) => line.includes("Packages ·")),
       "expected package section header"
     );
+  } finally {
+    restoreCatalog();
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
+
+void test("/extensions arrow navigation wraps across local and package sections", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "pi-extmgr-unified-wrap-"));
+  const extensionsRoot = join(cwd, ".pi", "extensions");
+  const restoreCatalog = mockPackageCatalog({
+    packages: [{ source: "npm:zeta@1.0.0", name: "zeta", version: "1.0.0", scope: "global" }],
+  });
+  try {
+    await mkdir(extensionsRoot, { recursive: true });
+    await writeFile(join(extensionsRoot, "alpha.ts"), "// local\n", "utf8");
+    const { pi, ctx } = createMockHarness({ cwd, hasUI: true });
+    let wrappedLines: string[] = [];
+    let returnedLines: string[] = [];
+    (ctx.ui as { custom: (factory: unknown) => Promise<unknown> }).custom = async (factory) =>
+      captureCustomComponent(
+        factory,
+        ctx.ui.theme,
+        (lines) => lines.some((line) => line.includes("/ search")),
+        (component) => {
+          component.handleInput?.("\u001b[A");
+          wrappedLines = component.render(120);
+          component.handleInput?.("\u001b[B");
+          returnedLines = component.render(120);
+          return { type: "cancel" };
+        }
+      );
+
+    await showInteractive(ctx, pi);
+
+    assert.ok(wrappedLines.some((line) => line.includes("›") && line.includes("zeta@1.0.0")));
+    assert.ok(returnedLines.some((line) => line.includes("›") && line.includes("alpha.ts")));
   } finally {
     restoreCatalog();
     await rm(cwd, { recursive: true, force: true });
@@ -323,8 +363,8 @@ void test("/extensions filters packages with the quick filter shortcuts", async 
 
     await showInteractive(ctx, pi);
 
-    assert.ok(filteredLines.some((line) => line.includes("Installed packages (1)")));
-    assert.ok(!filteredLines.some((line) => line.includes("Local extensions (1)")));
+    assert.ok(filteredLines.some((line) => line.includes("Packages · 1")));
+    assert.ok(!filteredLines.some((line) => line.includes("Local extensions · 1")));
     assert.ok(filteredLines.some((line) => line.includes("demo-filter@1.0.0")));
   } finally {
     restoreCatalog();
@@ -362,7 +402,7 @@ void test("/extensions still toggles local items with Space", async () => {
     await showInteractive(ctx, pi);
 
     assert.ok(
-      afterSpace.some((line) => line.includes("○ [P]") && line.includes("alpha-space.ts")),
+      rendersLocalState(afterSpace, "alpha-space.ts", "disabled"),
       "expected Space to keep local toggling working"
     );
   } finally {
@@ -411,7 +451,7 @@ void test("/extensions keeps staged changes after viewing item details", async (
       "expected details notification to be shown"
     );
     assert.ok(
-      resumedLines.some((line) => line.includes("○ [P]") && line.includes("alpha-details.ts")),
+      rendersLocalState(resumedLines, "alpha-details.ts", "disabled"),
       "expected staged toggle to persist after viewing details"
     );
     assert.ok(
@@ -432,7 +472,7 @@ void test("/extensions keeps staged changes after backing out of the local actio
     await writeFile(join(projectExtensionsRoot, "alpha-menu.ts"), "// alpha\n", "utf8");
 
     const { pi, ctx, selectPrompts } = createMockHarness({ cwd, hasUI: true });
-    const queuedSelections = ["Back to manager", "Exit without saving"];
+    const queuedSelections = ["Back", "Exit without saving"];
     let managerCallCount = 0;
     let resumedLines: string[] = [];
 
@@ -467,7 +507,7 @@ void test("/extensions keeps staged changes after backing out of the local actio
       "expected the local action menu to open"
     );
     assert.ok(
-      resumedLines.some((line) => line.includes("○ [P]") && line.includes("alpha-menu.ts")),
+      rendersLocalState(resumedLines, "alpha-menu.ts", "disabled"),
       "expected staged toggle to persist after backing out of the action menu"
     );
     assert.ok(
@@ -528,11 +568,11 @@ void test("/extensions discards staged changes before resuming from help", async
       "expected discard to clear pending changes before the next manager render"
     );
     assert.ok(
-      resumedLines.some((line) => line.includes("● [P]") && line.includes("alpha-discard.ts")),
+      rendersLocalState(resumedLines, "alpha-discard.ts", "enabled"),
       "expected discarded toggle to revert to the original enabled state"
     );
     assert.ok(
-      !resumedLines.some((line) => line.includes("○ [P]") && line.includes("alpha-discard.ts")),
+      !rendersLocalState(resumedLines, "alpha-discard.ts", "disabled"),
       "expected no staged disabled state after discarding changes"
     );
   } finally {
@@ -644,7 +684,7 @@ void test("/extensions keeps staged changes when staying in the manager", async 
       "expected stay-in-manager flow to keep pending changes for the next cancel prompt"
     );
     assert.ok(
-      resumedLines.some((line) => line.includes("○ [P]") && line.includes("alpha-stay.ts")),
+      rendersLocalState(resumedLines, "alpha-stay.ts", "disabled"),
       "expected staged toggle to persist after choosing to stay in the manager"
     );
   } finally {
@@ -655,14 +695,13 @@ void test("/extensions keeps staged changes when staying in the manager", async 
 void test("manager hints use the active public selection bindings", async () => {
   const { buildFooterShortcuts } = await import("../src/ui/footer.js");
   const hints = buildFooterShortcuts(
-    { selectedType: "package", expandable: false, pendingChanges: 0, selectedPackages: 2 },
+    { selectedType: "package", pendingChanges: 0, selectedPackages: 2 },
     {
       getKeys: (key: string) => (key === "tui.select.confirm" ? ["ctrl+enter"] : ["alt+left"]),
     } as never
   );
 
   assert.match(hints, /Ctrl\+enter actions/);
-  assert.match(hints, /Alt\+left clear\/cancel/);
-  assert.match(hints, /2 selected/);
-  assert.match(hints, /B bulk actions/);
+  assert.match(hints, /Alt\+left back/);
+  assert.match(hints, /B act on 2/);
 });

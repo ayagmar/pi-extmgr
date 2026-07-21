@@ -7,7 +7,6 @@ import { activeKeyHint } from "../utils/key-hints.js";
 
 export interface FooterState {
   selectedType?: UnifiedItem["type"];
-  expandable: boolean;
   pendingChanges: number;
   selectedPackages: number;
 }
@@ -21,7 +20,6 @@ export function buildFooterState(
   const state: FooterState = {
     pendingChanges: getPendingToggleChangeCount(staged, byId),
     selectedPackages,
-    expandable: selectedItem?.type === "package" && Boolean(selectedItem.extensionPaths?.length),
   };
 
   if (selectedItem) {
@@ -56,20 +54,14 @@ export function buildFooterShortcuts(state: FooterState, keybindings?: Keybindin
   const confirm = keybindings
     ? activeKeyHint(keybindings, "tui.select.confirm", "actions")
     : "Enter actions";
-  const cancel = keybindings
-    ? activeKeyHint(keybindings, "tui.select.cancel", "clear/cancel")
-    : "Esc clear/cancel";
-  const parts = ["↑↓ navigate", confirm, "/ search", "Tab filters"];
+  const cancel = keybindings ? activeKeyHint(keybindings, "tui.select.cancel", "back") : "Esc back";
+  const parts = ["↑↓ move", confirm];
 
-  if (state.selectedType === "local") parts.splice(1, 0, "Space toggle", "V details", "X remove");
-  if (state.selectedType === "package") {
-    parts.splice(1, 0, "Space select");
-    if (state.expandable) parts.splice(2, 0, "E expand");
-  }
-  if (state.selectedPackages > 0) {
-    parts.push(`${state.selectedPackages} selected · B bulk actions`);
-  }
-  if (state.pendingChanges > 0) parts.push(`S save (${state.pendingChanges})`);
+  if (state.selectedType === "local") parts.push("Space toggle");
+  if (state.selectedType === "package") parts.push("Space select");
+  if (state.selectedPackages > 0) parts.push(`B act on ${state.selectedPackages}`);
+  if (state.pendingChanges > 0) parts.push(`S save ${state.pendingChanges}`);
+  parts.push("/ search", "1-7 filter", "i install", "Tab screens", "? help", cancel);
 
-  return `${parts.join(" · ")}\nMore: 1-7 filters · W/L/D views · * favorite · i install · f search · U update all · t scheduled checks · P palette · R browse · ? help · ${cancel}`;
+  return parts.join(" · ");
 }

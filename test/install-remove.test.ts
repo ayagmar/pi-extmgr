@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
-import { access, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { type ExtensionAPI, type ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
+import { listExtensionTrash } from "../src/extensions/trash.js";
 import {
   installFromUrl,
   installPackage,
@@ -11,6 +12,7 @@ import {
   installPackageLocally,
 } from "../src/packages/install.js";
 import { removePackage, updatePackage, updatePackages } from "../src/packages/management.js";
+import { getExtmgrTrashDir } from "../src/utils/pi-paths.js";
 import { createMockHarness } from "./helpers/mocks.js";
 import { mockPackageCatalog } from "./helpers/package-catalog.js";
 
@@ -662,6 +664,66 @@ void test("installPackageLocally removes temporary extraction artifacts after su
 
     assert.equal(latestHistory?.action, "package_install");
     assert.equal(latestHistory?.success, true);
+  } finally {
+    globalThis.fetch = originalFetch;
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
+
+void test("standalone replacement keeps the previous installation in extmgr trash", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "pi-extmgr-standalone-replace-"));
+  const originalFetch = globalThis.fetch;
+  const destination = join(cwd, ".pi", "extensions", "demo-pkg");
+
+  try {
+    await mkdir(destination, { recursive: true });
+    await writeFile(join(destination, "index.ts"), "// previous\n", "utf8");
+    globalThis.fetch = (() =>
+      Promise.resolve(new Response(new Uint8Array([1, 2, 3]), { status: 200 }))) as typeof fetch;
+
+    const { pi, ctx } = createMockHarness({
+      cwd,
+      execImpl: async (command, args) => {
+        if (command === "npm" && args[0] === "view") {
+          return {
+            code: 0,
+            stdout: JSON.stringify({
+              version: "2.0.0",
+              dist: { tarball: "https://example.com/demo-pkg.tgz" },
+            }),
+            stderr: "",
+            killed: false,
+          };
+        }
+        if (command === "tar" && args[0] === "--version") {
+          return { code: 0, stdout: "tar 1.0.0", stderr: "", killed: false };
+        }
+        if (command === "tar" && args.includes("-C")) {
+          const extractDir = args[args.indexOf("-C") + 1];
+          assert.ok(extractDir);
+          await mkdir(extractDir, { recursive: true });
+          await writeFile(
+            join(extractDir, "package.json"),
+            JSON.stringify({ name: "demo-pkg" }),
+            "utf8"
+          );
+          await writeFile(join(extractDir, "index.ts"), "// replacement\n", "utf8");
+          return { code: 0, stdout: "", stderr: "", killed: false };
+        }
+        return { code: 0, stdout: "", stderr: "", killed: false };
+      },
+    });
+
+    await installPackageLocally("demo-pkg", ctx, pi, {
+      scope: "project",
+      skipConfirmation: true,
+    });
+
+    assert.equal(await readFile(join(destination, "index.ts"), "utf8"), "// replacement\n");
+    const trash = await listExtensionTrash(getExtmgrTrashDir());
+    const replacement = trash.find((record) => record.originalPath === destination);
+    assert.ok(replacement);
+    assert.equal(await readFile(join(replacement.trashPath, "index.ts"), "utf8"), "// previous\n");
   } finally {
     globalThis.fetch = originalFetch;
     await rm(cwd, { recursive: true, force: true });

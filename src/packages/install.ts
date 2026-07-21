@@ -1,15 +1,11 @@
 /**
  * Package installation logic
  */
-import { cp, mkdir, rm, writeFile } from "node:fs/promises";
-import { join } from "node:path";
-import {
-  type ExtensionAPI,
-  type ExtensionCommandContext,
-  type ProgressEvent,
-} from "@earendil-works/pi-coding-agent";
+import { mkdir, rename, rm } from "node:fs/promises";
+import { basename, join } from "node:path";
+import { type ExtensionAPI, type ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import { TIMEOUTS } from "../constants.js";
-import { getAgentDir, getProjectExtensionsDir } from "../utils/pi-paths.js";
+import { getAgentDir, getExtmgrTrashDir, getProjectExtensionsDir } from "../utils/pi-paths.js";
 import { runTaskWithLoader } from "../ui/async-task.js";
 import { parseChoiceByLabel } from "../utils/command.js";
 import { normalizePackageSource } from "../utils/format.js";
@@ -18,13 +14,15 @@ import { logPackageInstall } from "../utils/history.js";
 import { isProjectTrusted, tryOperation } from "../utils/mode.js";
 import {
   downloadToFile,
-  fetchWithTimeout,
   MAX_COMPRESSED_DOWNLOAD_BYTES,
+  MAX_DIRECT_EXTENSION_BYTES,
 } from "../utils/network.js";
 import { notify, error as notifyError, success } from "../utils/notify.js";
+import { getProgressMessage } from "../utils/progress.js";
 import { execNpm } from "../utils/npm-exec.js";
 import { normalizePackageIdentity } from "../utils/package-source.js";
 import { clearUpdatesAvailable } from "../utils/settings.js";
+import { moveToExtensionTrash, undoExtensionTrash, type TrashRecord } from "../extensions/trash.js";
 import { updateExtmgrStatus } from "../utils/status.js";
 import { confirmAction, confirmReload, showProgress } from "../utils/ui-helpers.js";
 import { getPackageCatalog } from "./catalog.js";
@@ -52,10 +50,6 @@ const INSTALL_SCOPE_CHOICES = {
   project: ".pi/settings.json",
   cancel: "Cancel",
 } as const;
-
-function getProgressMessage(event: ProgressEvent, fallback: string): string {
-  return event.message?.trim() || fallback;
-}
 
 async function resolveInstallScope(
   ctx: ExtensionCommandContext,
@@ -273,12 +267,19 @@ export async function installFromUrl(
   }
 
   const extensionDir = getExtensionInstallDir(ctx, scope);
+  const safeFileName = basename(fileName);
+  if (!safeFileName.endsWith(".ts") || safeFileName !== fileName) {
+    notifyError(
+      ctx,
+      "Installation failed: direct extension destination must be a plain .ts filename."
+    );
+    return { installed: false, reloaded: false };
+  }
 
-  // Confirm installation
   const confirmed = await confirmAction(
     ctx,
     "Install from URL",
-    `Download ${fileName} to ${scope} extensions?`
+    `Download ${safeFileName} to ${scope} extensions?`
   );
   if (!confirmed) {
     notify(ctx, "Installation cancelled.", "info");
@@ -289,18 +290,46 @@ export async function installFromUrl(
     ctx,
     async () => {
       await mkdir(extensionDir, { recursive: true });
-      notify(ctx, `Downloading ${fileName}...`, "info");
-
-      const response = await fetchWithTimeout(url, TIMEOUTS.packageInstall);
-      if (!response.ok) {
-        throw new Error(`Download failed: ${response.status} ${response.statusText}`);
+      const destPath = join(extensionDir, safeFileName);
+      const exists = await fileExists(destPath);
+      if (exists) {
+        if (!ctx.hasUI)
+          throw new Error(
+            `Destination already exists: ${destPath}. Interactive replacement confirmation is required.`
+          );
+        const replace = await confirmAction(
+          ctx,
+          "Replace extension",
+          `${destPath} already exists. Move it to extmgr trash and replace it?`
+        );
+        if (!replace) throw new Error("Replacement cancelled; existing extension was preserved.");
       }
 
-      const content = await response.text();
-      const destPath = join(extensionDir, fileName);
-      await writeFile(destPath, content, "utf8");
-
-      return { fileName, destPath };
+      const temporary = join(
+        extensionDir,
+        `.${safeFileName}.${process.pid}.${Date.now()}.download.tmp`
+      );
+      let trashed: TrashRecord | undefined;
+      try {
+        notify(ctx, `Downloading ${safeFileName}...`, "info");
+        await downloadToFile(
+          url,
+          temporary,
+          TIMEOUTS.packageInstall,
+          MAX_DIRECT_EXTENSION_BYTES,
+          ctx.signal
+        );
+        if (exists) trashed = await moveToExtensionTrash(destPath, getExtmgrTrashDir());
+        try {
+          await rename(temporary, destPath);
+        } catch (error) {
+          if (trashed) await undoExtensionTrash(trashed);
+          throw error;
+        }
+        return { fileName: safeFileName, destPath };
+      } finally {
+        await rm(temporary, { force: true }).catch(() => undefined);
+      }
     },
     "Installation failed"
   );
@@ -427,8 +456,11 @@ async function installPackageLocallyInternal(
     return { installed: false, reloaded: false };
   }
 
-  // Download and extract
-  const tempDir = join(extensionDir, ".temp");
+  // Download and extract into an install-specific temporary sibling.
+  const tempDir = join(
+    extensionDir,
+    `.extmgr-install-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+  );
   const extractResult = await tryOperation(
     ctx,
     async () => {
@@ -467,10 +499,7 @@ async function installPackageLocallyInternal(
   const { tarballPath } = extractResult;
 
   // Extract
-  const extractDir = join(
-    tempDir,
-    `extracted-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
-  );
+  const extractDir = join(tempDir, "ready");
 
   const extractSuccess = await tryOperation(
     ctx,
@@ -522,19 +551,42 @@ async function installPackageLocallyInternal(
     return { installed: false, reloaded: false };
   }
 
-  // Copy to extensions dir
+  // Atomically swap only after the complete temporary package validates.
   const destResult = await tryOperation(
     ctx,
     async () => {
       const extDirName = packageName.replace(/[@/]/g, "-");
       const destDir = join(extensionDir, extDirName);
-
-      await rm(destDir, { recursive: true, force: true });
-
-      await cp(extractDir, destDir, { recursive: true });
-      return destDir;
+      const exists = await fileExists(destDir);
+      if (exists) {
+        if (!ctx.hasUI && options?.skipConfirmation !== true) {
+          throw new Error(
+            `Destination already exists: ${destDir}. Explicit replacement confirmation is required.`
+          );
+        }
+        if (
+          ctx.hasUI &&
+          !(await confirmAction(
+            ctx,
+            "Replace standalone extension",
+            `${destDir} already exists. Replace it after validation?`
+          ))
+        ) {
+          throw new Error("Replacement cancelled; existing extension was preserved.");
+        }
+      }
+      let trashed: TrashRecord | undefined;
+      try {
+        if (exists) trashed = await moveToExtensionTrash(destDir, getExtmgrTrashDir());
+        await rename(extractDir, destDir);
+      } catch (error) {
+        await rm(destDir, { recursive: true, force: true }).catch(() => undefined);
+        if (trashed) await undoExtensionTrash(trashed);
+        throw error;
+      }
+      return { destDir, replaced: Boolean(trashed) };
     },
-    "Failed to copy extension"
+    "Failed to swap extension"
   );
 
   await cleanupStandaloneTempArtifacts(tempDir, extractDir);
@@ -556,7 +608,10 @@ async function installPackageLocallyInternal(
   clearSearchCache();
   clearPackageEntrypointCache();
   logPackageInstall(pi, `npm:${packageName}`, packageName, version, scope, true);
-  success(ctx, `Installed ${packageName}@${version} locally to:\n${destResult}`);
+  success(
+    ctx,
+    `Installed ${packageName}@${version} locally to:\n${destResult.destDir}${destResult.replaced ? "\nThe previous installation is available in extmgr trash." : ""}`
+  );
 
   const reloaded = await confirmReload(ctx, "Extension installed.");
   if (!reloaded) {

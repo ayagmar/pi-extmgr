@@ -5,7 +5,6 @@ import {
   type ExtensionAPI,
   type ExtensionCommandContext,
   getAgentDir,
-  type ProgressEvent,
 } from "@earendil-works/pi-coding-agent";
 import { UI } from "../constants.js";
 import { type InstalledPackage } from "../types/index.js";
@@ -16,8 +15,10 @@ import { logPackageRemove, logPackageUpdate } from "../utils/history.js";
 import { isProjectTrusted, requireUI } from "../utils/mode.js";
 import { notify, error as notifyError, success } from "../utils/notify.js";
 import { normalizePackageIdentity } from "../utils/package-source.js";
+import { getProjectConfigDir } from "../utils/pi-paths.js";
 import { clearUpdatesAvailable } from "../utils/settings.js";
 import { updateExtmgrStatus } from "../utils/status.js";
+import { getProgressMessage } from "../utils/progress.js";
 import {
   confirmAction,
   confirmReload,
@@ -43,10 +44,6 @@ const REMOVAL_SCOPE_CHOICES = {
   project: "Project only",
   cancel: "Cancel",
 } as const;
-
-function getProgressMessage(event: ProgressEvent, fallback: string): string {
-  return event.message?.trim() || fallback;
-}
 
 async function updatePackageInternal(
   source: string,
@@ -203,6 +200,7 @@ function packageIdentity(
 function packageSourceIdentities(source: string, ctx: ExtensionCommandContext): Set<string> {
   return new Set([
     packageIdentity(source, { cwd: ctx.cwd }),
+    packageIdentity(source, { cwd: getProjectConfigDir(ctx.cwd) }),
     packageIdentity(source, { cwd: getAgentDir() }),
   ]);
 }
@@ -215,7 +213,7 @@ function installedPackageMatchesSource(
   return identities.has(
     packageIdentity(pkg.source, {
       ...(pkg.resolvedPath ? { resolvedPath: pkg.resolvedPath } : {}),
-      cwd: pkg.scope === "project" ? ctx.cwd : getAgentDir(),
+      cwd: pkg.scope === "project" ? getProjectConfigDir(ctx.cwd) : getAgentDir(),
     })
   );
 }

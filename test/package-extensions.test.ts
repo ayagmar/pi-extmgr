@@ -563,6 +563,31 @@ void test("discoverPackageExtensions resolves npm global package via PI_PACKAGE_
   }
 });
 
+void test("discoverPackageExtensions resolves project local sources from .pi settings", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "pi-extmgr-project-local-package-"));
+  const pkgRoot = join(cwd, "vendor", "localpkg");
+  try {
+    await mkdir(pkgRoot, { recursive: true });
+    await writeFile(
+      join(pkgRoot, "package.json"),
+      JSON.stringify({ name: "localpkg", pi: { extensions: ["./index.ts"] } }),
+      "utf8"
+    );
+    await writeFile(join(pkgRoot, "index.ts"), "// local package\n", "utf8");
+
+    const entries = await discoverPackageExtensions(
+      [{ source: "../vendor/localpkg", name: "localpkg", scope: "project" }],
+      cwd
+    );
+    assert.deepEqual(
+      entries.map((entry) => entry.extensionPath),
+      ["index.ts"]
+    );
+  } finally {
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
+
 void test("discoverPackageExtensions resolves file:// package sources", async () => {
   const cwd = await mkdtemp(join(tmpdir(), "pi-extmgr-cwd-"));
   const pkgRoot = join(cwd, "vendor", "filepkg");

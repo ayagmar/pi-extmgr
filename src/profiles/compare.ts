@@ -1,20 +1,30 @@
 import { readFile } from "node:fs/promises";
 import { getProjectConfigPath } from "../utils/pi-paths.js";
 import { planProfileApplication } from "./apply.js";
-import { type ExtmgrProfile } from "./schema.js";
+import { getEffectivePackageSource, type DiagnosticStatus, type ExtmgrProfile } from "./schema.js";
 
 export interface ProfilePolicy {
   allowedScopes?: Array<"global" | "project">;
   allowedSources?: string[];
   forbiddenSources?: string[];
   requiredPackages?: string[];
+  /** Legacy policy name. It now means locally verified artifact integrity. */
   requireChecksums?: boolean;
+  requireIntegrity?: boolean;
   requireCompatibilityCheck?: boolean;
 }
 
 export interface ProfilePolicyViolation {
   packageSource?: string;
   message: string;
+}
+
+export interface ProfilePackageDiagnostic {
+  source: string;
+  scope: "global" | "project";
+  compatibility: DiagnosticStatus;
+  integrity: DiagnosticStatus;
+  notes: string[];
 }
 
 export function compareProfiles(
@@ -26,30 +36,58 @@ export function compareProfiles(
 
 export function validateProfilePolicy(
   profile: ExtmgrProfile,
-  policy: ProfilePolicy
+  policy: ProfilePolicy,
+  diagnostics: ProfilePackageDiagnostic[] = []
 ): ProfilePolicyViolation[] {
   const violations: ProfilePolicyViolation[] = [];
   for (const pkg of profile.packages) {
+    const effectiveSource = getEffectivePackageSource(pkg);
     if (policy.allowedScopes && !policy.allowedScopes.includes(pkg.scope)) {
-      violations.push({ packageSource: pkg.source, message: `scope ${pkg.scope} is not allowed` });
+      violations.push({
+        packageSource: effectiveSource,
+        message: `scope ${pkg.scope} is not allowed`,
+      });
     }
-    if (policy.allowedSources && !policy.allowedSources.includes(pkg.source)) {
-      violations.push({ packageSource: pkg.source, message: "source is not allowed" });
+    if (
+      policy.allowedSources &&
+      !policy.allowedSources.includes(effectiveSource) &&
+      !policy.allowedSources.includes(pkg.source)
+    ) {
+      violations.push({ packageSource: effectiveSource, message: "source is not allowed" });
     }
-    if (policy.forbiddenSources?.includes(pkg.source)) {
-      violations.push({ packageSource: pkg.source, message: "source is forbidden" });
+    if (
+      policy.forbiddenSources?.includes(effectiveSource) ||
+      policy.forbiddenSources?.includes(pkg.source)
+    ) {
+      violations.push({ packageSource: effectiveSource, message: "source is forbidden" });
     }
-    if (policy.requireChecksums && !pkg.checksum) {
-      violations.push({ packageSource: pkg.source, message: "checksum is unknown" });
+    const diagnostic = diagnostics.find(
+      (item) => item.scope === pkg.scope && item.source === effectiveSource
+    );
+    if (
+      (policy.requireChecksums || policy.requireIntegrity) &&
+      diagnostic?.integrity !== "verified"
+    ) {
+      violations.push({
+        packageSource: effectiveSource,
+        message: "artifact integrity is unknown or unverified",
+      });
+    }
+    if (policy.requireCompatibilityCheck && diagnostic?.compatibility !== "verified") {
+      violations.push({
+        packageSource: effectiveSource,
+        message: "local compatibility is unknown or failed",
+      });
     }
   }
   for (const requiredSource of policy.requiredPackages ?? []) {
-    if (!profile.packages.some((pkg) => pkg.source === requiredSource)) {
+    if (
+      !profile.packages.some(
+        (pkg) => pkg.source === requiredSource || getEffectivePackageSource(pkg) === requiredSource
+      )
+    ) {
       violations.push({ packageSource: requiredSource, message: "required package is missing" });
     }
-  }
-  if (policy.requireCompatibilityCheck && profile.checks?.compatibility !== true) {
-    violations.push({ message: "profile compatibility checks are required" });
   }
   return violations;
 }
@@ -63,13 +101,11 @@ export async function loadProjectProfilePolicy(
   const policyPath = path ?? getProjectConfigPath(cwd, "extmgr-policy.json");
   try {
     const raw = JSON.parse(await readFile(policyPath, "utf8")) as unknown;
-    if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    if (!raw || typeof raw !== "object" || Array.isArray(raw))
       throw new Error(`Invalid profile policy in ${policyPath}`);
-    }
     const value = raw as Record<string, unknown>;
-    if (value.schemaVersion !== undefined && value.schemaVersion !== 1) {
+    if (value.schemaVersion !== undefined && value.schemaVersion !== 1)
       throw new Error(`Unsupported profile policy schema in ${policyPath}`);
-    }
     const scopes = Array.isArray(value.allowedScopes)
       ? value.allowedScopes.filter(
           (scope): scope is "global" | "project" => scope === "global" || scope === "project"
@@ -90,6 +126,7 @@ export async function loadProjectProfilePolicy(
       ...(forbiddenSources ? { forbiddenSources } : {}),
       ...(requiredPackages ? { requiredPackages } : {}),
       ...(value.requireChecksums === true ? { requireChecksums: true } : {}),
+      ...(value.requireIntegrity === true ? { requireIntegrity: true } : {}),
       ...(value.requireCompatibilityCheck === true ? { requireCompatibilityCheck: true } : {}),
     };
   } catch (error) {

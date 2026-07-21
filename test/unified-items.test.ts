@@ -46,6 +46,22 @@ void test("buildUnifiedItems includes local + package rows only", () => {
   );
 });
 
+void test("buildUnifiedItems gives same-source package rows scope-specific ids", () => {
+  const items = buildUnifiedItems(
+    [],
+    [
+      { source: "npm:demo", name: "demo", scope: "global" },
+      { source: "npm:demo", name: "demo", scope: "project" },
+    ],
+    new Set()
+  );
+
+  assert.deepEqual(
+    items.map((item) => item.id),
+    ["pkg:npm:demo:global", "pkg:npm:demo:project"]
+  );
+});
+
 void test("buildUnifiedItems marks package update availability from knownUpdates", () => {
   const installedPackages = [createPackage("npm:pi-extmgr", "pi-extmgr")];
 

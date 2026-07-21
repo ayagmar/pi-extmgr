@@ -1,5 +1,6 @@
-import { getAgentDir, SettingsManager, type PackageSource } from "@earendil-works/pi-coding-agent";
+import { getAgentDir, SettingsManager } from "@earendil-works/pi-coding-agent";
 import { getProfileStorePath, readProfileStore } from "../profiles/store.js";
+import { packageSourceString } from "../utils/package-source.js";
 
 export interface LocalCompletionIndex {
   installedPackages: string[];
@@ -7,10 +8,6 @@ export interface LocalCompletionIndex {
 }
 
 let index: LocalCompletionIndex = { installedPackages: [], savedProfiles: [] };
-
-function sourceOf(source: PackageSource): string {
-  return typeof source === "string" ? source : source.source;
-}
 
 export async function refreshLocalCompletionIndex(
   cwd: string,
@@ -20,7 +17,7 @@ export async function refreshLocalCompletionIndex(
   const installedPackages = [
     ...(settings.getGlobalSettings().packages ?? []),
     ...(settings.getProjectSettings().packages ?? []),
-  ].map(sourceOf);
+  ].map(packageSourceString);
   const savedProfiles = Object.keys((await readProfileStore(getProfileStorePath())).profiles);
   index = {
     installedPackages: [...new Set(installedPackages)].sort(),

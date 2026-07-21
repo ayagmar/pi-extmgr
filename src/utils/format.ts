@@ -10,9 +10,8 @@ export function truncate(text: string, maxLength: number): string {
 }
 
 export function formatEntry(entry: ExtensionEntry): string {
-  const state = entry.state === "enabled" ? "on " : "off";
-  const scope = entry.scope === "global" ? "G" : "P";
-  return `[${state}] [${scope}] ${entry.displayName} - ${entry.summary}`;
+  const summary = entry.summary ? ` · ${entry.summary}` : "";
+  return `${entry.displayName} · local · ${entry.scope} · ${entry.state}${summary}`;
 }
 
 export function formatInstalledPackageLabel(pkg: InstalledPackage, index?: number): string {
