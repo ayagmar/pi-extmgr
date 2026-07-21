@@ -15,7 +15,7 @@ export function inspectPackageMetadata(input: {
   dependencies?: Record<string, string>;
   repository?: string;
   hasProvenance?: boolean;
-  compatibility?: "compatible" | "incompatible";
+  compatibility?: "compatible" | "incompatible" | "unknown";
 }): PackageInspection {
   return {
     name: input.name,

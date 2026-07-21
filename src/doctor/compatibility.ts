@@ -17,31 +17,105 @@ export interface CompatibilityDiagnostic {
   reasons: string[];
 }
 
-function versionParts(version: string | undefined): [number, number] | undefined {
-  const match = version?.match(/(?:^|\s|[>=<~^])v?(\d+)(?:\.(\d+))?/);
-  return match?.[1] ? [Number(match[1]), Number(match[2] ?? 0)] : undefined;
+type Version = [number, number, number];
+type Comparator = { operator: ">=" | ">" | "<=" | "<" | "="; version: Version };
+
+function parseVersion(value: string, allowPartial = false): Version | undefined {
+  const match = value.trim().match(/^v?(\d+)(?:\.(\d+))?(?:\.(\d+))?$/);
+  if (!match?.[1]) return undefined;
+  if (!allowPartial && (match[2] === undefined || match[3] === undefined)) return undefined;
+  return [Number(match[1]), Number(match[2] ?? 0), Number(match[3] ?? 0)];
 }
 
-function isAtLeast(
-  actual: [number, number] | undefined,
-  required: [number, number] | undefined
+function compare(left: Version, right: Version): number {
+  for (let index = 0; index < 3; index += 1) {
+    const l = left[index] ?? 0;
+    const r = right[index] ?? 0;
+    if (l !== r) return l < r ? -1 : 1;
+  }
+  return 0;
+}
+
+function testComparator(actual: Version, comparator: Comparator): boolean {
+  const result = compare(actual, comparator.version);
+  switch (comparator.operator) {
+    case ">=":
+      return result >= 0;
+    case ">":
+      return result > 0;
+    case "<=":
+      return result <= 0;
+    case "<":
+      return result < 0;
+    case "=":
+      return result === 0;
+  }
+}
+
+function expandToken(token: string): Comparator[] | undefined {
+  const caret = token.match(/^\^(.+)$/);
+  const tilde = token.match(/^~(.+)$/);
+  if (caret?.[1] || tilde?.[1]) {
+    const value = caret?.[1] ?? tilde?.[1];
+    if (!value) return undefined;
+    const version = parseVersion(value, true);
+    if (!version) return undefined;
+    let upper: Version;
+    if (caret) {
+      upper =
+        version[0] > 0
+          ? [version[0] + 1, 0, 0]
+          : version[1] > 0
+            ? [0, version[1] + 1, 0]
+            : [0, 0, version[2] + 1];
+    } else {
+      upper = [version[0], version[1] + 1, 0];
+    }
+    return [
+      { operator: ">=", version },
+      { operator: "<", version: upper },
+    ];
+  }
+  const match = token.match(/^(>=|<=|>|<|=)?(v?\d+(?:\.\d+){0,2})$/);
+  if (!match?.[2]) return undefined;
+  const operator = (match[1] ?? "=") as Comparator["operator"];
+  const version = parseVersion(match[2], operator !== "=");
+  return version ? [{ operator, version }] : undefined;
+}
+
+function satisfiesRange(
+  actualValue: string | undefined,
+  range: string | undefined
 ): boolean | undefined {
-  if (!actual || !required) return undefined;
-  return actual[0] > required[0] || (actual[0] === required[0] && actual[1] >= required[1]);
+  if (!actualValue || !range) return undefined;
+  if (/\|\||\s+-\s+|!=|\*|\bx\b/i.test(range) || /\d-/.test(range) || /\d-/.test(actualValue))
+    return undefined;
+  const actual = parseVersion(actualValue.replace(/^v/, ""));
+  if (!actual) return undefined;
+  const tokens = range.trim().split(/\s+/).filter(Boolean);
+  if (tokens.length === 0) return undefined;
+  const comparators: Comparator[] = [];
+  for (const token of tokens) {
+    const expanded = expandToken(token);
+    if (!expanded) return undefined;
+    comparators.push(...expanded);
+  }
+  return comparators.every((comparator) => testComparator(actual, comparator));
 }
 
 export function validateCompatibility(input: CompatibilityInput): CompatibilityDiagnostic {
   const reasons: string[] = [];
-  const nodeCompatible = isAtLeast(
-    versionParts(input.nodeVersion),
-    versionParts(input.engines?.node)
-  );
-  const piCompatible = isAtLeast(versionParts(input.piVersion), versionParts(input.requiredPi));
+  const nodeCompatible = satisfiesRange(input.nodeVersion, input.engines?.node);
+  const piCompatible = satisfiesRange(input.piVersion, input.requiredPi);
   const node =
     nodeCompatible === undefined ? "unknown" : nodeCompatible ? "compatible" : "incompatible";
   const pi = piCompatible === undefined ? "unknown" : piCompatible ? "compatible" : "incompatible";
   if (node === "incompatible") reasons.push(`requires Node ${input.engines?.node}`);
   if (pi === "incompatible") reasons.push(`requires Pi ${input.requiredPi}`);
+  if (node === "unknown" && input.engines?.node)
+    reasons.push(`unsupported or ambiguous Node range ${input.engines.node}`);
+  if (pi === "unknown" && input.requiredPi)
+    reasons.push(`unsupported or ambiguous Pi range ${input.requiredPi}`);
   return { packageName: input.packageName, node, pi, reasons };
 }
 

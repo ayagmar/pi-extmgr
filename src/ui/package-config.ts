@@ -28,12 +28,11 @@ import { fileExists } from "../utils/fs.js";
 import { logExtensionToggle } from "../utils/history.js";
 import { isProjectTrusted, requireCustomUI, runCustomUI } from "../utils/mode.js";
 import { notify } from "../utils/notify.js";
-import { getPackageSourceKind } from "../utils/package-source.js";
 import { getSettingsListSelectedIndex } from "../utils/settings-list.js";
 import { activeKeyHint } from "../utils/key-hints.js";
 import { confirmReload } from "../utils/ui-helpers.js";
 import { runTaskWithLoader } from "./async-task.js";
-import { getChangeMarker, getPackageIcon, getScopeIcon, getStatusIcon } from "./theme.js";
+import { getChangeMarker, getStatusIcon } from "./theme.js";
 
 export interface PackageConfigRow {
   id: string;
@@ -77,20 +76,12 @@ function formatConfigRowLabel(
   changed: boolean
 ): string {
   const statusIcon = getStatusIcon(theme, state);
-  const scopeIcon = getScopeIcon(theme, pkg.scope);
-  const sourceKind = getPackageSourceKind(pkg.source);
-  const pkgIcon = getPackageIcon(
-    theme,
-    sourceKind === "npm" || sourceKind === "git" || sourceKind === "local" ? sourceKind : "local"
-  );
   const changeMarker = getChangeMarker(theme, changed);
   const name = theme.bold(row.extensionPath);
-  const availability = row.available
-    ? ""
-    : ` ${theme.fg("warning", "[missing]")}${theme.fg("dim", " (cannot toggle)")}`;
-  const summary = theme.fg("dim", row.summary);
+  const availability = row.available ? "" : ` ${theme.fg("warning", "missing · cannot toggle")}`;
+  const details = theme.fg("dim", `${state} · ${pkg.scope} · ${row.summary}`);
 
-  return `${statusIcon} ${pkgIcon} [${scopeIcon}] ${name}${availability} - ${summary}${changeMarker}`;
+  return `${statusIcon} ${name}  ${details}${availability}${changeMarker}`;
 }
 
 function buildSettingItems(

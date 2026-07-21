@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { fetchNpmRegistrySearchPage } from "../src/packages/discovery.js";
+import { fetchNpmRegistrySearchPage, fetchNpmWeeklyDownloads } from "../src/packages/discovery.js";
 
 function makeSearchPage(total: number, from: number, count: number) {
   return {
@@ -95,6 +95,88 @@ void test("fetchNpmRegistrySearchPage reports a useful error after repeated HTTP
       () => fetchNpmRegistrySearchPage("demo"),
       /rate-limited \(HTTP 429\).*Try again shortly/
     );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+void test("fetchNpmWeeklyDownloads batches unscoped names and points scoped names", async () => {
+  const originalFetch = globalThis.fetch;
+  const fetchCalls: string[] = [];
+
+  globalThis.fetch = ((input: string | URL | Request) => {
+    const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+    fetchCalls.push(url);
+    // npm rejects scoped packages in bulk queries; each request shape differs.
+    const body = url.includes("%40scope%2Fbeta")
+      ? { package: "@scope/beta", downloads: 830 }
+      : { alpha: { downloads: 12_500 }, gamma: { downloads: 77 } };
+    return Promise.resolve(
+      new Response(JSON.stringify(body), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      })
+    );
+  }) as typeof fetch;
+
+  try {
+    const downloads = await fetchNpmWeeklyDownloads(["alpha", "@scope/beta", "gamma", "alpha"]);
+
+    assert.equal(fetchCalls.length, 2);
+    assert.ok(fetchCalls.every((url) => url.includes("api.npmjs.org/downloads/point/last-week/")));
+    assert.ok(
+      fetchCalls.some((url) => url.endsWith("/alpha,gamma")),
+      "unscoped names should batch into one bulk request"
+    );
+    assert.ok(
+      fetchCalls.some((url) => url.endsWith("/%40scope%2Fbeta")),
+      "scoped names need individual point lookups"
+    );
+    assert.equal(downloads.get("alpha"), 12_500);
+    assert.equal(downloads.get("gamma"), 77);
+    assert.equal(downloads.get("@scope/beta"), 830);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+void test("fetchNpmWeeklyDownloads returns partial results when one request fails", async () => {
+  const originalFetch = globalThis.fetch;
+
+  globalThis.fetch = ((input: string | URL | Request) => {
+    const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+    if (url.includes("%40scope%2Fbeta")) {
+      return Promise.resolve(new Response("{}", { status: 500 }));
+    }
+    return Promise.resolve(
+      new Response(JSON.stringify({ package: "alpha", downloads: 41 }), { status: 200 })
+    );
+  }) as typeof fetch;
+
+  try {
+    const downloads = await fetchNpmWeeklyDownloads(["alpha", "@scope/beta"]);
+    assert.equal(downloads.get("alpha"), 41);
+    assert.equal(downloads.has("@scope/beta"), false);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+void test("fetchNpmWeeklyDownloads propagates aborts", async () => {
+  const originalFetch = globalThis.fetch;
+  const controller = new AbortController();
+
+  globalThis.fetch = ((_input: string | URL | Request, init?: RequestInit) =>
+    new Promise<Response>((_resolve, reject) => {
+      init?.signal?.addEventListener("abort", () =>
+        reject(new DOMException("The operation was aborted", "AbortError"))
+      );
+    })) as typeof fetch;
+
+  try {
+    const pending = fetchNpmWeeklyDownloads(["alpha"], controller.signal);
+    controller.abort();
+    await assert.rejects(pending, (error: Error) => error.name === "AbortError");
   } finally {
     globalThis.fetch = originalFetch;
   }

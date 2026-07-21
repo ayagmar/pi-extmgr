@@ -13,16 +13,17 @@ import {
   type State,
 } from "../types/index.js";
 import { parseNpmSource } from "../utils/format.js";
-import { resolveConfiguredPackageExtensions, resourcesForPackage } from "./extension-resolution.js";
 import { fileExists, readSummary } from "../utils/fs.js";
+import { resolveConfiguredNpmRootCommand } from "../utils/npm-exec.js";
+import { getProjectConfigDir } from "../utils/pi-paths.js";
 import {
   matchesFilterPattern,
   normalizeRelativePath,
   resolveRelativePathSelection,
 } from "../utils/relative-path-selection.js";
-import { resolveConfiguredNpmRootCommand } from "../utils/npm-exec.js";
+import { normalizeConfiguredPackageSource } from "../utils/package-source.js";
 import { throwIfSettingsErrors } from "../utils/settings-errors.js";
-import { getProjectConfigDir } from "../utils/pi-paths.js";
+import { resolveConfiguredPackageExtensions, resourcesForPackage } from "./extension-resolution.js";
 
 interface PackageSettingsObject {
   source: string;
@@ -41,13 +42,6 @@ export interface PackageManifest {
 const execFileAsync = promisify(execFile);
 let globalNpmRootCache: { key: string; root: string | null } | undefined;
 const packageEntrypointCache = new Map<string, Promise<string[]>>();
-
-function normalizeSource(source: string): string {
-  return source
-    .trim()
-    .replace(/\s+\((filtered|pinned)\)$/i, "")
-    .trim();
-}
 
 function normalizePackageRootCandidate(candidate: string): string {
   const resolved = resolve(candidate);
@@ -153,7 +147,8 @@ async function toPackageRoot(pkg: InstalledPackage, cwd: string): Promise<string
     pkg.source.startsWith(".\\") ||
     pkg.source.startsWith("..\\")
   ) {
-    return normalizePackageRootCandidate(resolve(cwd, pkg.source));
+    const sourceRoot = pkg.scope === "project" ? getProjectConfigDir(cwd) : getAgentDir();
+    return normalizePackageRootCandidate(resolve(sourceRoot, pkg.source));
   }
 
   if (pkg.source.startsWith("~/")) {
@@ -182,9 +177,9 @@ function findPackageSettingsIndex(
 ): number {
   return packages.findIndex((pkg) => {
     if (typeof pkg === "string") {
-      return normalizeSource(pkg) === normalizedSource;
+      return normalizeConfiguredPackageSource(pkg) === normalizedSource;
     }
-    return normalizeSource(pkg.source) === normalizedSource;
+    return normalizeConfiguredPackageSource(pkg.source) === normalizedSource;
   });
 }
 
@@ -279,7 +274,7 @@ export async function applyPackageExtensionStateChanges(
 
     const settings = createSettingsManager(cwd, projectTrusted);
     throwIfSettingsErrors(settings, "Package extension configuration");
-    const normalizedSource = normalizeSource(packageSource);
+    const normalizedSource = normalizeConfiguredPackageSource(packageSource);
     const packages = getScopedPackages(settings, scope);
     const index = findPackageSettingsIndex(packages, normalizedSource);
     const packageEntry = toPackageSettingsObject(packages[index], packageSource);
@@ -390,7 +385,7 @@ async function readPackageFilterMap(
 
   for (const entry of packages) {
     if (typeof entry === "string") {
-      filterMap.set(normalizeSource(entry), undefined);
+      filterMap.set(normalizeConfiguredPackageSource(entry), undefined);
       continue;
     }
 
@@ -399,7 +394,7 @@ async function readPackageFilterMap(
     }
 
     filterMap.set(
-      normalizeSource(entry.source),
+      normalizeConfiguredPackageSource(entry.source),
       Array.isArray(entry.extensions) ? entry.extensions : undefined
     );
   }
@@ -609,7 +604,7 @@ export async function discoverPackageExtensions(
 
     const packageFilters =
       (pkg.scope === "global" ? globalFilterMap : projectFilterMap).get(
-        normalizeSource(pkg.source)
+        normalizeConfiguredPackageSource(pkg.source)
       ) ?? undefined;
     const extensionPaths = await discoverPackageExtensionEntrypoints(packageRoot);
     for (const extensionPath of extensionPaths) {

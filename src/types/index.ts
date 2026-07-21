@@ -28,6 +28,7 @@ export interface NpmPackage {
   author?: string | undefined;
   keywords?: string[] | undefined;
   date?: string | undefined;
+  weeklyDownloads?: number | undefined;
   size?: number | undefined; // Package size in bytes
   installed?: boolean | undefined;
   updateAvailable?: boolean | undefined;
@@ -94,8 +95,11 @@ export interface SearchCache {
 }
 
 // Action types for unified view
+export type WorkspaceScreen = "installed" | "discover" | "profiles" | "health";
+
 export type UnifiedAction =
   | { type: "cancel" }
+  | { type: "workspace"; screen: WorkspaceScreen }
   | { type: "apply" }
   | { type: "remote" }
   | { type: "help" }
@@ -128,6 +132,7 @@ export type UnifiedAction =
     };
 
 export type BrowseAction =
+  | { type: "workspace"; screen: WorkspaceScreen }
   | { type: "package"; name: string }
   | { type: "prev" }
   | { type: "next" }

@@ -6,6 +6,17 @@ import { UI } from "../constants.js";
 import { error as notifyError, notify } from "./notify.js";
 import { clearReloadRequired, markReloadRequired } from "./reload-state.js";
 
+const reloadedContexts = new WeakSet<object>();
+
+/** Mark a command context unusable after a successful in-process reload. */
+export function markContextReloaded(ctx: ExtensionCommandContext): void {
+  reloadedContexts.add(ctx);
+}
+
+export function wasContextReloaded(ctx: ExtensionCommandContext): boolean {
+  return reloadedContexts.has(ctx);
+}
+
 /**
  * Confirm and trigger reload
  * Returns true if reload was triggered
@@ -30,6 +41,7 @@ export async function confirmReload(
 
   try {
     await ctx.reload();
+    markContextReloaded(ctx);
     await clearReloadRequired(statePath);
     return true;
   } catch (error) {

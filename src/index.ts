@@ -28,6 +28,7 @@ import { isPackageSource } from "./utils/format.js";
 import { clearReloadRequired } from "./utils/reload-state.js";
 import { getAutoUpdateConfig, hydrateAutoUpdateConfig } from "./utils/settings.js";
 import { updateExtmgrStatus } from "./utils/status.js";
+import { wasContextReloaded } from "./utils/ui-helpers.js";
 
 async function executeExtensionsCommand(
   args: string,
@@ -61,6 +62,7 @@ export default function extensionsManager(pi: ExtensionAPI) {
     getArgumentCompletions: getExtensionsAutocompleteItems,
     handler: async (args, ctx) => {
       await executeExtensionsCommand(args, ctx, pi);
+      if (wasContextReloaded(ctx)) return;
       await refreshLocalCompletionIndex(
         ctx.cwd,
         typeof ctx.isProjectTrusted === "function" && ctx.isProjectTrusted()

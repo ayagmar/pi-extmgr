@@ -47,7 +47,8 @@ version manager, or install project-local with `pi install npm:pi-extmgr -l`.
 - **Unified manager UI**
   - Local extensions (`~/.pi/agent/extensions`, `.pi/extensions`) and installed packages in one list
   - Grouped sections for local extensions vs installed packages
-  - Compact rows with selected-item details below the list, so large extension sets stay scannable
+  - Responsive master/detail layout on wide terminals, with a compact stacked fallback on narrow terminals
+  - Focused primary filters and contextual one-line controls; secondary actions remain available through the command palette and help
   - Built-in search and filter shortcuts for large extension sets
   - Scope indicators (global/project), status indicators, update badges, and package sizes when known
 - **Package extension configuration panel**
@@ -62,14 +63,21 @@ version manager, or install project-local with `pi install npm:pi-extmgr -l`.
   - Quick actions (`A`, `u`, `X`) and coordinated bulk package actions (`B`)
 - **Remote discovery and install**
   - npm search/browse with server-side pagination, inline browse search, keyboard page navigation, and rate-limit-aware retries
+  - Weekly npm downloads in browse rows/details plus popularity sorting (`o` cycles sort modes)
   - Path- and git-like queries are handled explicitly instead of surfacing unrelated npm results
   - Install by source (`npm:`, `git:`, `https://`, `ssh://`, `git@...`, local path)
   - Supports direct GitHub `.ts` installs and standalone local install for self-contained packages
+  - Search results render immediately; weekly download metrics hydrate in the background and update the visible rows
   - Long-running discovery/detail screens now show dedicated loading UI, and cancellable reads can be aborted with `Esc`
 - **Scheduled update checks**
   - Interactive wizard (`t` in manager, or `/extensions auto-update`)
   - Persistent schedule restored on startup and session switch
   - Background checks + status bar updates for installed npm + git packages
+- **Task-oriented workspaces**
+  - Installed: local extensions, packages, updates, and staged changes
+  - Discover: community npm search, package inspection, downloads, and popularity sorting
+  - Profiles: inline current-vs-target diffs (scope, version, ref, filters, checksum); applying always passes through the review screen
+  - Health: runtime conflicts, compatibility, reload state, recoverable trash, conflict remediation, and a conservative “fix all safe issues” action (never removes packages)
 - **Operational visibility**
   - Session history (`/extensions history`)
   - Cache controls (`/extensions clear-cache` clears persistent + runtime extmgr caches)
@@ -91,6 +99,7 @@ Open the manager:
 
 | Key           | Action                                                |
 | ------------- | ----------------------------------------------------- |
+| `Tab` / `Shift+Tab` | Next / previous workspace: Installed / Discover / Profiles / Health |
 | `↑↓`          | Navigate                                              |
 | `PageUp/Down` | Jump through longer lists                             |
 | `Home/End`    | Jump to top or bottom                                 |
@@ -98,8 +107,7 @@ Open the manager:
 | `S`           | Save local extension changes                          |
 | `Enter` / `A` | Actions on selected item                              |
 | `/` / `Ctrl+F`| Search visible items                                  |
-| `Tab` / `Shift+Tab` | Cycle filters                                  |
-| `1-7`         | Filters: All / Local / Packages / Updates / Disabled / Favorites / Recent |
+| `1-7`         | Filter: All / Local / Packages / Updates / Disabled / Favorites / Recent |
 | `c`           | Configure selected package extensions                 |
 | `u`           | Update selected package directly                      |
 | `V`           | View full details for selected item                   |
@@ -111,7 +119,7 @@ Open the manager:
 | `*`           | Toggle favorite for selected item                     |
 | `U`           | Update all packages                                   |
 | `t`           | Scheduled update checks wizard                                    |
-| `P` / `M`     | Quick actions palette                                 |
+| `P` / `M`     | Workspace screens and actions                         |
 | `R`           | Browse remote packages                                |
 | `?` / `H`     | Help                                                  |
 | `Esc`         | Clear search or exit                                  |

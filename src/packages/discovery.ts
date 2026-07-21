@@ -10,8 +10,8 @@ import {
   getAgentDir,
 } from "@earendil-works/pi-coding-agent";
 import { CACHE_LIMITS, PAGE_SIZE, TIMEOUTS } from "../constants.js";
+import { createAbortError, throwIfAborted } from "../utils/abort.js";
 import { type InstalledPackage, type NpmPackage, type SearchCache } from "../types/index.js";
-import { parseNpmSource } from "../utils/format.js";
 import {
   getCachedPackage,
   getCachedPackageSize,
@@ -21,11 +21,13 @@ import {
   setCachedPackageSize,
   setCachedSearch,
 } from "../utils/cache.js";
+import { parseNpmSource } from "../utils/format.js";
 import { readSummary } from "../utils/fs.js";
+import { isProjectTrusted } from "../utils/mode.js";
 import { fetchWithTimeout } from "../utils/network.js";
 import { execNpm } from "../utils/npm-exec.js";
 import { normalizePackageIdentity } from "../utils/package-source.js";
-import { isProjectTrusted } from "../utils/mode.js";
+import { getProjectConfigDir } from "../utils/pi-paths.js";
 import { getPackageCatalog } from "./catalog.js";
 
 const NPM_SEARCH_API = "https://registry.npmjs.org/-/v1/search";
@@ -56,20 +58,12 @@ interface NpmSearchResponse {
   objects?: NpmSearchResultObject[];
 }
 
+interface NpmDownloadsPoint {
+  downloads?: number;
+}
+
 const searchCacheByPage = new Map<string, SearchCache>();
 let latestSearchCacheKey: string | undefined;
-
-function createAbortError(): Error {
-  const error = new Error("Operation cancelled");
-  error.name = "AbortError";
-  return error;
-}
-
-function throwIfAborted(signal?: AbortSignal): void {
-  if (signal?.aborted) {
-    throw createAbortError();
-  }
-}
 
 function getSearchCacheKey(query: string, offset: number): string {
   return `${offset}\0${query}`;
@@ -244,6 +238,106 @@ export async function fetchNpmRegistrySearchPage(
   };
 }
 
+function rethrowIfAborted(error: unknown, signal?: AbortSignal): void {
+  if (signal?.aborted && error instanceof Error && error.name === "AbortError") throw error;
+}
+
+async function fetchWeeklyDownloadsPoint(
+  name: string,
+  downloads: Map<string, number>,
+  signal?: AbortSignal
+): Promise<void> {
+  try {
+    const response = await fetchWithTimeout(
+      `https://api.npmjs.org/downloads/point/last-week/${encodeURIComponent(name)}`,
+      TIMEOUTS.weeklyDownloads,
+      signal
+    );
+    if (!response.ok) return;
+    const payload = (await response.json()) as NpmDownloadsPoint;
+    if (typeof payload.downloads === "number") downloads.set(name, payload.downloads);
+  } catch (error) {
+    rethrowIfAborted(error, signal);
+  }
+}
+
+async function fetchWeeklyDownloadsBulk(
+  names: readonly string[],
+  downloads: Map<string, number>,
+  signal?: AbortSignal
+): Promise<void> {
+  try {
+    const encodedNames = names.map((name) => encodeURIComponent(name)).join(",");
+    const response = await fetchWithTimeout(
+      `https://api.npmjs.org/downloads/point/last-week/${encodedNames}`,
+      TIMEOUTS.weeklyDownloads,
+      signal
+    );
+    if (!response.ok) return;
+
+    const payload = (await response.json()) as Record<
+      string,
+      NpmDownloadsPoint | number | string | undefined
+    >;
+    for (const name of names) {
+      const point = payload[name];
+      if (point && typeof point === "object" && typeof point.downloads === "number") {
+        downloads.set(name, point.downloads);
+      }
+    }
+  } catch (error) {
+    rethrowIfAborted(error, signal);
+  }
+}
+
+export async function fetchNpmWeeklyDownloads(
+  packageNames: readonly string[],
+  signal?: AbortSignal
+): Promise<Map<string, number>> {
+  const names = [...new Set(packageNames.map((name) => name.trim()).filter(Boolean))];
+  if (names.length === 0) return new Map();
+
+  // npm's bulk downloads endpoint rejects scoped packages; they need point lookups.
+  const scoped = names.filter((name) => name.startsWith("@"));
+  const unscoped = names.filter((name) => !name.startsWith("@"));
+  const downloads = new Map<string, number>();
+  const tasks: Promise<void>[] = [];
+
+  if (unscoped.length === 1) {
+    tasks.push(fetchWeeklyDownloadsPoint(unscoped[0] as string, downloads, signal));
+  } else if (unscoped.length > 1) {
+    tasks.push(fetchWeeklyDownloadsBulk(unscoped, downloads, signal));
+  }
+  for (const name of scoped) {
+    tasks.push(fetchWeeklyDownloadsPoint(name, downloads, signal));
+  }
+
+  await Promise.all(tasks);
+  return downloads;
+}
+
+export async function addWeeklyDownloadsToSearchPage(
+  page: SearchCache,
+  signal?: AbortSignal
+): Promise<SearchCache> {
+  // Skip packages whose metrics are already known to avoid repeated fetches.
+  const missing = page.results
+    .filter((pkg) => pkg.weeklyDownloads === undefined)
+    .map((pkg) => pkg.name);
+  if (missing.length === 0) return page;
+
+  const downloads = await fetchNpmWeeklyDownloads(missing, signal);
+  if (downloads.size === 0) return page;
+
+  for (const pkg of page.results) {
+    const weeklyDownloads = downloads.get(pkg.name);
+    if (weeklyDownloads !== undefined) pkg.weeklyDownloads = weeklyDownloads;
+  }
+  setSearchCache(page);
+  await setCachedSearch(page);
+  return page;
+}
+
 export async function searchNpmPackages(
   query: string,
   ctx: ExtensionCommandContext,
@@ -291,7 +385,12 @@ export async function getInstalledPackages(
 }
 
 function getInstalledPackageIdentity(pkg: InstalledPackage, options?: { cwd?: string }): string {
-  const baseCwd = pkg.scope === "project" ? options?.cwd : getAgentDir();
+  const baseCwd =
+    pkg.scope === "project"
+      ? options?.cwd
+        ? getProjectConfigDir(options.cwd)
+        : undefined
+      : getAgentDir();
 
   return normalizePackageIdentity(pkg.source, {
     ...(pkg.resolvedPath ? { resolvedPath: pkg.resolvedPath } : {}),
@@ -307,13 +406,14 @@ export async function isSourceInstalled(
   const installed = await getPackageCatalog(ctx.cwd, isProjectTrusted(ctx)).listInstalledPackages({
     dedupe: false,
   });
-  const expected = normalizePackageIdentity(source, { cwd: ctx.cwd });
-
   return installed.some((pkg) => {
-    if (getInstalledPackageIdentity(pkg, { cwd: ctx.cwd }) !== expected) {
-      return false;
-    }
-    return options?.scope ? pkg.scope === options.scope : true;
+    if (options?.scope && pkg.scope !== options.scope) return false;
+    const baseCwds =
+      pkg.scope === "project" ? [ctx.cwd, getProjectConfigDir(ctx.cwd)] : [getAgentDir(), ctx.cwd];
+    const actual = getInstalledPackageIdentity(pkg, { cwd: ctx.cwd });
+    return baseCwds.some(
+      (baseCwd) => normalizePackageIdentity(source, { cwd: baseCwd }) === actual
+    );
   });
 }
 

@@ -1,7 +1,12 @@
-import { SettingsManager, type PackageSource } from "@earendil-works/pi-coding-agent";
-import { CONFIG_DIR_NAME, getAgentDir } from "../utils/pi-paths.js";
+import { resolve } from "node:path";
+import { type PackageSource, SettingsManager } from "@earendil-works/pi-coding-agent";
 import { type InstalledPackage, type Scope } from "../types/index.js";
-import { normalizePackageIdentity } from "../utils/package-source.js";
+import {
+  getPackageSourceKind,
+  normalizePackageIdentity,
+  packageSourceString,
+} from "../utils/package-source.js";
+import { CONFIG_DIR_NAME, getAgentDir, getProjectConfigDir } from "../utils/pi-paths.js";
 import { throwIfSettingsErrors } from "../utils/settings-errors.js";
 
 export interface PackageScopeComparison {
@@ -13,12 +18,18 @@ export interface PackageScopeComparison {
 }
 
 /** Compare effective package records across global and project scopes. */
-export function comparePackageScopes(packages: InstalledPackage[]): PackageScopeComparison[] {
+export function comparePackageScopes(
+  packages: InstalledPackage[],
+  cwd?: string
+): PackageScopeComparison[] {
   const byIdentity = new Map<string, PackageScopeComparison>();
 
   for (const pkg of packages) {
+    const baseCwd =
+      pkg.scope === "project" ? (cwd ? getProjectConfigDir(cwd) : undefined) : getAgentDir();
     const identity = normalizePackageIdentity(pkg.source, {
       ...(pkg.resolvedPath ? { resolvedPath: pkg.resolvedPath } : {}),
+      ...(baseCwd ? { cwd: baseCwd } : {}),
     });
     const existing = byIdentity.get(identity) ?? {
       identity,
@@ -35,9 +46,11 @@ export function comparePackageScopes(packages: InstalledPackage[]): PackageScope
       if (entry.global && entry.project) {
         const globalSource = normalizePackageIdentity(entry.global.source, {
           ...(entry.global.resolvedPath ? { resolvedPath: entry.global.resolvedPath } : {}),
+          cwd: getAgentDir(),
         });
         const projectSource = normalizePackageIdentity(entry.project.source, {
           ...(entry.project.resolvedPath ? { resolvedPath: entry.project.resolvedPath } : {}),
+          ...(cwd ? { cwd: getProjectConfigDir(cwd) } : {}),
         });
         return {
           ...entry,
@@ -58,17 +71,33 @@ export function getPackageScopeLabel(scope: Scope): string {
     : "global (~/.pi/agent/settings.json)";
 }
 
-function sourceOf(value: PackageSource): string {
-  return typeof value === "string" ? value : value.source;
+function packageMatches(value: PackageSource, source: string, cwd: string, scope: Scope): boolean {
+  const baseCwd = scope === "project" ? getProjectConfigDir(cwd) : getAgentDir();
+  return (
+    packageSourceString(value) === source ||
+    normalizePackageIdentity(source, { cwd: baseCwd }) ===
+      normalizePackageIdentity(packageSourceString(value), { cwd: baseCwd })
+  );
 }
 
-function packageMatches(value: PackageSource, source: string, cwd: string, scope: Scope): boolean {
-  const baseCwd = scope === "project" ? cwd : getAgentDir();
-  return (
-    sourceOf(value) === source ||
-    normalizePackageIdentity(source, { cwd: baseCwd }) ===
-      normalizePackageIdentity(sourceOf(value), { cwd: baseCwd })
-  );
+function sourceForDestination(source: string, from: Scope, cwd: string): string {
+  if (getPackageSourceKind(source) !== "local") return source;
+  if (
+    source.startsWith("./") ||
+    source.startsWith("../") ||
+    source.startsWith(".\\") ||
+    source.startsWith("..\\")
+  ) {
+    const sourceRoot = from === "project" ? getProjectConfigDir(cwd) : getAgentDir();
+    return resolve(sourceRoot, source.replace(/\\/g, "/"));
+  }
+  // Absolute, home-relative, file://, Windows-drive, and UNC sources resolve
+  // independently of settings scope and can be retained byte-for-byte.
+  return source;
+}
+
+function withSource(entry: PackageSource, source: string): PackageSource {
+  return typeof entry === "string" ? source : { ...structuredClone(entry), source };
 }
 
 export interface MovePackageScopeResult {
@@ -124,12 +153,17 @@ export async function movePackageBetweenScopes(
   if (!entry) {
     return { source, from, to, moved: false, conflict: "Package is not configured in that scope." };
   }
+  const destinationSource = sourceForDestination(packageSourceString(entry), from, cwd);
+  const destinationEntryValue = withSource(entry, destinationSource);
   const destinationIndex = destinationPackages.findIndex((candidate) =>
-    packageMatches(candidate, sourceOf(entry), cwd, to)
+    packageMatches(candidate, destinationSource, cwd, to)
   );
   if (destinationIndex >= 0) {
     const destinationEntry = destinationPackages[destinationIndex];
-    if (destinationEntry && JSON.stringify(destinationEntry) !== JSON.stringify(entry)) {
+    if (
+      destinationEntry &&
+      JSON.stringify(destinationEntry) !== JSON.stringify(destinationEntryValue)
+    ) {
       return {
         source,
         from,
@@ -139,7 +173,7 @@ export async function movePackageBetweenScopes(
       };
     }
   } else {
-    destinationPackages.push(structuredClone(entry));
+    destinationPackages.push(destinationEntryValue);
   }
 
   try {
@@ -165,7 +199,7 @@ export async function movePackageBetweenScopes(
     throwIfSettingsErrors(settings, "Package scope move");
   } catch (error) {
     return {
-      source: sourceOf(entry),
+      source: packageSourceString(entry),
       from,
       to,
       moved: false,
@@ -174,5 +208,5 @@ export async function movePackageBetweenScopes(
     };
   }
 
-  return { source: sourceOf(entry), from, to, moved: true };
+  return { source: destinationSource, from, to, moved: true };
 }

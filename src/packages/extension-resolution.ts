@@ -4,13 +4,7 @@ import {
   type ResolvedResource,
   SettingsManager,
 } from "@earendil-works/pi-coding-agent";
-
-function normalizeSource(source: string): string {
-  return source
-    .trim()
-    .replace(/\s+\((filtered|pinned)\)$/i, "")
-    .trim();
-}
+import { normalizeConfiguredPackageSource } from "../utils/package-source.js";
 
 /** Resolve configured package extensions through Pi without installing missing sources. */
 export async function resolveConfiguredPackageExtensions(
@@ -33,10 +27,10 @@ export function resourcesForPackage(
   scope: "global" | "project"
 ): ResolvedResource[] {
   const expectedScope = scope === "project" ? "project" : "user";
-  const expectedSource = normalizeSource(source);
+  const expectedSource = normalizeConfiguredPackageSource(source);
   return resources.filter(
     (resource) =>
       resource.metadata.scope === expectedScope &&
-      normalizeSource(resource.metadata.source) === expectedSource
+      normalizeConfiguredPackageSource(resource.metadata.source) === expectedSource
   );
 }

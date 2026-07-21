@@ -1,27 +1,20 @@
 /**
- * Remote package browsing UI
+ * Remote package browsing UI (Discover workspace orchestration).
+ *
+ * Cohesive pieces live in ./discover: query planning, metadata caching,
+ * formatting, and the browse component. This module owns the screen loop,
+ * navigation queue, and install/detail flows.
  */
 import {
   DynamicBorder,
   type ExtensionAPI,
   type ExtensionCommandContext,
-  type KeybindingsManager,
-  type Theme,
 } from "@earendil-works/pi-coding-agent";
-import {
-  Container,
-  type Focusable,
-  Input,
-  Key,
-  matchesKey,
-  Spacer,
-  Text,
-  truncateToWidth,
-  wrapTextWithAnsi,
-} from "@earendil-works/pi-tui";
-import { CACHE_LIMITS, PAGE_SIZE, TIMEOUTS, UI } from "../constants.js";
+import { Container, Spacer, Text } from "@earendil-works/pi-tui";
+import { PAGE_SIZE, UI } from "../constants.js";
 import { getRemotePackageBadges } from "../packages/badges.js";
 import {
+  addWeeklyDownloadsToSearchPage,
   clearSearchCache,
   getInstalledPackagesAllScopes,
   getSearchCache,
@@ -29,24 +22,19 @@ import {
   isCacheValid,
   searchNpmPackages,
 } from "../packages/discovery.js";
-import { inspectPackageMetadata } from "../packages/inspection.js";
 import {
-  installPackage,
   installPackageLocallyWithOutcome,
   installPackageWithOutcome,
 } from "../packages/install.js";
-import { type RemotePackageSort, sortRemotePackages } from "../packages/sorting.js";
-import { validateCompatibility } from "../doctor/compatibility.js";
 import { type BrowseAction, type NpmPackage } from "../types/index.js";
 import { getKnownUpdates } from "../utils/auto-update.js";
 import { parseChoiceByLabel, splitCommandArgs } from "../utils/command.js";
-import { formatBytes, parseNpmSource, truncate } from "../utils/format.js";
+import { parseNpmSource, truncate } from "../utils/format.js";
 import { requireCustomUI, runCustomUI } from "../utils/mode.js";
-import { fetchWithTimeout } from "../utils/network.js";
 import { notify } from "../utils/notify.js";
-import { execNpm } from "../utils/npm-exec.js";
-import { activeKeyHint } from "../utils/key-hints.js";
-import { RequestGeneration, runTaskWithLoader } from "./async-task.js";
+import { runTaskWithLoader } from "./async-task.js";
+import { RemotePackageBrowser } from "./discover/browser.js";
+import { buildPackageInfoText, packageInfoCache } from "./discover/metadata.js";
 import {
   COMMUNITY_BROWSE_QUERY,
   createCommunityBrowsePlan,
@@ -55,93 +43,15 @@ import {
   type RemoteBrowseQueryPlan,
   type RemoteBrowseSource,
   resolveRemoteBrowseSource,
-} from "./remote/query.js";
+} from "./discover/query.js";
+import { runAuxWorkspaceScreens } from "./workspace/router.js";
 
-interface PackageInfoCacheEntry {
-  timestamp: number;
-  text: string;
-}
-
-interface NpmViewInfo {
-  description?: string;
-  version?: string;
-  author?: { name?: string } | string;
-  homepage?: string;
-  users?: Record<string, boolean>;
-  dist?: { unpackedSize?: number };
-  repository?: { url?: string } | string;
-  dependencies?: Record<string, string>;
-  engines?: { node?: string; pi?: string };
-}
-
-interface NpmDownloadsPoint {
-  downloads?: number;
-}
-
-// LRU Cache with size limit to prevent memory leaks
-class PackageInfoCache {
-  private cache = new Map<string, PackageInfoCacheEntry>();
-  private readonly maxSize: number;
-  private readonly ttl: number;
-
-  constructor(maxSize: number, ttl: number) {
-    this.maxSize = maxSize;
-    this.ttl = ttl;
-  }
-
-  get(name: string): PackageInfoCacheEntry | undefined {
-    const entry = this.cache.get(name);
-    if (!entry) return undefined;
-
-    // Check if expired
-    if (Date.now() - entry.timestamp > this.ttl) {
-      this.cache.delete(name);
-      return undefined;
-    }
-
-    // Move to end (most recently used)
-    this.cache.delete(name);
-    this.cache.set(name, entry);
-    return entry;
-  }
-
-  set(name: string, entry: Omit<PackageInfoCacheEntry, "timestamp">): void {
-    if (this.cache.has(name)) {
-      this.cache.delete(name);
-    } else if (this.cache.size >= this.maxSize) {
-      const firstKey = this.cache.keys().next().value;
-      if (firstKey) {
-        this.cache.delete(firstKey);
-      }
-    }
-
-    this.cache.set(name, {
-      ...entry,
-      timestamp: Date.now(),
-    });
-  }
-
-  clear(): void {
-    this.cache.clear();
-  }
-}
-
-// Global LRU cache instance
-const packageInfoCache = new PackageInfoCache(
-  CACHE_LIMITS.packageInfoMaxSize,
-  CACHE_LIMITS.packageInfoTTL
-);
-const packageInfoRequests = new RequestGeneration();
-
-export function clearRemotePackageInfoCache(): void {
-  packageInfoRequests.cancel();
-  packageInfoCache.clear();
-}
+export { clearRemotePackageInfoCache } from "./discover/metadata.js";
 
 const REMOTE_MENU_CHOICES = {
-  browse: "🔍 Browse pi packages",
-  search: "🔎 Search packages",
-  install: "📥 Install by source",
+  browse: "Browse community packages",
+  search: "Search npm packages",
+  install: "Install by source",
 } as const;
 
 const PACKAGE_DETAILS_CHOICES = {
@@ -151,132 +61,14 @@ const PACKAGE_DETAILS_CHOICES = {
   back: "Back to results",
 } as const;
 
-function createAbortError(): Error {
-  const error = new Error("Operation cancelled");
-  error.name = "AbortError";
-  return error;
-}
-
-function throwIfAborted(signal?: AbortSignal): void {
-  if (signal?.aborted) {
-    throw createAbortError();
-  }
-}
-
-function formatCount(value: number | undefined): string {
-  if (typeof value !== "number" || !Number.isFinite(value)) return "unknown";
-  return new Intl.NumberFormat().format(value);
-}
-
-async function fetchWeeklyDownloads(
-  packageName: string,
-  signal?: AbortSignal
-): Promise<number | undefined> {
-  try {
-    const encoded = encodeURIComponent(packageName);
-    const res = await fetchWithTimeout(
-      `https://api.npmjs.org/downloads/point/last-week/${encoded}`,
-      TIMEOUTS.weeklyDownloads,
-      signal
-    );
-
-    if (!res.ok) return undefined;
-    const data = (await res.json()) as NpmDownloadsPoint;
-    return typeof data.downloads === "number" ? data.downloads : undefined;
-  } catch (error) {
-    if (signal?.aborted && error instanceof Error && error.name === "AbortError") {
-      throw error;
-    }
-    return undefined;
-  }
-}
-
-async function buildPackageInfoText(
-  packageName: string,
-  ctx: ExtensionCommandContext,
-  pi: ExtensionAPI,
-  signal?: AbortSignal
-): Promise<string> {
-  // Check cache first
-  const cached = packageInfoCache.get(packageName);
-  if (cached) {
-    return cached.text;
-  }
-
-  const request = packageInfoRequests.begin(signal);
-  const [infoRes, weeklyDownloads] = await Promise.all([
-    execNpm(pi, ["view", packageName, "--json"], ctx, {
-      timeout: TIMEOUTS.npmView,
-      signal: request.signal,
-    }),
-    fetchWeeklyDownloads(packageName, request.signal),
-  ]);
-
-  throwIfAborted(request.signal);
-
-  if (infoRes.code !== 0) {
-    throw new Error(infoRes.stderr || infoRes.stdout || `npm view failed (exit ${infoRes.code})`);
-  }
-
-  const info = JSON.parse(infoRes.stdout) as NpmViewInfo;
-  const description = info.description ?? "No description";
-  const version = info.version ?? "unknown";
-  const author = typeof info.author === "object" ? info.author?.name : (info.author ?? "unknown");
-  const homepage = info.homepage ?? "";
-  const stars = info.users ? Object.keys(info.users).length : undefined;
-  const unpackedSize = info.dist?.unpackedSize;
-  const repository = typeof info.repository === "string" ? info.repository : info.repository?.url;
-  const inspection = inspectPackageMetadata({
-    name: packageName,
-    ...(info.version ? { version: info.version } : {}),
-    ...(info.description ? { description: info.description } : {}),
-    ...(info.dependencies ? { dependencies: info.dependencies } : {}),
-    ...(repository ? { repository } : {}),
-    ...(info.engines?.node
-      ? {
-          compatibility:
-            validateCompatibility({
-              packageName,
-              engines: { node: info.engines.node },
-              ...(info.engines.pi ? { requiredPi: info.engines.pi } : {}),
-              nodeVersion: process.version,
-            }).node === "compatible"
-              ? ("compatible" as const)
-              : ("incompatible" as const),
-        }
-      : {}),
-  });
-
-  const lines = [
-    `${packageName}@${version}`,
-    description,
-    `Author: ${author}`,
-    `Weekly downloads: ${formatCount(weeklyDownloads)}`,
-    `Stars: ${formatCount(stars)}`,
-    `Unpacked size: ${typeof unpackedSize === "number" ? formatBytes(unpackedSize) : "unknown"}`,
-    `Dependencies: ${inspection.dependencies.length > 0 ? inspection.dependencies.join(", ") : "none declared"}`,
-    `Compatibility: ${inspection.compatibility}`,
-    `Provenance: ${inspection.provenance}`,
-  ];
-
-  if (homepage) lines.push(`Homepage: ${homepage}`);
-  if (repository) lines.push(`Repository: ${repository}`);
-
-  const text = lines.join("\n");
-
-  throwIfAborted(request.signal);
-  if (!request.commit(() => packageInfoCache.set(packageName, { text }))) {
-    throw createAbortError();
-  }
-
-  return text;
-}
+/** True when a nested mutation reloaded pi and callers must stop using this context. */
+export type RemoteWorkspaceResult = boolean;
 
 export async function showRemote(
   args: string,
   ctx: ExtensionCommandContext,
   pi: ExtensionAPI
-): Promise<void> {
+): Promise<RemoteWorkspaceResult> {
   const { subcommand: sub, args: rest } = splitCommandArgs(args);
   const query = rest.join(" ").trim();
 
@@ -284,30 +76,29 @@ export async function showRemote(
     case "list":
     case "installed":
       // Legacy: redirect to unified view
-      ctx.ui.notify("📦 Use /extensions for the unified view.", "info");
-      return;
+      ctx.ui.notify("Use /extensions for the Installed workspace.", "info");
+      return false;
     case "install":
       if (query) {
-        await installPackage(query, ctx, pi);
-      } else {
-        await promptInstall(ctx, pi);
+        return (await installPackageWithOutcome(query, ctx, pi)).reloaded;
       }
-      return;
+      return promptInstall(ctx, pi);
     case "search":
-      await searchPackages(query, ctx, pi);
-      return;
+      return searchPackages(query, ctx, pi);
     case "browse":
     case "":
-      await browseRemotePackages(ctx, COMMUNITY_BROWSE_QUERY, pi);
-      return;
+      return browseRemotePackages(ctx, COMMUNITY_BROWSE_QUERY, pi);
   }
 
   // Show remote menu
-  await showRemoteMenu(ctx, pi);
+  return showRemoteMenu(ctx, pi);
 }
 
-async function showRemoteMenu(ctx: ExtensionCommandContext, pi: ExtensionAPI): Promise<void> {
-  if (!ctx.hasUI) return;
+async function showRemoteMenu(
+  ctx: ExtensionCommandContext,
+  pi: ExtensionAPI
+): Promise<RemoteWorkspaceResult> {
+  if (!ctx.hasUI) return false;
 
   const choice = parseChoiceByLabel(
     REMOTE_MENU_CHOICES,
@@ -316,328 +107,13 @@ async function showRemoteMenu(ctx: ExtensionCommandContext, pi: ExtensionAPI): P
 
   switch (choice) {
     case "browse":
-      await browseRemotePackages(ctx, COMMUNITY_BROWSE_QUERY, pi);
-      return;
+      return browseRemotePackages(ctx, COMMUNITY_BROWSE_QUERY, pi);
     case "search":
-      await promptSearch(ctx, pi);
-      return;
+      return promptSearch(ctx, pi);
     case "install":
-      await promptInstall(ctx, pi);
-      return;
+      return promptInstall(ctx, pi);
     default:
-      return;
-  }
-}
-
-function formatRemotePackageLabel(pkg: NpmPackage, theme: Theme): string {
-  const name = theme.bold(pkg.name);
-  const version = pkg.version ? theme.fg("dim", `@${pkg.version}`) : "";
-  const badges = [
-    pkg.installed ? theme.fg("success", "installed") : undefined,
-    pkg.updateAvailable ? theme.fg("warning", "update") : undefined,
-    theme.fg("dim", `compat:${pkg.compatibility ?? "unknown"}`),
-  ].filter(Boolean);
-  return `${name}${version}${badges.length ? ` [${badges.join(" · ")}]` : ""}`;
-}
-
-function formatRemotePackageDetails(
-  pkg: NpmPackage,
-  selectedNumber: number,
-  totalResults: number
-): string {
-  const parts = [
-    pkg.description || "No description",
-    pkg.author ? `by ${pkg.author}` : undefined,
-    `result ${selectedNumber} of ${totalResults}`,
-    pkg.keywords?.length ? `keywords: ${pkg.keywords.slice(0, 5).join(", ")}` : undefined,
-    pkg.date ? `updated ${pkg.date.slice(0, 10)}` : undefined,
-  ];
-
-  return parts.filter(Boolean).join(" • ");
-}
-
-class RemotePackageBrowser implements Focusable {
-  private readonly searchInput = new Input();
-  private selectedIndex = 0;
-  private searchActive = false;
-  private sortMode: RemotePackageSort = "relevance";
-  private readonly originalPackages: NpmPackage[];
-  private _focused = false;
-
-  constructor(
-    private packages: NpmPackage[],
-    private readonly theme: Theme,
-    private readonly keybindings: KeybindingsManager,
-    private readonly browseSource: RemoteBrowseSource,
-    private readonly queryLabel: string,
-    private readonly totalResults: number,
-    private readonly offset: number,
-    private readonly maxVisibleItems: number,
-    private readonly showPrevious: boolean,
-    private readonly showLoadMore: boolean,
-    private readonly onAction: (action: BrowseAction) => void
-  ) {
-    this.originalPackages = [...packages];
-    this.searchInput.setValue(queryLabel);
-  }
-
-  get focused(): boolean {
-    return this._focused;
-  }
-
-  set focused(value: boolean) {
-    this._focused = value;
-    this.searchInput.focused = value && this.searchActive;
-  }
-
-  invalidate(): void {
-    this.searchInput.invalidate();
-  }
-
-  handleBrowseInput(data: string): boolean {
-    if (this.searchActive) {
-      if (this.keybindings.matches(data, "tui.select.confirm")) {
-        this.searchActive = false;
-        this.searchInput.focused = false;
-        this.onAction({ type: "search", query: this.searchInput.getValue().trim() });
-        return true;
-      }
-
-      if (this.keybindings.matches(data, "tui.select.cancel")) {
-        this.searchActive = false;
-        this.searchInput.focused = false;
-        this.searchInput.setValue(this.queryLabel);
-        return true;
-      }
-
-      this.searchInput.handleInput(data);
-      return true;
-    }
-
-    if (data === "/" || matchesKey(data, Key.ctrl("f"))) {
-      this.searchActive = true;
-      this.searchInput.setValue("");
-      this.searchInput.focused = this._focused;
-      return true;
-    }
-
-    if (this.keybindings.matches(data, "tui.select.up")) {
-      this.moveSelection(-1);
-      return true;
-    }
-
-    if (this.keybindings.matches(data, "tui.select.down")) {
-      this.moveSelection(1);
-      return true;
-    }
-
-    if (this.keybindings.matches(data, "tui.select.pageUp")) {
-      this.moveSelection(-Math.max(1, this.maxVisibleItems - 1));
-      return true;
-    }
-
-    if (this.keybindings.matches(data, "tui.select.pageDown")) {
-      this.moveSelection(Math.max(1, this.maxVisibleItems - 1));
-      return true;
-    }
-
-    if (matchesKey(data, Key.home)) {
-      this.selectedIndex = 0;
-      return true;
-    }
-
-    if (matchesKey(data, Key.end)) {
-      this.selectedIndex = Math.max(0, this.packages.length - 1);
-      return true;
-    }
-
-    const selected = this.packages[this.selectedIndex];
-    if (selected && this.keybindings.matches(data, "tui.select.confirm")) {
-      this.onAction({ type: "package", name: selected.name });
-      return true;
-    }
-
-    if ((data === "p" || data === "P") && this.showPrevious) {
-      this.onAction({ type: "prev" });
-      return true;
-    }
-
-    if ((data === "n" || data === "N") && this.showLoadMore) {
-      this.onAction({ type: "next" });
-      return true;
-    }
-
-    if (data === "o" || data === "O") {
-      const modes: RemotePackageSort[] = ["relevance", "name", "recent"];
-      const nextIndex = (modes.indexOf(this.sortMode) + 1) % modes.length;
-      this.sortMode = modes[nextIndex] ?? "relevance";
-      const selectedName = selected?.name;
-      this.packages = sortRemotePackages(this.originalPackages, this.sortMode);
-      this.selectedIndex = Math.max(
-        0,
-        this.packages.findIndex((pkg) => pkg.name === selectedName)
-      );
-      return true;
-    }
-
-    if (data === "r" || data === "R") {
-      this.onAction({ type: "refresh" });
-      return true;
-    }
-
-    if (data === "i") {
-      this.onAction({ type: "install" });
-      return true;
-    }
-
-    if (data === "m" || data === "M") {
-      this.onAction({ type: "menu" });
-      return true;
-    }
-
-    if (this.keybindings.matches(data, "tui.select.cancel")) {
-      this.onAction({ type: "cancel" });
-      return true;
-    }
-
-    return false;
-  }
-
-  render(width: number): string[] {
-    const safeWidth = Math.max(1, width);
-    const lines: string[] = [];
-
-    if (this.searchActive) {
-      lines.push(...this.searchInput.render(safeWidth));
-      lines.push("");
-    } else if (this.queryLabel) {
-      lines.push(
-        truncateToWidth(this.theme.fg("accent", `  Search: ${this.queryLabel}`), safeWidth, "")
-      );
-      lines.push("");
-    } else {
-      lines.push(
-        truncateToWidth(
-          this.theme.fg(
-            "muted",
-            this.browseSource === "community"
-              ? "  Browse community packages · / search to search community packages"
-              : "  Browse remote search results · / search to search npm packages"
-          ),
-          safeWidth,
-          ""
-        )
-      );
-      lines.push("");
-    }
-
-    lines.push(truncateToWidth(this.buildSummaryLine(), safeWidth, ""));
-    lines.push("");
-
-    if (this.packages.length === 0) {
-      lines.push(
-        truncateToWidth(
-          this.theme.fg("warning", "  No packages found. Try / search or Esc to go back."),
-          safeWidth,
-          ""
-        )
-      );
-    }
-
-    const { startIndex, endIndex } = this.getVisibleRange();
-    for (const pkg of this.packages.slice(startIndex, endIndex)) {
-      lines.push(this.renderPackageLine(pkg, safeWidth));
-    }
-
-    if (startIndex > 0 || endIndex < this.packages.length) {
-      lines.push("");
-      lines.push(
-        truncateToWidth(
-          this.theme.fg(
-            "dim",
-            `  Showing ${startIndex + 1}-${endIndex} of ${this.packages.length} on this page`
-          ),
-          safeWidth,
-          ""
-        )
-      );
-    }
-
-    const selected = this.packages[this.selectedIndex];
-    if (selected) {
-      lines.push("");
-      const detailText = formatRemotePackageDetails(
-        selected,
-        this.offset + this.selectedIndex + 1,
-        this.totalResults
-      );
-      for (const line of wrapTextWithAnsi(detailText, Math.max(1, safeWidth - 4))) {
-        lines.push(truncateToWidth(this.theme.fg("dim", `  ${line}`), safeWidth, ""));
-      }
-    }
-
-    lines.push("");
-    lines.push(truncateToWidth(this.buildFooterLine(), safeWidth, ""));
-    return lines;
-  }
-
-  private buildSummaryLine(): string {
-    const pageCount = Math.max(1, Math.ceil(this.totalResults / PAGE_SIZE));
-    const pageNumber = Math.floor(this.offset / PAGE_SIZE) + 1;
-    const rangeEnd = this.offset + this.packages.length;
-    const label = this.queryLabel
-      ? `Search: ${truncate(this.queryLabel, 40)}`
-      : "Community packages";
-    return `  ${this.theme.fg("accent", label)} • ${this.theme.fg("muted", `${this.offset + 1}-${rangeEnd} of ${this.totalResults}`)} • ${this.theme.fg("muted", `page ${pageNumber}/${pageCount}`)} • ${this.theme.fg("muted", `sort:${this.sortMode}`)}`;
-  }
-
-  private buildFooterLine(): string {
-    const parts = [activeKeyHint(this.keybindings, "tui.select.confirm", "details"), "/ search"];
-
-    if (this.showPrevious) parts.push("p previous");
-    if (this.showLoadMore) parts.push("n next");
-    parts.push("o sort", "r refresh", "i install", "m menu");
-    parts.push(activeKeyHint(this.keybindings, "tui.select.cancel", "back"));
-    return `  ${this.theme.fg("dim", parts.join(" · "))}`;
-  }
-
-  private renderPackageLine(pkg: NpmPackage, width: number): string {
-    const prefix =
-      this.packages[this.selectedIndex]?.name === pkg.name ? this.theme.fg("accent", "→ ") : "  ";
-    return truncateToWidth(prefix + formatRemotePackageLabel(pkg, this.theme), width);
-  }
-
-  private moveSelection(delta: number): void {
-    if (this.packages.length === 0) {
-      this.selectedIndex = 0;
-      return;
-    }
-
-    const nextIndex = this.selectedIndex + delta;
-    if (nextIndex < 0) {
-      this.selectedIndex = 0;
-      return;
-    }
-
-    if (nextIndex >= this.packages.length) {
-      this.selectedIndex = this.packages.length - 1;
-      return;
-    }
-
-    this.selectedIndex = nextIndex;
-  }
-
-  private getVisibleRange(): { startIndex: number; endIndex: number } {
-    const maxVisible = Math.max(1, this.maxVisibleItems);
-    const startIndex = Math.max(
-      0,
-      Math.min(
-        this.selectedIndex - Math.floor(maxVisible / 2),
-        Math.max(0, this.packages.length - maxVisible)
-      )
-    );
-    const endIndex = Math.min(startIndex + maxVisible, this.packages.length);
-    return { startIndex, endIndex };
+      return false;
   }
 }
 
@@ -649,7 +125,8 @@ async function selectBrowseAction(
   offset: number,
   totalResults: number,
   showPrevious: boolean,
-  showLoadMore: boolean
+  showLoadMore: boolean,
+  hydrateDownloads?: (signal: AbortSignal) => Promise<void>
 ): Promise<BrowseAction | undefined> {
   if (!ctx.hasUI) return undefined;
 
@@ -673,6 +150,20 @@ async function selectBrowseAction(
       const syncThemedContent = (): void => {
         title.setText(theme.fg("accent", theme.bold(plan.title)));
       };
+      const hydrationController = new AbortController();
+      let disposed = false;
+      if (hydrateDownloads) {
+        void hydrateDownloads(hydrationController.signal)
+          .then(() => {
+            // Ignore results that land after disposal or cancellation.
+            if (disposed || hydrationController.signal.aborted) return;
+            browser.refreshSort();
+            tui.requestRender();
+          })
+          .catch(() => {
+            // Background hydration is best-effort; abort/network errors are expected.
+          });
+      }
 
       syncThemedContent();
       container.addChild(new DynamicBorder((s: string) => theme.fg("accent", s)));
@@ -699,6 +190,10 @@ async function selectBrowseAction(
           container.invalidate();
           browser.invalidate();
           syncThemedContent();
+        },
+        dispose() {
+          disposed = true;
+          hydrationController.abort();
         },
         handleInput(data: string) {
           if (browser.handleBrowseInput(data)) {
@@ -729,7 +224,7 @@ export async function browseRemotePackages(
   offset = 0,
   source?: RemoteBrowseSource,
   forceRefresh = false
-): Promise<void> {
+): Promise<RemoteWorkspaceResult> {
   const request: BrowseRequest = {
     ctx,
     query,
@@ -740,20 +235,21 @@ export async function browseRemotePackages(
   };
   if (browseNavigationActive) {
     browseNavigationQueue.push(request);
-    return;
+    return false;
   }
 
   browseNavigationActive = true;
   try {
     let next: BrowseRequest | undefined = request;
     while (next) {
-      await browseRemotePackagesPage(next);
+      if (await browseRemotePackagesPage(next)) return true;
       next = browseNavigationQueue.shift();
     }
   } finally {
     browseNavigationQueue.length = 0;
     browseNavigationActive = false;
   }
+  return false;
 }
 
 async function browseRemotePackagesPage({
@@ -763,7 +259,7 @@ async function browseRemotePackagesPage({
   offset = 0,
   source,
   forceRefresh = false,
-}: BrowseRequest): Promise<void> {
+}: BrowseRequest): Promise<RemoteWorkspaceResult> {
   if (
     !requireCustomUI(
       ctx,
@@ -771,7 +267,7 @@ async function browseRemotePackagesPage({
       "Use `/extensions install <source>` to install directly outside the full interactive TUI."
     )
   ) {
-    return;
+    return false;
   }
 
   const browseSource = resolveRemoteBrowseSource(query, source);
@@ -781,7 +277,7 @@ async function browseRemotePackagesPage({
       : createRemoteBrowseQueryPlan(query);
   if (plan.kind === "unsupported") {
     notify(ctx, plan.message, "warning");
-    return;
+    return false;
   }
 
   const searchLabel = plan.displayQuery || "community packages";
@@ -802,8 +298,7 @@ async function browseRemotePackagesPage({
           title: plan.title,
           message: `Searching npm for ${truncate(searchLabel, 40)}...`,
         },
-        async ({ signal, setMessage }) => {
-          setMessage(`Searching npm for ${truncate(searchLabel, 40)}...`);
+        async ({ signal }) => {
           return searchNpmPackages(plan.searchQuery, ctx, {
             signal,
             offset,
@@ -815,15 +310,16 @@ async function browseRemotePackagesPage({
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       notify(ctx, `Remote package search failed: ${message}`, "warning");
-      return;
+      return false;
     }
   }
 
   if (!searchPage) {
     notify(ctx, "Remote package search was cancelled.", "info");
-    return;
+    return false;
   }
 
+  const resolvedSearchPage = searchPage;
   const installed = await getInstalledPackagesAllScopes(ctx);
   const installedNames = new Set(
     installed.flatMap((pkg) => {
@@ -837,12 +333,12 @@ async function browseRemotePackagesPage({
       return parsed?.name ? [parsed.name] : [];
     })
   );
-  const packages = filterRemoteBrowseResults(plan, searchPage.results).map((pkg) => ({
+  const packages = filterRemoteBrowseResults(plan, resolvedSearchPage.results).map((pkg) => ({
     ...pkg,
     ...getRemotePackageBadges(pkg, installedNames, updateNames),
   }));
   const totalResults =
-    plan.kind === "search" && plan.exactPackageName ? packages.length : searchPage.total;
+    plan.kind === "search" && plan.exactPackageName ? packages.length : resolvedSearchPage.total;
   const reloadQuery =
     browseSource === "community" ? plan.displayQuery || COMMUNITY_BROWSE_QUERY : plan.rawQuery;
 
@@ -854,13 +350,26 @@ async function browseRemotePackagesPage({
     ctx.ui.notify(msg, "info");
 
     if (offset > 0) {
-      await browseRemotePackages(ctx, reloadQuery, pi, 0, browseSource);
+      return browseRemotePackages(ctx, reloadQuery, pi, 0, browseSource);
     }
-    return;
+    return false;
   }
 
-  const showLoadMore = offset + searchPage.results.length < totalResults;
+  const showLoadMore = offset + resolvedSearchPage.results.length < totalResults;
   const showPrevious = offset > 0;
+  const hydrateDownloads = packages.some((pkg) => pkg.weeklyDownloads === undefined)
+    ? async (signal: AbortSignal): Promise<void> => {
+        await addWeeklyDownloadsToSearchPage(resolvedSearchPage, signal);
+        if (signal.aborted) return;
+        const hydrated = new Map(
+          resolvedSearchPage.results.map((pkg) => [pkg.name, pkg.weeklyDownloads] as const)
+        );
+        for (const pkg of packages) {
+          const weeklyDownloads = hydrated.get(pkg.name);
+          if (weeklyDownloads !== undefined) pkg.weeklyDownloads = weeklyDownloads;
+        }
+      }
+    : undefined;
 
   const result = await selectBrowseAction(
     ctx,
@@ -870,55 +379,60 @@ async function browseRemotePackagesPage({
     offset,
     totalResults,
     showPrevious,
-    showLoadMore
+    showLoadMore,
+    hydrateDownloads
   );
 
   if (!result || result.type === "cancel") {
-    return;
+    return false;
+  }
+
+  if (result.type === "workspace") {
+    if (result.screen === "installed") return false;
+    if (result.screen === "profiles" || result.screen === "health") {
+      const outcome = await runAuxWorkspaceScreens(result.screen, ctx, pi);
+      // After a reload the pre-reload context must not drive further UI.
+      if (outcome.reloaded) return true;
+      if (outcome.navigate === "installed") return false;
+    }
+    return browseRemotePackages(ctx, reloadQuery, pi, offset, browseSource);
   }
 
   switch (result.type) {
     case "prev":
-      await browseRemotePackages(
+      return browseRemotePackages(
         ctx,
         reloadQuery,
         pi,
         Math.max(0, offset - PAGE_SIZE),
         browseSource
       );
-      return;
     case "next":
-      await browseRemotePackages(ctx, reloadQuery, pi, offset + PAGE_SIZE, browseSource);
-      return;
+      return browseRemotePackages(ctx, reloadQuery, pi, offset + PAGE_SIZE, browseSource);
     case "refresh":
       clearSearchCache(plan.searchQuery);
-      await browseRemotePackages(ctx, reloadQuery, pi, 0, browseSource, true);
-      return;
+      return browseRemotePackages(ctx, reloadQuery, pi, 0, browseSource, true);
     case "search": {
       const nextQuery = result.query.trim();
       if (browseSource === "community") {
-        await browseRemotePackages(ctx, nextQuery || COMMUNITY_BROWSE_QUERY, pi, 0, "community");
-        return;
+        return browseRemotePackages(ctx, nextQuery || COMMUNITY_BROWSE_QUERY, pi, 0, "community");
       }
-      await browseRemotePackages(
+      return browseRemotePackages(
         ctx,
         nextQuery || COMMUNITY_BROWSE_QUERY,
         pi,
         0,
         nextQuery ? "npm" : undefined
       );
-      return;
     }
-    case "install":
-      await promptInstall(ctx, pi);
-      await browseRemotePackages(ctx, reloadQuery, pi, offset, browseSource);
-      return;
+    case "install": {
+      if (await promptInstall(ctx, pi)) return true;
+      return browseRemotePackages(ctx, reloadQuery, pi, offset, browseSource);
+    }
     case "menu":
-      await showRemoteMenu(ctx, pi);
-      return;
+      return showRemoteMenu(ctx, pi);
     case "package":
-      await showPackageDetails(result.name, ctx, pi, reloadQuery, offset, browseSource);
-      return;
+      return showPackageDetails(result.name, ctx, pi, reloadQuery, offset, browseSource);
   }
 }
 
@@ -980,10 +494,10 @@ async function showPackageDetails(
   previousQuery: string,
   previousOffset: number,
   browseSource?: RemoteBrowseSource
-): Promise<void> {
+): Promise<RemoteWorkspaceResult> {
   if (!ctx.hasUI) {
     console.log(`Package: ${packageName}`);
-    return;
+    return false;
   }
 
   const choice = parseChoiceByLabel(
@@ -994,37 +508,29 @@ async function showPackageDetails(
   switch (choice) {
     case "installManaged": {
       const scope = await confirmMarketplaceInstall(packageName, ctx, pi, "managed");
-      if (!scope) return;
+      if (!scope) return false;
       const outcome = await installPackageWithOutcome(`npm:${packageName}`, ctx, pi, {
         scope,
         skipConfirmation: true,
       });
-      if (outcome.reloaded) {
-        return;
-      }
+      if (outcome.reloaded) return true;
       if (outcome.installed) {
-        await browseRemotePackages(ctx, previousQuery, pi, previousOffset, browseSource);
-        return;
+        return browseRemotePackages(ctx, previousQuery, pi, previousOffset, browseSource);
       }
-      await showPackageDetails(packageName, ctx, pi, previousQuery, previousOffset, browseSource);
-      return;
+      return showPackageDetails(packageName, ctx, pi, previousQuery, previousOffset, browseSource);
     }
     case "installStandalone": {
       const scope = await confirmMarketplaceInstall(packageName, ctx, pi, "standalone");
-      if (!scope) return;
+      if (!scope) return false;
       const outcome = await installPackageLocallyWithOutcome(packageName, ctx, pi, {
         scope,
         skipConfirmation: true,
       });
-      if (outcome.reloaded) {
-        return;
-      }
+      if (outcome.reloaded) return true;
       if (outcome.installed) {
-        await browseRemotePackages(ctx, previousQuery, pi, previousOffset, browseSource);
-        return;
+        return browseRemotePackages(ctx, previousQuery, pi, previousOffset, browseSource);
       }
-      await showPackageDetails(packageName, ctx, pi, previousQuery, previousOffset, browseSource);
-      return;
+      return showPackageDetails(packageName, ctx, pi, previousQuery, previousOffset, browseSource);
     }
     case "viewInfo":
       try {
@@ -1041,7 +547,7 @@ async function showPackageDetails(
 
         if (!text) {
           notify(ctx, `Loading ${packageName} details was cancelled.`, "info");
-          await showPackageDetails(
+          return showPackageDetails(
             packageName,
             ctx,
             pi,
@@ -1049,7 +555,6 @@ async function showPackageDetails(
             previousOffset,
             browseSource
           );
-          return;
         }
 
         ctx.ui.notify(text, "info");
@@ -1057,44 +562,45 @@ async function showPackageDetails(
         const message = error instanceof Error ? error.message : String(error);
         ctx.ui.notify(`Package: ${packageName}\n${message}`, "warning");
       }
-      await showPackageDetails(packageName, ctx, pi, previousQuery, previousOffset, browseSource);
-      return;
+      return showPackageDetails(packageName, ctx, pi, previousQuery, previousOffset, browseSource);
     case "back":
-      await browseRemotePackages(ctx, previousQuery, pi, previousOffset, browseSource);
-      return;
+      return browseRemotePackages(ctx, previousQuery, pi, previousOffset, browseSource);
     default:
-      return;
+      return false;
   }
 }
 
-async function promptSearch(ctx: ExtensionCommandContext, pi: ExtensionAPI): Promise<void> {
+async function promptSearch(
+  ctx: ExtensionCommandContext,
+  pi: ExtensionAPI
+): Promise<RemoteWorkspaceResult> {
   const query = await ctx.ui.input("Search packages", "package name, keyword, or npm:@scope/pkg");
-  if (!query?.trim()) return;
-  await searchPackages(query.trim(), ctx, pi);
+  if (!query?.trim()) return false;
+  return searchPackages(query.trim(), ctx, pi);
 }
 
 async function searchPackages(
   query: string,
   ctx: ExtensionCommandContext,
   pi: ExtensionAPI
-): Promise<void> {
-  if (!query) {
-    await promptSearch(ctx, pi);
-    return;
-  }
-  await browseRemotePackages(ctx, query, pi);
+): Promise<RemoteWorkspaceResult> {
+  if (!query) return promptSearch(ctx, pi);
+  return browseRemotePackages(ctx, query, pi);
 }
 
-async function promptInstall(ctx: ExtensionCommandContext, pi: ExtensionAPI): Promise<void> {
+async function promptInstall(
+  ctx: ExtensionCommandContext,
+  pi: ExtensionAPI
+): Promise<RemoteWorkspaceResult> {
   if (!ctx.hasUI) {
     notify(
       ctx,
       "Interactive input not available in non-interactive mode.\nUsage: /extensions install <npm:package|git:url|path>",
       "warning"
     );
-    return;
+    return false;
   }
   const source = await ctx.ui.input("Install package", "npm:@scope/pkg or git:https://...");
-  if (!source) return;
-  await installPackage(source.trim(), ctx, pi);
+  if (!source) return false;
+  return (await installPackageWithOutcome(source.trim(), ctx, pi)).reloaded;
 }
