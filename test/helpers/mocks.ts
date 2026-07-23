@@ -53,6 +53,9 @@ export function createMockHarness(options: MockHarnessOptions = {}): {
   confirmPrompts: string[];
   customCallCount: () => number;
   reloadCount: () => number;
+  statuses: Map<string, string | undefined>;
+  widgets: Map<string, string[] | undefined>;
+  titles: string[];
 } {
   const calls: ExecCall[] = [];
   const entries: { type: "custom"; customType: string; data: unknown }[] = [];
@@ -61,6 +64,9 @@ export function createMockHarness(options: MockHarnessOptions = {}): {
   const inputPrompts: string[] = [];
   const selectPrompts: string[] = [];
   const confirmPrompts: string[] = [];
+  const statuses = new Map<string, string | undefined>();
+  const widgets = new Map<string, string[] | undefined>();
+  const titles: string[] = [];
   let customCalls = 0;
   let reloadCalls = 0;
 
@@ -157,6 +163,15 @@ export function createMockHarness(options: MockHarnessOptions = {}): {
       inputPrompts.push(title);
       return Promise.resolve(options.inputResult);
     },
+    setStatus: (key: string, value: string | undefined) => {
+      statuses.set(key, value);
+    },
+    setWidget: (key: string, content: string[] | undefined) => {
+      widgets.set(key, content);
+    },
+    setTitle: (title: string) => {
+      titles.push(title);
+    },
     theme,
     custom:
       options.hasUI && options.hasCustomUI !== false
@@ -189,6 +204,7 @@ export function createMockHarness(options: MockHarnessOptions = {}): {
     },
     sessionManager: {
       getEntries: () => entries,
+      getSessionName: () => undefined,
     },
   } as unknown as ExtensionCommandContext;
 
@@ -204,5 +220,8 @@ export function createMockHarness(options: MockHarnessOptions = {}): {
     confirmPrompts,
     customCallCount: () => customCalls,
     reloadCount: () => reloadCalls,
+    statuses,
+    widgets,
+    titles,
   };
 }

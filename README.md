@@ -83,8 +83,14 @@ version manager, or install project-local with `pi install npm:pi-extmgr -l`.
   - Cache controls (`/extensions clear-cache` clears persistent + runtime extmgr caches)
   - Status line summary (`pkg count • scheduled update checks • known updates`)
   - History now records local extension deletions and scheduled update checks configuration changes
+- **Overlay-first output**
+  - Help, item details, bulk summaries, history, trash lists, and profile check reports open in a floating scrollable panel instead of the chat transcript
+  - Package updates show progress in a corner overlay while the session stays visible
+  - A one-line attention widget above the editor appears when updates are known or a reload is pending, and clears once handled
+  - The terminal title reflects the active workspace while the manager is open
 - **Interactive + non-interactive support**
   - Works in TUI and non-UI modes
+  - Non-UI modes receive the same report content as plain notifications
   - Non-interactive commands for list/install/remove/update/scheduled update checks (checks discover updates; package updates remain explicit)
 
 ## Usage
@@ -94,6 +100,8 @@ Open the manager:
 ```
 /extensions
 ```
+
+Or press `Ctrl+Alt+E` from anywhere in the pi TUI.
 
 ### In the manager
 

@@ -92,6 +92,7 @@ void test("session start for a replacement session stops existing timer when aut
 
   const pi = {
     registerCommand: () => undefined,
+    registerShortcut: () => undefined,
     on: (event: string, handler: (event: unknown, ctx: SessionCtx) => Promise<void>) => {
       handlers[event] = handler;
     },
