@@ -12,6 +12,7 @@ import { getAutoUpdateStatus } from "./auto-update.js";
 import { isProjectTrusted } from "./mode.js";
 import { normalizePackageIdentity } from "./package-source.js";
 import { getProjectConfigDir } from "./pi-paths.js";
+import { readReloadState } from "./reload-state.js";
 import { getAutoUpdateConfigAsync, saveAutoUpdateConfig } from "./settings.js";
 
 type CatalogInstalledPackages = Awaited<ReturnType<PackageCatalog["listInstalledPackages"]>>;
@@ -32,6 +33,27 @@ function filterStaleUpdates(
   return knownUpdates.filter((identity) => installedIdentities.has(identity));
 }
 
+/**
+ * One-line attention widget above the editor. Present only while something
+ * needs the user: known package updates or a pending reload.
+ */
+function updateAttentionWidget(
+  ctx: ExtensionCommandContext | ExtensionContext,
+  updateCount: number,
+  reloadPending: boolean
+): void {
+  const parts: string[] = [];
+  if (updateCount > 0) parts.push(`${updateCount} update${updateCount === 1 ? "" : "s"}`);
+  if (reloadPending) parts.push("reload pending");
+
+  ctx.ui.setWidget(
+    "extmgr-attention",
+    parts.length > 0
+      ? [ctx.ui.theme.fg("warning", `extmgr: ${parts.join(" \u00b7 ")} \u2014 /extensions`)]
+      : undefined
+  );
+}
+
 export async function updateExtmgrStatus(
   ctx: ExtensionCommandContext | ExtensionContext,
   pi: ExtensionAPI
@@ -39,9 +61,10 @@ export async function updateExtmgrStatus(
   if (!ctx.hasUI) return;
 
   try {
-    const [packages, autoUpdateConfig] = await Promise.all([
+    const [packages, autoUpdateConfig, reloadState] = await Promise.all([
       getPackageCatalog(ctx.cwd, isProjectTrusted(ctx)).listInstalledPackages(),
       getAutoUpdateConfigAsync(ctx),
+      readReloadState(),
     ]);
     const statusParts: string[] = [];
 
@@ -75,6 +98,8 @@ export async function updateExtmgrStatus(
     } else {
       ctx.ui.setStatus("extmgr", undefined);
     }
+
+    updateAttentionWidget(ctx, validUpdates.length, reloadState.required);
   } catch {
     // Best-effort status updates only
   }

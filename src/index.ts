@@ -8,7 +8,9 @@ import {
   type ExtensionCommandContext,
   type ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
+import { Key } from "@earendil-works/pi-tui";
 import { createAutoUpdateNotificationHandler } from "./commands/auto-update.js";
+import { refreshLocalCompletionIndex } from "./commands/completion.js";
 import {
   getExtensionsAutocompleteItems,
   resolveCommand,
@@ -16,8 +18,8 @@ import {
   showNonInteractiveHelp,
   showUnknownCommandMessage,
 } from "./commands/registry.js";
-import { refreshLocalCompletionIndex } from "./commands/completion.js";
 import { installPackage } from "./packages/install.js";
+import { restorePiTitle } from "./ui/workspace/title.js";
 import {
   type ContextProvider,
   startAutoUpdateTimer,
@@ -35,24 +37,33 @@ async function executeExtensionsCommand(
   ctx: ExtensionCommandContext,
   pi: ExtensionAPI
 ): Promise<void> {
-  const tokens = tokenizeArgs(args);
-  const resolved = resolveCommand(tokens);
+  try {
+    const tokens = tokenizeArgs(args);
+    const resolved = resolveCommand(tokens);
 
-  if (resolved) {
-    await runResolvedCommand(resolved, ctx, pi);
-    return;
-  }
+    if (resolved) {
+      await runResolvedCommand(resolved, ctx, pi);
+      return;
+    }
 
-  const rawSubcommand = tokens[0];
-  if (rawSubcommand && isPackageSource(rawSubcommand)) {
-    await installPackage(args.trim(), ctx, pi);
-    return;
-  }
+    const rawSubcommand = tokens[0];
+    if (rawSubcommand && isPackageSource(rawSubcommand)) {
+      await installPackage(args.trim(), ctx, pi);
+      return;
+    }
 
-  if (ctx.hasUI) {
-    showUnknownCommandMessage(rawSubcommand, ctx);
-  } else {
-    showNonInteractiveHelp(ctx);
+    if (ctx.hasUI) {
+      showUnknownCommandMessage(rawSubcommand, ctx);
+    } else {
+      showNonInteractiveHelp(ctx);
+    }
+  } finally {
+    // Workspace screens set the terminal title while open; hand it back to
+    // pi's format on the way out. After an in-process reload pi re-asserts
+    // its own title, so skip touching the stale context.
+    if (!wasContextReloaded(ctx)) {
+      restorePiTitle(ctx);
+    }
   }
 }
 
@@ -69,6 +80,15 @@ export default function extensionsManager(pi: ExtensionAPI) {
       ).catch((error) => {
         console.warn("[extmgr] Failed to refresh local completions:", error);
       });
+    },
+  });
+
+  pi.registerShortcut(Key.ctrlAlt("e"), {
+    description: "Open the extensions manager",
+    handler: async (ctx) => {
+      // Shortcut contexts satisfy everything the manager uses at runtime
+      // (ui, cwd, trust); command-only members like reload() are guarded.
+      await executeExtensionsCommand("", ctx as ExtensionCommandContext, pi);
     },
   });
 
