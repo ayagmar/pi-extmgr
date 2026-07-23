@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { getProjectConfigPath } from "../utils/pi-paths.js";
 import { planProfileApplication } from "./apply.js";
-import { getEffectivePackageSource, type DiagnosticStatus, type ExtmgrProfile } from "./schema.js";
+import { type DiagnosticStatus, type ExtmgrProfile, getEffectivePackageSource } from "./schema.js";
 
 export interface ProfilePolicy {
   allowedScopes?: Array<"global" | "project">;

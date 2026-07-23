@@ -3,11 +3,11 @@ import test from "node:test";
 import { visibleWidth } from "@earendil-works/pi-tui";
 import { clearMetadataCacheCommand } from "../src/commands/cache.js";
 import { clearSearchCache, setSearchCache } from "../src/packages/discovery.js";
+import { type NpmPackage } from "../src/types/index.js";
 import { browseRemotePackages, clearRemotePackageInfoCache, showRemote } from "../src/ui/remote.js";
 import { captureCustomComponent } from "./helpers/custom-component.js";
 import { createMockHarness } from "./helpers/mocks.js";
 import { mockPackageCatalog } from "./helpers/package-catalog.js";
-import { type NpmPackage } from "../src/types/index.js";
 
 function setSearchPage(
   query: string,

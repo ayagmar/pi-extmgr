@@ -1,5 +1,5 @@
-import { CONFIG_DIR_NAME, getAgentDir, getPackageDir } from "@earendil-works/pi-coding-agent";
 import { join } from "node:path";
+import { CONFIG_DIR_NAME, getAgentDir, getPackageDir } from "@earendil-works/pi-coding-agent";
 
 /** Resolve Pi-owned and extmgr-owned paths at call time so test overrides apply. */
 export function getProjectConfigDir(cwd: string): string {

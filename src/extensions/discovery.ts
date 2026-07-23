@@ -8,16 +8,16 @@
 import { type Dirent } from "node:fs";
 import { readdir, rename } from "node:fs/promises";
 import { basename, dirname, join, relative } from "node:path";
-import {
-  CONFIG_DIR_NAME,
-  getGlobalExtensionsDir,
-  getProjectExtensionsDir,
-  getExtmgrTrashDir,
-} from "../utils/pi-paths.js";
 import { DISABLED_SUFFIX } from "../constants.js";
 import { readPackageManifest } from "../packages/extensions.js";
 import { type ExtensionEntry, type Scope, type State } from "../types/index.js";
 import { fileExists, readSummary } from "../utils/fs.js";
+import {
+  CONFIG_DIR_NAME,
+  getExtmgrTrashDir,
+  getGlobalExtensionsDir,
+  getProjectExtensionsDir,
+} from "../utils/pi-paths.js";
 import {
   normalizeRelativePath,
   resolveRelativePathSelection,

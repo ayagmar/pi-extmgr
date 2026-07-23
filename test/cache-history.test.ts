@@ -4,9 +4,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import {
-  SessionManager,
   type ExtensionAPI,
   type ExtensionCommandContext,
+  SessionManager,
 } from "@earendil-works/pi-coding-agent";
 import { clearMetadataCacheCommand } from "../src/commands/cache.js";
 import { getSearchCache, setSearchCache } from "../src/packages/discovery.js";

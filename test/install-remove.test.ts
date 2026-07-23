@@ -8,8 +8,8 @@ import { listExtensionTrash } from "../src/extensions/trash.js";
 import {
   installFromUrl,
   installPackage,
-  installPackageWithOutcome,
   installPackageLocally,
+  installPackageWithOutcome,
 } from "../src/packages/install.js";
 import { removePackage, updatePackage, updatePackages } from "../src/packages/management.js";
 import { getExtmgrTrashDir } from "../src/utils/pi-paths.js";

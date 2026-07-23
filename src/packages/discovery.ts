@@ -10,8 +10,8 @@ import {
   getAgentDir,
 } from "@earendil-works/pi-coding-agent";
 import { CACHE_LIMITS, PAGE_SIZE, TIMEOUTS } from "../constants.js";
-import { createAbortError, throwIfAborted } from "../utils/abort.js";
 import { type InstalledPackage, type NpmPackage, type SearchCache } from "../types/index.js";
+import { createAbortError, throwIfAborted } from "../utils/abort.js";
 import {
   getCachedPackage,
   getCachedPackageSize,

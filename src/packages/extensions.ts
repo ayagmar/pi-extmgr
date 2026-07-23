@@ -15,13 +15,13 @@ import {
 import { parseNpmSource } from "../utils/format.js";
 import { fileExists, readSummary } from "../utils/fs.js";
 import { resolveConfiguredNpmRootCommand } from "../utils/npm-exec.js";
+import { normalizeConfiguredPackageSource } from "../utils/package-source.js";
 import { getProjectConfigDir } from "../utils/pi-paths.js";
 import {
   matchesFilterPattern,
   normalizeRelativePath,
   resolveRelativePathSelection,
 } from "../utils/relative-path-selection.js";
-import { normalizeConfiguredPackageSource } from "../utils/package-source.js";
 import { throwIfSettingsErrors } from "../utils/settings-errors.js";
 import { resolveConfiguredPackageExtensions, resourcesForPackage } from "./extension-resolution.js";
 

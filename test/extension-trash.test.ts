@@ -4,7 +4,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { handleTrashSubcommand } from "../src/commands/trash.js";
-import { createMockHarness } from "./helpers/mocks.js";
 import { removeLocalExtension } from "../src/extensions/discovery.js";
 import {
   listExtensionTrash,
@@ -12,6 +11,7 @@ import {
   purgeExtensionTrash,
   undoExtensionTrash,
 } from "../src/extensions/trash.js";
+import { createMockHarness } from "./helpers/mocks.js";
 
 void test("removeLocalExtension moves files to trash and exposes undo", async () => {
   const home = await mkdtemp(join(tmpdir(), "pi-extmgr-trash-home-"));

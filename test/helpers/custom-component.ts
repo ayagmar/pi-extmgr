@@ -1,4 +1,4 @@
-import { matchesKey, type KeyId } from "@earendil-works/pi-tui";
+import { type KeyId, matchesKey } from "@earendil-works/pi-tui";
 
 const noop = (): undefined => undefined;
 

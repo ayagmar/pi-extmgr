@@ -1,9 +1,9 @@
 /** Package metadata caching and retrieval for the Discover workspace. */
 import { type ExtensionAPI, type ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import { CACHE_LIMITS, TIMEOUTS } from "../../constants.js";
+import { validateCompatibility } from "../../doctor/compatibility.js";
 import { fetchNpmWeeklyDownloads } from "../../packages/discovery.js";
 import { inspectPackageMetadata } from "../../packages/inspection.js";
-import { validateCompatibility } from "../../doctor/compatibility.js";
 import { createAbortError, throwIfAborted } from "../../utils/abort.js";
 import { formatBytes } from "../../utils/format.js";
 import { execNpm } from "../../utils/npm-exec.js";

@@ -5,7 +5,7 @@ import { mkdir, rename, rm } from "node:fs/promises";
 import { basename, join } from "node:path";
 import { type ExtensionAPI, type ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import { TIMEOUTS } from "../constants.js";
-import { getAgentDir, getExtmgrTrashDir, getProjectExtensionsDir } from "../utils/pi-paths.js";
+import { moveToExtensionTrash, type TrashRecord, undoExtensionTrash } from "../extensions/trash.js";
 import { runTaskWithLoader } from "../ui/async-task.js";
 import { parseChoiceByLabel } from "../utils/command.js";
 import { normalizePackageSource } from "../utils/format.js";
@@ -18,11 +18,11 @@ import {
   MAX_DIRECT_EXTENSION_BYTES,
 } from "../utils/network.js";
 import { notify, error as notifyError, success } from "../utils/notify.js";
-import { getProgressMessage } from "../utils/progress.js";
 import { execNpm } from "../utils/npm-exec.js";
 import { normalizePackageIdentity } from "../utils/package-source.js";
+import { getAgentDir, getExtmgrTrashDir, getProjectExtensionsDir } from "../utils/pi-paths.js";
+import { getProgressMessage } from "../utils/progress.js";
 import { clearUpdatesAvailable } from "../utils/settings.js";
-import { moveToExtensionTrash, undoExtensionTrash, type TrashRecord } from "../extensions/trash.js";
 import { updateExtmgrStatus } from "../utils/status.js";
 import { confirmAction, confirmReload, showProgress } from "../utils/ui-helpers.js";
 import { getPackageCatalog } from "./catalog.js";
