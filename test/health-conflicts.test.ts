@@ -1,12 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { type RuntimeConflict } from "../src/doctor/conflicts.js";
+import { type ExtensionEntry, type InstalledPackage } from "../src/types/index.js";
 import {
   findConflictLocalOwners,
   findConflictPackageOwners,
   planSafeConflictFixes,
 } from "../src/ui/health.js";
-import { type ExtensionEntry, type InstalledPackage } from "../src/types/index.js";
 
 function conflictWith(owners: Array<Partial<RuntimeConflict["owners"][number]>>): RuntimeConflict {
   return {

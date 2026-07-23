@@ -26,10 +26,10 @@ import {
 import { type InstalledPackage, type PackageExtensionEntry, type State } from "../types/index.js";
 import { fileExists } from "../utils/fs.js";
 import { logExtensionToggle } from "../utils/history.js";
+import { activeKeyHint } from "../utils/key-hints.js";
 import { isProjectTrusted, requireCustomUI, runCustomUI } from "../utils/mode.js";
 import { notify } from "../utils/notify.js";
 import { getSettingsListSelectedIndex } from "../utils/settings-list.js";
-import { activeKeyHint } from "../utils/key-hints.js";
 import { confirmReload } from "../utils/ui-helpers.js";
 import { runTaskWithLoader } from "./async-task.js";
 import { getChangeMarker, getStatusIcon } from "./theme.js";

@@ -9,14 +9,14 @@ import { showRemote } from "../ui/remote.js";
 import { showInstalledPackagesLegacy, showInteractive, showListOnly } from "../ui/unified.js";
 import { notify } from "../utils/notify.js";
 import { handleAutoUpdateSubcommand } from "./auto-update.js";
-import { getLocalCompletionIndex } from "./completion.js";
 import { clearMetadataCacheCommand } from "./cache.js";
+import { getLocalCompletionIndex } from "./completion.js";
 import { handleHistorySubcommand } from "./history.js";
 import { handleInstallSubcommand, INSTALL_USAGE } from "./install.js";
 import { handleProfileSubcommand } from "./profile.js";
+import { handleTrashSubcommand } from "./trash.js";
 import { type CommandDefinition, type CommandId } from "./types.js";
 import { handleUpdateSubcommand } from "./update.js";
-import { handleTrashSubcommand } from "./trash.js";
 
 const REMOVE_USAGE = "Usage: /extensions remove <npm:package|git:url|path>";
 

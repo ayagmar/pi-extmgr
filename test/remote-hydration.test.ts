@@ -7,11 +7,12 @@ import { initTheme } from "@earendil-works/pi-coding-agent";
 
 // Keep hydration persistence away from the real extmgr cache.
 process.env.PI_EXTMGR_CACHE_DIR = mkdtempSync(join(tmpdir(), "pi-extmgr-hydration-"));
+
 import { clearSearchCache, setSearchCache } from "../src/packages/discovery.js";
+import { type NpmPackage } from "../src/types/index.js";
 import { browseRemotePackages } from "../src/ui/remote.js";
 import { captureCustomComponent } from "./helpers/custom-component.js";
 import { createMockHarness } from "./helpers/mocks.js";
-import { type NpmPackage } from "../src/types/index.js";
 
 initTheme();
 

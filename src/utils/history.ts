@@ -4,9 +4,9 @@
  */
 
 import {
-  SessionManager,
   type ExtensionAPI,
   type ExtensionCommandContext,
+  SessionManager,
 } from "@earendil-works/pi-coding-agent";
 
 export type ChangeAction =

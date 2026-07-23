@@ -7,9 +7,9 @@ import {
   type ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
 import { getPackageCatalog } from "../packages/catalog.js";
-import { isProjectTrusted } from "./mode.js";
 import { parseChoiceByLabel } from "./command.js";
 import { logAutoUpdateConfig } from "./history.js";
+import { isProjectTrusted } from "./mode.js";
 import { notify } from "./notify.js";
 import { normalizePackageIdentity } from "./package-source.js";
 import {
