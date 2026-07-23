@@ -3,7 +3,7 @@
  */
 import { type ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import { UI } from "../constants.js";
-import { error as notifyError, notify } from "./notify.js";
+import { notify, error as notifyError } from "./notify.js";
 import { clearReloadRequired, markReloadRequired } from "./reload-state.js";
 
 const reloadedContexts = new WeakSet<object>();
@@ -20,6 +20,9 @@ export function wasContextReloaded(ctx: ExtensionCommandContext): boolean {
 /**
  * Confirm and trigger reload
  * Returns true if reload was triggered
+ *
+ * Shortcut-handler contexts are plain ExtensionContexts without reload();
+ * they mark the reload as pending instead of reloading in-process.
  */
 export async function confirmReload(
   ctx: ExtensionCommandContext,
@@ -28,7 +31,7 @@ export async function confirmReload(
 ): Promise<boolean> {
   await markReloadRequired(reason, statePath);
 
-  if (!ctx.hasUI) {
+  if (!ctx.hasUI || typeof ctx.reload !== "function") {
     notify(ctx, `Reload pi to apply changes. (${reason})`);
     return false;
   }
@@ -74,28 +77,4 @@ export async function confirmAction(
 export function showProgress(ctx: ExtensionCommandContext, action: string, target: string): void {
   const message = `${action} ${target}...`;
   notify(ctx, message, "info");
-}
-
-/**
- * Format list output for display
- */
-export function formatListOutput(
-  ctx: ExtensionCommandContext,
-  title: string,
-  items: string[]
-): void {
-  if (items.length === 0) {
-    notify(ctx, `No ${title.toLowerCase()} found.`, "info");
-    return;
-  }
-
-  const output = items.join("\n");
-  const titledOutput = `${title}:\n${output}`;
-
-  if (ctx.hasUI) {
-    ctx.ui.notify(titledOutput, "info");
-  } else {
-    console.log(`${title}:`);
-    console.log(output);
-  }
 }

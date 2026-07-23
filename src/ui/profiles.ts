@@ -22,6 +22,7 @@ import {
   matchWorkspaceNavigation,
   type WorkspaceExit,
 } from "./workspace/navigation.js";
+import { setWorkspaceTitle } from "./workspace/title.js";
 
 export {
   describeProfilePackageChanges,
@@ -195,6 +196,7 @@ export async function showProfiles(
   }
 
   while (true) {
+    setWorkspaceTitle(ctx, "profiles");
     let store: Awaited<ReturnType<typeof readProfileStore>>;
     try {
       store = await readProfileStore(getProfileStorePath());

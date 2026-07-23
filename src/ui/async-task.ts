@@ -71,6 +71,11 @@ interface LoaderConfig {
   message: string;
   cancellable?: boolean;
   fallbackWithoutLoader?: boolean;
+  /**
+   * Render the loader as a floating corner overlay instead of replacing the
+   * editor. Use for mutations that run while the transcript stays relevant.
+   */
+  overlay?: boolean;
 }
 
 function createLoaderComponent(
@@ -143,82 +148,90 @@ export async function runTaskWithLoader<T>(
 
   const result = await ctx.ui.custom<
     TaskSuccess<T> | typeof TASK_ABORTED | typeof TASK_FAILED | undefined
-  >((tui, theme, _keybindings, done) => {
-    let finished = false;
-    const finish = (
-      value: TaskSuccess<T> | typeof TASK_ABORTED | typeof TASK_FAILED | undefined
-    ): void => {
-      if (finished) {
-        return;
-      }
-      finished = true;
-      done(value);
-    };
-
-    const { container, loader, signal } = createLoaderComponent(
-      tui,
-      theme,
-      config.title,
-      config.message,
-      config.cancellable ?? true,
-      () => finish(TASK_ABORTED)
-    );
-
-    cleanupStartedTaskUI = () => {
-      if (loader instanceof CancellableLoader) {
-        loader.dispose();
-        return;
-      }
-
-      loader.stop();
-    };
-
-    startedTask = Promise.resolve().then(() =>
-      task({
-        signal,
-        setMessage: (message) => {
-          if (finished || signal.aborted) return;
-          loader.setMessage(message);
-          tui.requestRender();
-        },
-      })
-    );
-
-    void startedTask
-      .then((value) => finish({ type: "ok", value }))
-      .catch((error) => {
-        if (signal.aborted) {
-          finish(TASK_ABORTED);
+  >(
+    (tui, theme, _keybindings, done) => {
+      let finished = false;
+      const finish = (
+        value: TaskSuccess<T> | typeof TASK_ABORTED | typeof TASK_FAILED | undefined
+      ): void => {
+        if (finished) {
           return;
         }
+        finished = true;
+        done(value);
+      };
 
-        taskError = error;
-        finish(TASK_FAILED);
-      });
+      const { container, loader, signal } = createLoaderComponent(
+        tui,
+        theme,
+        config.title,
+        config.message,
+        config.cancellable ?? true,
+        () => finish(TASK_ABORTED)
+      );
 
-    return {
-      render(width: number) {
-        return container.render(width);
-      },
-      invalidate() {
-        container.invalidate();
-      },
-      handleInput(data: string) {
-        if (loader instanceof CancellableLoader) {
-          loader.handleInput(data);
-          tui.requestRender();
-        }
-      },
-      dispose() {
+      cleanupStartedTaskUI = () => {
         if (loader instanceof CancellableLoader) {
           loader.dispose();
           return;
         }
 
         loader.stop();
-      },
-    };
-  });
+      };
+
+      startedTask = Promise.resolve().then(() =>
+        task({
+          signal,
+          setMessage: (message) => {
+            if (finished || signal.aborted) return;
+            loader.setMessage(message);
+            tui.requestRender();
+          },
+        })
+      );
+
+      void startedTask
+        .then((value) => finish({ type: "ok", value }))
+        .catch((error) => {
+          if (signal.aborted) {
+            finish(TASK_ABORTED);
+            return;
+          }
+
+          taskError = error;
+          finish(TASK_FAILED);
+        });
+
+      return {
+        render(width: number) {
+          return container.render(width);
+        },
+        invalidate() {
+          container.invalidate();
+        },
+        handleInput(data: string) {
+          if (loader instanceof CancellableLoader) {
+            loader.handleInput(data);
+            tui.requestRender();
+          }
+        },
+        dispose() {
+          if (loader instanceof CancellableLoader) {
+            loader.dispose();
+            return;
+          }
+
+          loader.stop();
+        },
+      };
+    },
+    config.overlay
+      ? {
+          overlay: true,
+          overlayOptions: { anchor: "bottom-right", width: "45%", minWidth: 40, margin: 1 },
+        }
+      : undefined
+  );
 
   if (result === undefined) {
     if (startedTask) {

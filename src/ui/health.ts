@@ -34,6 +34,7 @@ import {
   matchWorkspaceNavigation,
   type WorkspaceExit,
 } from "./workspace/navigation.js";
+import { setWorkspaceTitle } from "./workspace/title.js";
 
 function getTrashRoot(): string {
   return join(getAgentDir(), ".extmgr-trash");
@@ -494,6 +495,7 @@ export async function showHealth(
   }
 
   while (true) {
+    setWorkspaceTitle(ctx, "health");
     let snapshot: HealthSnapshot;
     try {
       snapshot = await loadHealthSnapshot(ctx, pi);
@@ -511,6 +513,10 @@ export async function showHealth(
     if (action.type === "workspace") return action.screen;
     if (action.type === "refresh") continue;
     if (action.type === "reload") {
+      if (typeof ctx.reload !== "function") {
+        notify(ctx, "Reload pi to apply pending changes.", "warning");
+        continue;
+      }
       await ctx.reload();
       markContextReloaded(ctx);
       await clearReloadRequired();

@@ -5,12 +5,12 @@ import { join } from "node:path";
 import test from "node:test";
 import { initTheme } from "@earendil-works/pi-coding-agent";
 import { visibleWidth } from "@earendil-works/pi-tui";
+import { getProfileStorePath, saveNamedProfile } from "../src/profiles/store.js";
 import { showHealth } from "../src/ui/health.js";
 import { showProfiles } from "../src/ui/profiles.js";
-import { saveNamedProfile, getProfileStorePath } from "../src/profiles/store.js";
-import { mockPackageCatalog } from "./helpers/package-catalog.js";
 import { captureCustomComponent } from "./helpers/custom-component.js";
 import { createMockHarness } from "./helpers/mocks.js";
+import { mockPackageCatalog } from "./helpers/package-catalog.js";
 
 initTheme();
 
@@ -59,28 +59,23 @@ void test("profiles screen renders an inline current-versus-target diff", async 
       }
     ).select = (title) =>
       Promise.resolve(title.startsWith("Profile:") ? "Review and apply" : undefined);
-    let customCalls = 0;
     let diffLines: string[] = [];
-    (ctx.ui as { custom: (factory: unknown) => Promise<unknown> }).custom = (factory) => {
-      customCalls += 1;
-      if (customCalls === 1) {
-        return captureCustomComponent(factory, ctx.ui.theme, (component, _lines, completion) => {
+    let openedReview = false;
+    (ctx.ui as { custom: (factory: unknown) => Promise<unknown> }).custom = (factory) =>
+      captureCustomComponent(factory, ctx.ui.theme, (component, lines, completion) => {
+        // Route on rendered content: the profile list confirms into the
+        // review once, the diff screen is captured, everything else backs out.
+        if (!openedReview && lines.some((line) => line.includes("Save current package set"))) {
+          openedReview = true;
           component.handleInput?.("\r");
           return completion;
-        });
-      }
-      if (customCalls === 2) {
-        return captureCustomComponent(factory, ctx.ui.theme, (component, lines, completion) => {
+        }
+        if (lines.some((line) => line.includes("Target · target"))) {
           diffLines = lines;
-          component.handleInput?.("\u001b");
-          return completion;
-        });
-      }
-      return captureCustomComponent(factory, ctx.ui.theme, (component, _lines, completion) => {
+        }
         component.handleInput?.("\u001b");
         return completion;
       });
-    };
 
     await showProfiles(ctx, pi);
 

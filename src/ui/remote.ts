@@ -45,6 +45,7 @@ import {
   resolveRemoteBrowseSource,
 } from "./discover/query.js";
 import { runAuxWorkspaceScreens } from "./workspace/router.js";
+import { setWorkspaceTitle } from "./workspace/title.js";
 
 export { clearRemotePackageInfoCache } from "./discover/metadata.js";
 
@@ -239,6 +240,7 @@ export async function browseRemotePackages(
   }
 
   browseNavigationActive = true;
+  setWorkspaceTitle(ctx, "discover");
   try {
     let next: BrowseRequest | undefined = request;
     while (next) {
