@@ -23,16 +23,17 @@ import { hasCustomUI, isProjectTrusted, runCustomUI } from "../utils/mode.js";
 import { notify } from "../utils/notify.js";
 import { readReloadState } from "../utils/reload-state.js";
 import { getSavedViewsPath, readSavedViews, writeSavedViews } from "../utils/views.js";
-import { formatListOutput } from "../utils/ui-helpers.js";
 import { runTaskWithLoader } from "./async-task.js";
 import { buildFooterShortcuts, buildFooterState } from "./footer.js";
 import { handleUnifiedAction } from "./installed/actions.js";
 import { UnifiedManagerBrowser } from "./installed/browser.js";
-import { buildManagerSummary } from "./installed/summary.js";
 import { buildUnifiedItems } from "./installed/items.js";
 import { managerStateToView, viewToManagerState } from "./installed/state.js";
+import { buildManagerSummary } from "./installed/summary.js";
 import { showRemote } from "./remote.js";
+import { showListReport } from "./report.js";
 import { buildWorkspaceNavigation } from "./workspace/navigation.js";
+import { setWorkspaceTitle } from "./workspace/title.js";
 
 export { buildUnifiedItems };
 
@@ -157,6 +158,7 @@ async function showInteractiveOnce(
 
   while (true) {
     let nextManagerState = managerState;
+    setWorkspaceTitle(ctx, "installed");
 
     const result = await runCustomUI(
       ctx,
@@ -321,5 +323,5 @@ export async function showListOnly(ctx: ExtensionCommandContext): Promise<void> 
     return;
   }
 
-  formatListOutput(ctx, "Local extensions", entries.map(formatExtEntry));
+  await showListReport(ctx, "Local extensions", entries.map(formatExtEntry));
 }

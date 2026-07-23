@@ -2,15 +2,14 @@
  * Help display
  */
 import { type ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
-import { notify } from "../utils/notify.js";
+import { showReport } from "./report.js";
 
-/** Keep help useful in a notification without repeating every footer hint. */
+/** Keep help compact and scannable without repeating every footer hint. */
 export function buildHelpLines(): string[] {
   return [
-    "Extensions Manager Help",
-    "",
     "Workspace navigation",
     "  Tab / Shift+Tab      Next / previous workspace screen",
+    "  Ctrl+Alt+E           Open the manager from anywhere",
     "",
     "Everyday controls",
     "  ↑↓ / PageUp/PageDown  Navigate",
@@ -59,6 +58,6 @@ export function buildHelpLines(): string[] {
   ];
 }
 
-export function showHelp(ctx: ExtensionCommandContext): void {
-  notify(ctx, buildHelpLines().join("\n"), "info");
+export async function showHelp(ctx: ExtensionCommandContext): Promise<void> {
+  await showReport(ctx, { title: "Extensions Manager Help", lines: buildHelpLines() });
 }

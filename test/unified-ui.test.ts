@@ -418,37 +418,40 @@ void test("/extensions keeps staged changes after viewing item details", async (
     await mkdir(projectExtensionsRoot, { recursive: true });
     await writeFile(join(projectExtensionsRoot, "alpha-details.ts"), "// alpha\n", "utf8");
 
-    const { pi, ctx, notifications, selectPrompts } = createMockHarness({
+    const { pi, ctx, selectPrompts } = createMockHarness({
       cwd,
       hasUI: true,
       selectResult: "Exit without saving",
     });
     let managerCallCount = 0;
+    let detailLines: string[] = [];
     let resumedLines: string[] = [];
 
     (ctx.ui as { custom: (factory: unknown) => Promise<unknown> }).custom = async (factory) =>
-      captureCustomComponent(
-        factory,
-        ctx.ui.theme,
-        (lines) => lines.some((line) => line.includes("/ search")),
-        (component, lines, completion) => {
-          managerCallCount += 1;
-          if (managerCallCount === 1) {
-            component.handleInput?.(" ");
-            component.handleInput?.("V");
-            return completion;
-          }
-
-          resumedLines = lines;
-          return { type: "cancel" };
+      captureCustomComponent(factory, ctx.ui.theme, (component, lines, completion) => {
+        if (lines.some((line) => line.includes("Esc close"))) {
+          detailLines = lines;
+          component.handleInput?.("\u001b");
+          return completion;
         }
-      );
+        if (!lines.some((line) => line.includes("/ search"))) return completion;
+
+        managerCallCount += 1;
+        if (managerCallCount === 1) {
+          component.handleInput?.(" ");
+          component.handleInput?.("V");
+          return completion;
+        }
+
+        resumedLines = lines;
+        return { type: "cancel" };
+      });
 
     await showInteractive(ctx, pi);
 
     assert.ok(
-      notifications.some((entry) => entry.message.includes("alpha-details.ts")),
-      "expected details notification to be shown"
+      detailLines.some((line) => line.includes("alpha-details.ts")),
+      "expected the details panel to describe the selected extension"
     );
     assert.ok(
       rendersLocalState(resumedLines, "alpha-details.ts", "disabled"),
@@ -519,61 +522,53 @@ void test("/extensions keeps staged changes after backing out of the local actio
   }
 });
 
-void test("/extensions discards staged changes before resuming from help", async () => {
-  const cwd = await mkdtemp(join(tmpdir(), "pi-extmgr-unified-discard-"));
+void test("/extensions keeps staged changes while peeking at help", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "pi-extmgr-unified-help-"));
   const projectExtensionsRoot = join(cwd, ".pi", "extensions");
 
   try {
     await mkdir(projectExtensionsRoot, { recursive: true });
-    await writeFile(join(projectExtensionsRoot, "alpha-discard.ts"), "// alpha\n", "utf8");
+    await writeFile(join(projectExtensionsRoot, "alpha-help.ts"), "// alpha\n", "utf8");
 
-    const { pi, ctx, notifications, selectPrompts } = createMockHarness({ cwd, hasUI: true });
-    const queuedSelections = ["Discard changes"];
+    const { pi, ctx, selectPrompts } = createMockHarness({
+      cwd,
+      hasUI: true,
+      selectResult: "Exit without saving",
+    });
     let managerCallCount = 0;
+    let helpShown = false;
     let resumedLines: string[] = [];
 
-    (
-      ctx.ui as { select: (title: string, options?: string[]) => Promise<string | undefined> }
-    ).select = (title) => {
-      selectPrompts.push(title);
-      return Promise.resolve(queuedSelections.shift());
-    };
     (ctx.ui as { custom: (factory: unknown) => Promise<unknown> }).custom = async (factory) =>
-      captureCustomComponent(
-        factory,
-        ctx.ui.theme,
-        (lines) => lines.some((line) => line.includes("/ search")),
-        (component, lines, completion) => {
-          managerCallCount += 1;
-          if (managerCallCount === 1) {
-            component.handleInput?.(" ");
-            component.handleInput?.("?");
-            return completion;
-          }
-
-          resumedLines = lines;
-          return { type: "cancel" };
+      captureCustomComponent(factory, ctx.ui.theme, (component, lines, completion) => {
+        if (lines.some((line) => line.includes("Extensions Manager Help"))) {
+          helpShown = true;
+          component.handleInput?.("\u001b");
+          return completion;
         }
-      );
+        if (!lines.some((line) => line.includes("/ search"))) return completion;
+
+        managerCallCount += 1;
+        if (managerCallCount === 1) {
+          component.handleInput?.(" ");
+          component.handleInput?.("?");
+          return completion;
+        }
+
+        resumedLines = lines;
+        return { type: "cancel" };
+      });
 
     await showInteractive(ctx, pi);
 
+    assert.ok(helpShown, "expected the help panel to open");
     assert.ok(
-      notifications.some((entry) => entry.message.includes("Extensions Manager Help")),
-      "expected help to open after discarding changes"
-    );
-    assert.equal(
-      selectPrompts.filter((title) => title === "Unsaved changes (1)").length,
-      1,
-      "expected discard to clear pending changes before the next manager render"
+      rendersLocalState(resumedLines, "alpha-help.ts", "disabled"),
+      "expected the staged toggle to survive the help peek"
     );
     assert.ok(
-      rendersLocalState(resumedLines, "alpha-discard.ts", "enabled"),
-      "expected discarded toggle to revert to the original enabled state"
-    );
-    assert.ok(
-      !rendersLocalState(resumedLines, "alpha-discard.ts", "disabled"),
-      "expected no staged disabled state after discarding changes"
+      selectPrompts.includes("Unsaved changes (1)"),
+      "expected pending changes to still guard exit after viewing help"
     );
   } finally {
     await rm(cwd, { recursive: true, force: true });
@@ -598,15 +593,21 @@ void test("/extensions bulk updates use one flow and summarize partial failures"
     },
   });
   try {
-    const { pi, ctx, notifications, confirmPrompts, reloadCount } = createMockHarness({
+    const { pi, ctx, confirmPrompts, reloadCount } = createMockHarness({
       cwd,
       hasUI: true,
       selectResult: "Update selected packages",
       confirmImpl: (title) => title === "Bulk package operation",
     });
     let managerCalls = 0;
+    let summaryLines: string[] = [];
     (ctx.ui as { custom: (factory: unknown) => Promise<unknown> }).custom = async (factory) =>
       captureCustomComponent(factory, ctx.ui.theme, (component, lines, completion) => {
+        if (lines.some((line) => line.includes("Bulk package operation"))) {
+          summaryLines = lines;
+          component.handleInput?.("\u001b");
+          return completion;
+        }
         if (!lines.some((line) => line.includes("i install"))) return completion;
         managerCalls += 1;
         if (managerCalls === 1) {
@@ -625,14 +626,10 @@ void test("/extensions bulk updates use one flow and summarize partial failures"
     assert.deepEqual(updated, ["npm:alpha"]);
     assert.equal(reloadCount(), 0);
     assert.equal(confirmPrompts.filter((title) => title === "Reload Required").length, 1);
-    assert.ok(
-      notifications.some(
-        (entry) =>
-          entry.message.includes("1 succeeded") &&
-          entry.message.includes("1 failed") &&
-          entry.message.includes("Reload required")
-      )
-    );
+    const summaryText = summaryLines.join("\n");
+    assert.ok(summaryText.includes("1 succeeded"), "expected the summary to count successes");
+    assert.ok(summaryText.includes("1 failed"), "expected the summary to count failures");
+    assert.ok(summaryText.includes("Reload required"), "expected the summary to mention reload");
   } finally {
     restoreCatalog();
     await rm(cwd, { recursive: true, force: true });

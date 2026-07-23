@@ -75,7 +75,9 @@ void test("/extensions falls back when custom() degrades to undefined", async ()
 
     await runResolvedCommand({ id: "local", args: [] }, ctx, pi);
 
-    assert.equal(customCallCount(), 1);
+    // Degraded custom UI: the manager and any report panels resolve
+    // undefined, so all content must still reach plain notifications.
+    assert.ok(customCallCount() >= 1, "expected the manager to attempt custom UI");
     assert.ok(
       notifications.some((entry) => entry.message.includes("requires the full interactive TUI"))
     );

@@ -300,7 +300,6 @@ void test("profile check --json emits one deterministic machine-readable result"
 
 void test("manager help stays compact and width-safe", () => {
   const lines = buildHelpLines();
-  assert.ok(lines.includes("Extensions Manager Help"));
   assert.ok(lines.every((line) => visibleWidth(line) <= 88));
   assert.ok(lines.some((line) => line.includes("Bulk actions")));
   assert.ok(lines.some((line) => line.includes("Reload required")));

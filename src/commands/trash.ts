@@ -1,16 +1,17 @@
+import { join } from "node:path";
 import {
-  getAgentDir,
   type ExtensionAPI,
   type ExtensionCommandContext,
+  getAgentDir,
 } from "@earendil-works/pi-coding-agent";
-import { join } from "node:path";
 import {
   listExtensionTrash,
   purgeExtensionTrash,
   undoExtensionTrash,
 } from "../extensions/trash.js";
-import { confirmAction, confirmReload, formatListOutput } from "../utils/ui-helpers.js";
+import { showListReport } from "../ui/report.js";
 import { notify } from "../utils/notify.js";
+import { confirmAction, confirmReload } from "../utils/ui-helpers.js";
 
 const TRASH_USAGE = "Usage: /extensions trash <list|restore [index]|purge [index|all]>";
 
@@ -52,7 +53,7 @@ export async function handleTrashSubcommand(
   try {
     const records = await listExtensionTrash(getTrashRoot());
     if (action === "list") {
-      formatListOutput(
+      await showListReport(
         ctx,
         "Trash",
         records.map((record, index) => `[${index + 1}] ${record.originalPath}`)

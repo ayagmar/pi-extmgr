@@ -40,6 +40,7 @@ import {
 import { type InstalledPackage } from "../types/index.js";
 import { runTaskWithLoader } from "../ui/async-task.js";
 import { showProfileDiff } from "../ui/profile-review.js";
+import { showListReport, showReport } from "../ui/report.js";
 import { isProjectTrusted } from "../utils/mode.js";
 import { notify } from "../utils/notify.js";
 import {
@@ -878,7 +879,7 @@ async function handleImport(
   const importViolations = importPolicy
     ? validateProfilePolicy(profile, importPolicy, importDiagnostics)
     : [];
-  const summary = [
+  const summaryLines = [
     `Origin: ${loaded.origin}`,
     `Final origin: ${loaded.finalOrigin}`,
     `Origin status: ${loaded.immutableOrigin === true ? "immutable" : loaded.immutableOrigin === false ? "floating" : "local"}`,
@@ -891,8 +892,12 @@ async function handleImport(
     `Integrity: ${importDiagnostics.filter((item) => item.integrity === "unknown").length} unknown`,
     ...importViolations.map((violation) => `Policy violation: ${violation.message}`),
     ...[...parsed.warnings, ...loaded.warnings].map((warning) => `Warning: ${warning}`),
-  ].join("\n");
-  notify(ctx, summary, loaded.warnings.length > 0 ? "warning" : "info");
+  ];
+  await showReport(ctx, {
+    title: `Import profile: ${profile.name}`,
+    level: loaded.warnings.length > 0 ? "warning" : "info",
+    lines: summaryLines,
+  });
   if (ctx.hasUI) {
     const action = await ctx.ui.select("Import profile", ["Save", "Review changes", "Cancel"]);
     if (action === "Cancel" || !action) return;
@@ -1047,9 +1052,10 @@ async function handleCheck(
     else console.log(encoded);
     return;
   }
-  notify(
-    ctx,
-    [
+  await showReport(ctx, {
+    title: `Profile check: ${source ?? "(missing source)"}`,
+    level: result.ok ? "info" : "error",
+    lines: [
       `Profile: ${result.valid ? "valid" : "invalid"}`,
       `Drift: ${result.drift === null ? "unknown" : result.drift ? "yes" : "no"}`,
       `Changes: ${result.counts.add} add, ${result.counts.remove} remove, ${result.counts.change} change`,
@@ -1077,9 +1083,8 @@ async function handleCheck(
             "Pi's command API has no supported process status channel; failures are reported without terminating Pi.",
           ]
         : []),
-    ].join("\n"),
-    result.ok ? "info" : "error"
-  );
+    ],
+  });
 }
 
 async function handleRecover(
@@ -1090,12 +1095,13 @@ async function handleRecover(
   const points = await readProfileRestorePoints();
   const requested = tokens[0];
   if (!requested || requested === "list") {
-    notify(
+    await showListReport(
       ctx,
-      points.length
-        ? `Profile restore points:\n${points.map((point, index) => `${index + 1}. ${point.id}${point.incomplete ? " (incomplete rollback)" : ""} - ${point.reason}`).join("\n")}`
-        : "No profile restore points.",
-      "info"
+      "Profile restore points",
+      points.map(
+        (point, index) =>
+          `${index + 1}. ${point.id}${point.incomplete ? " (incomplete rollback)" : ""} - ${point.reason}`
+      )
     );
     return;
   }

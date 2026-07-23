@@ -1,5 +1,7 @@
-import { type ExtensionAPI, type ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import { basename } from "node:path";
+import { type ExtensionAPI, type ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
+import { showListReport } from "../ui/report.js";
+import { parseLookbackDuration } from "../utils/duration.js";
 import {
   type ChangeAction,
   formatChangeEntry,
@@ -7,9 +9,7 @@ import {
   queryGlobalHistory,
   querySessionChanges,
 } from "../utils/history.js";
-import { parseLookbackDuration } from "../utils/duration.js";
 import { notify } from "../utils/notify.js";
-import { formatListOutput } from "../utils/ui-helpers.js";
 
 const HISTORY_ACTIONS: ChangeAction[] = [
   "extension_toggle",
@@ -217,7 +217,7 @@ export async function handleHistorySubcommand(
       ({ change, sessionFile }) =>
         `${formatChangeEntry(change)}  [${formatSessionSuffix(sessionFile)}]`
     );
-    formatListOutput(ctx, `Extension Change History (global, recent ${changes.length})`, lines);
+    await showListReport(ctx, `Extension Change History (global, recent ${changes.length})`, lines);
     return;
   }
 
@@ -228,5 +228,5 @@ export async function handleHistorySubcommand(
   }
 
   const lines = changes.map(formatChangeEntry);
-  formatListOutput(ctx, `Extension Change History (recent ${changes.length})`, lines);
+  await showListReport(ctx, `Extension Change History (recent ${changes.length})`, lines);
 }

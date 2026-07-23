@@ -9,6 +9,7 @@ import {
 import { UI } from "../constants.js";
 import { type InstalledPackage } from "../types/index.js";
 import { runTaskWithLoader } from "../ui/async-task.js";
+import { showListReport } from "../ui/report.js";
 import { parseChoiceByLabel } from "../utils/command.js";
 import { formatInstalledPackageLabel } from "../utils/format.js";
 import { logPackageRemove, logPackageUpdate } from "../utils/history.js";
@@ -16,15 +17,10 @@ import { isProjectTrusted, requireUI } from "../utils/mode.js";
 import { notify, error as notifyError, success } from "../utils/notify.js";
 import { normalizePackageIdentity } from "../utils/package-source.js";
 import { getProjectConfigDir } from "../utils/pi-paths.js";
+import { getProgressMessage } from "../utils/progress.js";
 import { clearUpdatesAvailable } from "../utils/settings.js";
 import { updateExtmgrStatus } from "../utils/status.js";
-import { getProgressMessage } from "../utils/progress.js";
-import {
-  confirmAction,
-  confirmReload,
-  formatListOutput,
-  showProgress,
-} from "../utils/ui-helpers.js";
+import { confirmAction, confirmReload, showProgress } from "../utils/ui-helpers.js";
 import { getPackageCatalog } from "./catalog.js";
 import {
   clearSearchCache,
@@ -78,6 +74,7 @@ async function updatePackageInternal(
         message: `Updating ${source}...`,
         cancellable: false,
         fallbackWithoutLoader: true,
+        overlay: true,
       },
       async ({ setMessage }) => {
         await getPackageCatalog(ctx.cwd, isProjectTrusted(ctx)).update(source, (event) => {
@@ -132,6 +129,7 @@ async function updatePackagesInternal(
         message: "Updating all packages...",
         cancellable: false,
         fallbackWithoutLoader: true,
+        overlay: true,
       },
       async ({ setMessage }) => {
         await getPackageCatalog(ctx.cwd, isProjectTrusted(ctx)).update(undefined, (event) => {
@@ -489,5 +487,5 @@ export async function showInstalledPackagesList(
     formatInstalledPackageLabel(p, index)
   );
 
-  formatListOutput(ctx, "Installed packages", lines);
+  await showListReport(ctx, "Installed packages", lines);
 }
