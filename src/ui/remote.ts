@@ -44,6 +44,7 @@ import {
   type RemoteBrowseSource,
   resolveRemoteBrowseSource,
 } from "./discover/query.js";
+import { showReport } from "./report.js";
 import { runAuxWorkspaceScreens } from "./workspace/router.js";
 import { setWorkspaceTitle } from "./workspace/title.js";
 
@@ -559,10 +560,14 @@ async function showPackageDetails(
           );
         }
 
-        ctx.ui.notify(text, "info");
+        await showReport(ctx, { title: packageName, lines: text.split("\n") });
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        ctx.ui.notify(`Package: ${packageName}\n${message}`, "warning");
+        await showReport(ctx, {
+          title: packageName,
+          level: "warning",
+          lines: message.split("\n"),
+        });
       }
       return showPackageDetails(packageName, ctx, pi, previousQuery, previousOffset, browseSource);
     case "back":

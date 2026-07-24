@@ -1,6 +1,6 @@
 import { basename } from "node:path";
 import { type ExtensionAPI, type ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
-import { showListReport } from "../ui/report.js";
+import { showListReport, showReport } from "../ui/report.js";
 import { parseLookbackDuration } from "../utils/duration.js";
 import {
   type ChangeAction,
@@ -154,7 +154,7 @@ function parseHistoryArgs(tokens: string[]): ParsedHistoryArgs {
   };
 }
 
-function showHistoryHelp(ctx: ExtensionCommandContext): void {
+async function showHistoryHelp(ctx: ExtensionCommandContext): Promise<void> {
   const lines = [
     "Usage: /extensions history [options]",
     "",
@@ -175,7 +175,7 @@ function showHistoryHelp(ctx: ExtensionCommandContext): void {
     "  /extensions history --global --failed --since 14d",
   ];
 
-  notify(ctx, lines.join("\n"), "info");
+  await showReport(ctx, { title: "History usage", placement: "center", lines });
 }
 
 function formatSessionSuffix(sessionFile: string): string {
@@ -191,13 +191,13 @@ export async function handleHistorySubcommand(
   const parsed = parseHistoryArgs(tokens);
 
   if (parsed.showHelp) {
-    showHistoryHelp(ctx);
+    await showHistoryHelp(ctx);
     return;
   }
 
   if (parsed.errors.length > 0) {
     notify(ctx, parsed.errors.join("\n"), "warning");
-    showHistoryHelp(ctx);
+    await showHistoryHelp(ctx);
     return;
   }
 
@@ -217,7 +217,14 @@ export async function handleHistorySubcommand(
       ({ change, sessionFile }) =>
         `${formatChangeEntry(change)}  [${formatSessionSuffix(sessionFile)}]`
     );
-    await showListReport(ctx, `Extension Change History (global, recent ${changes.length})`, lines);
+    await showListReport(
+      ctx,
+      `Extension Change History (global, recent ${changes.length})`,
+      lines,
+      {
+        placement: "center",
+      }
+    );
     return;
   }
 
@@ -228,5 +235,7 @@ export async function handleHistorySubcommand(
   }
 
   const lines = changes.map(formatChangeEntry);
-  await showListReport(ctx, `Extension Change History (recent ${changes.length})`, lines);
+  await showListReport(ctx, `Extension Change History (recent ${changes.length})`, lines, {
+    placement: "center",
+  });
 }

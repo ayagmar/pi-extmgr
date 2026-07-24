@@ -133,6 +133,7 @@ export async function handleBulkAction(
 
   await showReport(ctx, {
     title: "Bulk package operation",
+    placement: "center",
     level: results.failed.length > 0 ? "warning" : "info",
     lines: [
       `${results.completed.length} succeeded`,

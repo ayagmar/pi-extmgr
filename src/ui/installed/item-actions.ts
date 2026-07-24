@@ -286,15 +286,14 @@ export async function handlePackageItemAction(
       if (!comparison) {
         ctx.ui.notify("No package scope comparison is available.", "warning");
       } else {
-        ctx.ui.notify(
-          [
-            `Package: ${comparison.name}`,
+        await showReport(ctx, {
+          title: `Scopes: ${comparison.name}`,
+          lines: [
             `Global: ${comparison.global?.source ?? "not configured"}`,
             `Project: ${comparison.project?.source ?? "not configured"}`,
             `Status: ${comparison.status}`,
-          ].join("\n"),
-          "info"
-        );
+          ],
+        });
       }
       return "resume";
     }

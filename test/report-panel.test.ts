@@ -40,6 +40,38 @@ void test("report content is shown in a panel and closes on Escape", async () =>
   assert.ok(lines.some((line) => line.includes("Esc close")));
 });
 
+void test("report panels always fit within the terminal height", async () => {
+  const { ctx } = createMockHarness({ hasUI: true });
+  const lines = Array.from({ length: 200 }, (_, index) => `row-${index}`);
+
+  for (const height of [8, 12, 24, 50]) {
+    let rendered: string[] = [];
+    (ctx.ui as { custom: (factory: unknown, options?: unknown) => Promise<unknown> }).custom = (
+      factory
+    ) =>
+      captureCustomComponent(
+        factory,
+        ctx.ui.theme,
+        (component, out, completion) => {
+          rendered = out;
+          component.handleInput?.("\u001b");
+          return completion;
+        },
+        { width: 80, height }
+      );
+
+    await showReport(ctx, { title: "Tall", lines });
+    assert.ok(
+      rendered.length <= height,
+      `panel of ${rendered.length} rows overflows a ${height}-row terminal`
+    );
+    assert.ok(
+      rendered[rendered.length - 1]?.includes("Esc close"),
+      "expected the close hint to stay visible"
+    );
+  }
+});
+
 void test("report panels stay within the rendered width", async () => {
   const { ctx } = createMockHarness({ hasUI: true });
   const longLine = "x".repeat(500);
@@ -101,6 +133,33 @@ void test("long reports scroll instead of truncating content", async () => {
     afterEnd.some((line) => line.includes("entry-120")),
     "expected End to jump to the last entry"
   );
+});
+
+void test("report placement selects side or center overlay anchoring", async () => {
+  const { ctx } = createMockHarness({ hasUI: true });
+  const capturedOptions: unknown[] = [];
+  (ctx.ui as { custom: (factory: unknown, options?: unknown) => Promise<unknown> }).custom = (
+    factory,
+    options
+  ) => {
+    capturedOptions.push(options);
+    return captureCustomComponent(factory, ctx.ui.theme, (component, _lines, completion) => {
+      component.handleInput?.("\u001b");
+      return completion;
+    });
+  };
+
+  await showReport(ctx, { title: "Side", lines: ["x"] });
+  await showReport(ctx, { title: "Center", lines: ["x"], placement: "center" });
+
+  const [side, center] = capturedOptions as Array<{
+    overlay?: boolean;
+    overlayOptions?: { anchor?: string };
+  }>;
+  assert.equal(side?.overlay, true);
+  assert.equal(side?.overlayOptions?.anchor, "top-right");
+  assert.equal(center?.overlay, true);
+  assert.equal(center?.overlayOptions?.anchor, "center");
 });
 
 void test("reports fall back to notifications without custom UI", async () => {

@@ -12,9 +12,11 @@ import {
   type Theme,
 } from "@earendil-works/pi-coding-agent";
 import {
+  isKeyRelease,
   Key,
   type KeybindingsManager,
   matchesKey,
+  type OverlayOptions,
   type TUI,
   truncateToWidth,
   wrapTextWithAnsi,
@@ -28,10 +30,38 @@ export interface ReportOptions {
   title: string;
   lines: string[];
   level?: NotifyLevel;
+  /**
+   * Overlay placement. "side" (default) floats top-right for reference
+   * reading next to list UIs; "center" suits reports that are the user's
+   * sole focus, such as operation summaries.
+   */
+  placement?: "side" | "center";
 }
 
-/** Rows reserved for the report chrome: title, rules, and footer hint. */
-const PANEL_CHROME_ROWS = 5;
+// Never gate placements behind `visible`: an invisible overlay cannot take
+// focus, so its close key would never arrive and showReport would hang.
+// No maxHeight either: the panel sizes its own viewport from terminal rows,
+// and an external clamp would slice off the footer with the close hint.
+const PLACEMENT_OPTIONS = {
+  side: {
+    anchor: "top-right",
+    width: "55%",
+    minWidth: 46,
+    margin: 1,
+  },
+  center: {
+    anchor: "center",
+    width: "70%",
+    minWidth: 46,
+    margin: 2,
+  },
+} as const satisfies Record<string, OverlayOptions>;
+
+/**
+ * Rows reserved around the viewport: title + two rules + footer hint (4),
+ * plus overlay margins so the panel never exceeds the terminal.
+ */
+const PANEL_CHROME_ROWS = 8;
 const MIN_VIEWPORT_ROWS = 4;
 
 export class ReportPanel {
@@ -55,6 +85,9 @@ export class ReportPanel {
   }
 
   handleInput(data: string): void {
+    // Kitty-protocol key releases would otherwise double-fire actions.
+    if (isKeyRelease(data)) return;
+
     if (
       this.keybindings.matches(data, "tui.select.cancel") ||
       this.keybindings.matches(data, "tui.select.confirm") ||
@@ -90,7 +123,7 @@ export class ReportPanel {
 
     const viewportRows = Math.max(
       MIN_VIEWPORT_ROWS,
-      Math.min(wrapped.length, this.tui.terminal.rows - PANEL_CHROME_ROWS - 2)
+      Math.min(wrapped.length, this.tui.terminal.rows - PANEL_CHROME_ROWS)
     );
     this.lastViewportRows = viewportRows;
     const maxOffset = Math.max(0, wrapped.length - viewportRows);
@@ -141,12 +174,7 @@ export async function showReport(ctx: AnyContext, options: ReportOptions): Promi
       ),
     {
       overlay: true,
-      overlayOptions: {
-        anchor: "top-right",
-        width: "55%",
-        minWidth: 46,
-        margin: 1,
-      },
+      overlayOptions: { ...PLACEMENT_OPTIONS[options.placement ?? "side"] },
     }
   );
 
@@ -164,12 +192,13 @@ export async function showReport(ctx: AnyContext, options: ReportOptions): Promi
 export async function showListReport(
   ctx: AnyContext,
   title: string,
-  items: string[]
+  items: string[],
+  options?: Pick<ReportOptions, "placement" | "level">
 ): Promise<void> {
   if (items.length === 0) {
     notify(ctx, `No ${title.toLowerCase()} found.`, "info");
     return;
   }
 
-  await showReport(ctx, { title, lines: items });
+  await showReport(ctx, { title, lines: items, ...options });
 }

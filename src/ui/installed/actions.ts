@@ -185,6 +185,12 @@ async function navigateWithPendingGuard(
   ctx: ExtensionCommandContext,
   pi: ExtensionAPI
 ): Promise<"reload" | "resume" | "stay" | "exit"> {
+  // Help is a transient peek, not a navigation: never disturb staged toggles.
+  if (destination === "help") {
+    await showHelp(ctx);
+    return "resume";
+  }
+
   const pending = await resolvePendingChangesBeforeLeave(
     items,
     staged,
@@ -223,9 +229,6 @@ async function navigateWithPendingGuard(
         );
       });
       void updateExtmgrStatus(ctx, pi);
-      return "resume";
-    case "help":
-      await showHelp(ctx);
       return "resume";
   }
 }
