@@ -4,7 +4,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { visibleWidth } from "@earendil-works/pi-tui";
+import { setLocalCompletionIndexForTests } from "../src/commands/completion.js";
 import { checkProfileSource, handleProfileSubcommand } from "../src/commands/profile.js";
+import { getExtensionsAutocompleteItems } from "../src/commands/registry.js";
+import { normalizeProfile } from "../src/profiles/schema.js";
+import { getProfileStorePath, readProfileStore, saveNamedProfile } from "../src/profiles/store.js";
 import { buildHelpLines } from "../src/ui/help.js";
 import { createMockHarness } from "./helpers/mocks.js";
 import { mockPackageCatalog } from "./helpers/package-catalog.js";
@@ -30,9 +34,10 @@ void test("profile export writes exact installed source, scope, and version", as
     ],
   });
   try {
-    const { ctx } = createMockHarness({ cwd });
+    const { ctx, notifications } = createMockHarness({ cwd, hasUI: true });
     await handleProfileSubcommand(["export", "profile.json"], ctx);
-    const profile = JSON.parse(await readFile(join(cwd, "profile.json"), "utf8")) as {
+    const exported = await readFile(join(cwd, "profile.json"), "utf8");
+    const profile = JSON.parse(exported) as {
       packages: Array<{
         source: string;
         scope: string;
@@ -48,6 +53,9 @@ void test("profile export writes exact installed source, scope, and version", as
       (profile.packages[0] as { manifestFingerprint?: string }).manifestFingerprint ?? "",
       /^sha256:[a-f0-9]{64}$/
     );
+    await handleProfileSubcommand(["export", "profile.json"], ctx);
+    assert.equal(await readFile(join(cwd, "profile.json"), "utf8"), exported);
+    assert.ok(notifications.some((notification) => notification.level === "error"));
   } finally {
     restore();
     await rm(cwd, { recursive: true, force: true });
@@ -118,6 +126,138 @@ void test("profile import --name supplies a missing document name", async () => 
     else process.env.PI_EXTMGR_CACHE_DIR = previousCache;
     await rm(root, { recursive: true, force: true });
     await rm(cache, { recursive: true, force: true });
+  }
+});
+
+void test("profile save overwrite can be accepted or cleanly cancelled without a write", async () => {
+  const cache = await mkdtemp(join(tmpdir(), "pi-extmgr-profile-save-overwrite-"));
+  const previousCache = process.env.PI_EXTMGR_CACHE_DIR;
+  process.env.PI_EXTMGR_CACHE_DIR = cache;
+  const restoreCatalog = mockPackageCatalog({ packages: [] });
+  try {
+    const original = normalizeProfile({
+      name: "team",
+      packages: [{ source: "npm:keep", scope: "global" }],
+    });
+    await saveNamedProfile(getProfileStorePath(), original);
+
+    const cancelled = createMockHarness({ hasUI: true, confirmResult: false });
+    await handleProfileSubcommand(["save", "team"], cancelled.ctx, cancelled.pi);
+    let saved = (await readProfileStore(getProfileStorePath())).profiles.team;
+    assert.equal(saved?.packages[0]?.source, "npm:keep");
+    assert.ok(
+      cancelled.notifications.some(
+        (notification) => notification.level === "info" && /cancelled/.test(notification.message)
+      )
+    );
+    assert.equal(
+      cancelled.notifications.some((notification) => notification.level === "error"),
+      false
+    );
+
+    const accepted = createMockHarness({ hasUI: true, confirmResult: true });
+    await handleProfileSubcommand(["save", "team"], accepted.ctx, accepted.pi);
+    saved = (await readProfileStore(getProfileStorePath())).profiles.team;
+    assert.deepEqual(saved?.packages, []);
+    assert.ok(
+      accepted.notifications.some((notification) => /Saved profile team/.test(notification.message))
+    );
+  } finally {
+    restoreCatalog();
+    if (previousCache === undefined) delete process.env.PI_EXTMGR_CACHE_DIR;
+    else process.env.PI_EXTMGR_CACHE_DIR = previousCache;
+    await rm(cache, { recursive: true, force: true });
+  }
+});
+
+void test("noninteractive profile replacement requires --force", async () => {
+  const cache = await mkdtemp(join(tmpdir(), "pi-extmgr-profile-save-force-"));
+  const previousCache = process.env.PI_EXTMGR_CACHE_DIR;
+  process.env.PI_EXTMGR_CACHE_DIR = cache;
+  const restoreCatalog = mockPackageCatalog({ packages: [] });
+  const originalLog = console.log;
+  console.log = () => undefined;
+  try {
+    await saveNamedProfile(
+      getProfileStorePath(),
+      normalizeProfile({
+        name: "team",
+        packages: [{ source: "npm:keep", scope: "global" }],
+      })
+    );
+    const { ctx, pi } = createMockHarness({ hasUI: false });
+    await handleProfileSubcommand(["save", "team"], ctx, pi);
+    assert.equal(
+      (await readProfileStore(getProfileStorePath())).profiles.team?.packages[0]?.source,
+      "npm:keep"
+    );
+
+    await handleProfileSubcommand(["save", "team", "--force"], ctx, pi);
+    assert.deepEqual((await readProfileStore(getProfileStorePath())).profiles.team?.packages, []);
+  } finally {
+    console.log = originalLog;
+    restoreCatalog();
+    if (previousCache === undefined) delete process.env.PI_EXTMGR_CACHE_DIR;
+    else process.env.PI_EXTMGR_CACHE_DIR = previousCache;
+    await rm(cache, { recursive: true, force: true });
+  }
+});
+
+void test("profile rename and duplicate commands report collisions and missing sources safely", async () => {
+  const cache = await mkdtemp(join(tmpdir(), "pi-extmgr-profile-command-lifecycle-"));
+  const previousCache = process.env.PI_EXTMGR_CACHE_DIR;
+  process.env.PI_EXTMGR_CACHE_DIR = cache;
+  try {
+    await saveNamedProfile(
+      getProfileStorePath(),
+      normalizeProfile({ name: "source", packages: [] })
+    );
+    await saveNamedProfile(
+      getProfileStorePath(),
+      normalizeProfile({ name: "occupied", packages: [] })
+    );
+    const { ctx, notifications } = createMockHarness({ hasUI: true });
+
+    await handleProfileSubcommand(["rename", "source", "occupied"], ctx);
+    let profiles = (await readProfileStore(getProfileStorePath())).profiles;
+    assert.equal(Object.hasOwn(profiles, "source"), true);
+    assert.equal(Object.hasOwn(profiles, "occupied"), true);
+    assert.ok(notifications.some((notification) => /already exists/.test(notification.message)));
+
+    await handleProfileSubcommand(["duplicate", "missing", "copy"], ctx);
+    profiles = (await readProfileStore(getProfileStorePath())).profiles;
+    assert.equal(Object.hasOwn(profiles, "copy"), false);
+    assert.ok(notifications.some((notification) => /not found/.test(notification.message)));
+
+    await handleProfileSubcommand(["rename", "source", "renamed"], ctx);
+    await handleProfileSubcommand(["duplicate", "renamed", "copy"], ctx);
+    profiles = (await readProfileStore(getProfileStorePath())).profiles;
+    assert.equal(Object.hasOwn(profiles, "source"), false);
+    assert.equal(profiles.renamed?.name, "renamed");
+    assert.equal(profiles.copy?.name, "copy");
+  } finally {
+    if (previousCache === undefined) delete process.env.PI_EXTMGR_CACHE_DIR;
+    else process.env.PI_EXTMGR_CACHE_DIR = previousCache;
+    await rm(cache, { recursive: true, force: true });
+  }
+});
+
+void test("profile completion includes rename and duplicate with saved source names", () => {
+  setLocalCompletionIndexForTests({ savedProfiles: ["team"] });
+  try {
+    const actions = getExtensionsAutocompleteItems("profile ")?.map((item) => item.value) ?? [];
+    assert.ok(actions.includes("rename"));
+    assert.ok(actions.includes("duplicate"));
+    assert.deepEqual(
+      getExtensionsAutocompleteItems("profile rename te")?.map((item) => item.value),
+      ["team"]
+    );
+    assert.deepEqual(
+      getExtensionsAutocompleteItems("profile duplicate te")?.map((item) => item.value),
+      ["team"]
+    );
+  } finally {
+    setLocalCompletionIndexForTests();
   }
 });
 

@@ -1,20 +1,28 @@
 /** Dedicated profile workspace for previewing and applying package sets. */
-import { writeFile } from "node:fs/promises";
-import { resolve } from "node:path";
 import {
   DynamicBorder,
   type ExtensionAPI,
   type ExtensionCommandContext,
+  getAgentDir,
 } from "@earendil-works/pi-coding-agent";
 import { Container, type SelectItem, SelectList, Spacer, Text } from "@earendil-works/pi-tui";
-import { handleProfileSubcommand } from "../commands/profile.js";
-import { reviewAndApplyProfileWithOutcome } from "../profiles/execute.js";
+import { planProfileApplication } from "../profiles/apply.js";
+import { formatPlan, reviewAndApplyProfileWithOutcome } from "../profiles/execute.js";
+import {
+  deleteProfile,
+  exportProfile,
+  getProfile,
+  listProfiles,
+  prepareProfileImport,
+  saveProfile,
+} from "../profiles/management.js";
 import { getCurrentProfile } from "../profiles/runtime-state.js";
 import { type ExtmgrProfile } from "../profiles/schema.js";
-import { getProfileStorePath, readProfileStore } from "../profiles/store.js";
 import { activeKeyHint } from "../utils/key-hints.js";
 import { requireCustomUI, runCustomUI } from "../utils/mode.js";
 import { notify } from "../utils/notify.js";
+import { confirmAction } from "../utils/ui-helpers.js";
+import { showReport } from "./report.js";
 import {
   buildWorkspaceNavigation,
   matchWorkspaceNavigation,
@@ -161,8 +169,7 @@ async function runProfileAction(
       const path = await ctx.ui.input("Export profile", `${selection}.json`);
       if (!path?.trim()) return { reloaded: false };
       try {
-        const destination = resolve(ctx.cwd, path.trim());
-        await writeFile(destination, `${JSON.stringify(profile, null, 2)}\n`, { flag: "wx" });
+        const destination = await exportProfile(profile, path, { cwd: ctx.cwd });
         notify(ctx, `Exported profile to ${destination}`, "info");
       } catch (error) {
         notify(
@@ -175,7 +182,16 @@ async function runProfileAction(
     }
     case "Delete profile":
       if (await ctx.ui.confirm("Delete profile", `Delete saved profile “${selection}”?`)) {
-        await handleProfileSubcommand(["delete", selection], ctx, pi);
+        try {
+          if (await deleteProfile(selection)) notify(ctx, `Deleted profile ${selection}.`, "info");
+          else notify(ctx, `Saved profile not found: ${selection}`, "warning");
+        } catch (error) {
+          notify(
+            ctx,
+            `Profile delete failed: ${error instanceof Error ? error.message : String(error)}`,
+            "error"
+          );
+        }
       }
       return { reloaded: false };
     default:
@@ -195,9 +211,9 @@ export async function showProfiles(
 
   while (true) {
     setWorkspaceTitle(ctx, "profiles");
-    let store: Awaited<ReturnType<typeof readProfileStore>>;
+    let profiles: ExtmgrProfile[];
     try {
-      store = await readProfileStore(getProfileStorePath());
+      profiles = await listProfiles();
     } catch (error) {
       notify(
         ctx,
@@ -206,10 +222,6 @@ export async function showProfiles(
       );
       return undefined;
     }
-
-    const profiles = Object.values(store.profiles).sort((left, right) =>
-      left.name.localeCompare(right.name)
-    );
     const selection = await selectProfile(ctx, profiles);
     if (!selection || selection === BACK) return undefined;
     if (selection.startsWith(NAV_PREFIX)) {
@@ -218,12 +230,88 @@ export async function showProfiles(
 
     if (selection === SAVE_PROFILE) {
       const name = await ctx.ui.input("Save current profile", "workstation");
-      if (name?.trim()) await handleProfileSubcommand(["save", name.trim()], ctx, pi);
+      if (name?.trim()) {
+        try {
+          const normalizedName = name.trim();
+          const existing = await getProfile(normalizedName);
+          const replace = existing
+            ? await ctx.ui.confirm("Replace saved profile", `Replace ${normalizedName}?`)
+            : false;
+          if (existing && !replace) {
+            notify(ctx, `Saving profile ${normalizedName} cancelled.`, "info");
+          } else {
+            await saveProfile(await getCurrentProfile(ctx, pi), normalizedName, { replace });
+            notify(ctx, `Saved profile ${normalizedName}.`, "info");
+          }
+        } catch (error) {
+          notify(
+            ctx,
+            `Profile save failed: ${error instanceof Error ? error.message : String(error)}`,
+            "error"
+          );
+        }
+      }
       continue;
     }
     if (selection === IMPORT_PROFILE) {
       const source = await ctx.ui.input("Import profile source", "./profile.json");
-      if (source?.trim()) await handleProfileSubcommand(["import", source.trim()], ctx, pi);
+      if (source?.trim()) {
+        try {
+          const prepared = await prepareProfileImport(source, {
+            cwd: ctx.cwd,
+            ...(ctx.signal ? { signal: ctx.signal } : {}),
+          });
+          let imported = prepared.profile;
+          let replace = false;
+          const action = await ctx.ui.select("Import profile", [
+            "Save",
+            "Review changes",
+            "Cancel",
+          ]);
+          if (action === "Cancel" || !action) continue;
+          if (action === "Review changes") {
+            const plan = planProfileApplication(await getCurrentProfile(ctx, pi), imported, {
+              projectCwd: ctx.cwd,
+              globalCwd: getAgentDir(),
+            });
+            await showReport(ctx, {
+              title: `Planned changes: ${imported.name}`,
+              placement: "center",
+              lines: formatPlan(plan).split("\n"),
+            });
+            if (
+              !(await confirmAction(
+                ctx,
+                "Save imported profile",
+                "Save this profile without applying it?"
+              ))
+            ) {
+              continue;
+            }
+          }
+          if (await getProfile(imported.name)) {
+            const collision = await ctx.ui.select("Profile name collision", [
+              "Overwrite",
+              "Rename",
+              "Cancel",
+            ]);
+            if (collision === "Overwrite") replace = true;
+            else if (collision === "Rename") {
+              const renamed = await ctx.ui.input("Imported profile name", imported.name);
+              if (!renamed?.trim()) continue;
+              imported = { ...imported, name: renamed.trim() };
+            } else continue;
+          }
+          await saveProfile(imported, imported.name, { replace });
+          notify(ctx, `Imported profile ${imported.name}. It was saved but not applied.`, "info");
+        } catch (error) {
+          notify(
+            ctx,
+            `Profile import failed: ${error instanceof Error ? error.message : String(error)}`,
+            "error"
+          );
+        }
+      }
       continue;
     }
 

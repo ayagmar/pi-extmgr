@@ -9,6 +9,7 @@ import {
   loadProjectProfilePolicy,
   validateProfilePolicy,
 } from "../src/profiles/compare.js";
+import { duplicateProfile, renameProfile, saveProfile } from "../src/profiles/management.js";
 import { normalizeProfile } from "../src/profiles/schema.js";
 import {
   deleteNamedProfile,
@@ -129,6 +130,112 @@ void test("concurrent named profile saves retain every update", async () => {
     );
     const names = Object.keys((await readProfileStore(path)).profiles).sort();
     assert.deepEqual(names, Array.from({ length: 24 }, (_, index) => `team-${index}`).sort());
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+void test("profile rename and duplicate are queued atomic read-modify-writes", async () => {
+  const root = await mkdtemp(join(tmpdir(), "pi-extmgr-profile-lifecycle-"));
+  const path = join(root, "profiles.json");
+  try {
+    await saveProfile(
+      normalizeProfile({
+        name: "source",
+        packages: [{ source: "npm:demo", scope: "project" }],
+      }),
+      "source",
+      { storePath: path, replace: false }
+    );
+
+    await Promise.all([
+      renameProfile("source", "renamed", { storePath: path, replace: false }),
+      saveProfile(normalizeProfile({ name: "concurrent", packages: [] }), "concurrent", {
+        storePath: path,
+        replace: false,
+      }),
+    ]);
+    await Promise.all([
+      duplicateProfile("renamed", "copy", { storePath: path, replace: false }),
+      saveProfile(normalizeProfile({ name: "also-concurrent", packages: [] }), "also-concurrent", {
+        storePath: path,
+        replace: false,
+      }),
+    ]);
+
+    const profiles = (await readProfileStore(path)).profiles;
+    assert.deepEqual(Object.keys(profiles).sort(), [
+      "also-concurrent",
+      "concurrent",
+      "copy",
+      "renamed",
+    ]);
+    assert.equal(profiles.source, undefined);
+    assert.equal(profiles.renamed?.name, "renamed");
+    assert.equal(profiles.copy?.name, "copy");
+    assert.deepEqual(profiles.copy?.packages, profiles.renamed?.packages);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+void test("profile lifecycle collisions preserve sources and destinations", async () => {
+  const root = await mkdtemp(join(tmpdir(), "pi-extmgr-profile-collision-"));
+  const path = join(root, "profiles.json");
+  try {
+    await saveNamedProfile(
+      path,
+      normalizeProfile({ name: "source", packages: [{ source: "npm:source", scope: "global" }] })
+    );
+    await saveNamedProfile(
+      path,
+      normalizeProfile({
+        name: "destination",
+        packages: [{ source: "npm:destination", scope: "global" }],
+      })
+    );
+
+    await assert.rejects(
+      () => renameProfile("source", "destination", { storePath: path, replace: false }),
+      /already exists/
+    );
+    await assert.rejects(
+      () => duplicateProfile("source", "destination", { storePath: path, replace: false }),
+      /already exists/
+    );
+
+    const profiles = (await readProfileStore(path)).profiles;
+    assert.equal(profiles.source?.packages[0]?.source, "npm:source");
+    assert.equal(profiles.destination?.packages[0]?.source, "npm:destination");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+void test("profile lifecycle supports prototype-shaped names and rejects missing sources", async () => {
+  const root = await mkdtemp(join(tmpdir(), "pi-extmgr-profile-prototype-names-"));
+  const path = join(root, "profiles.json");
+  try {
+    await saveProfile(normalizeProfile({ name: "__proto__", packages: [] }), "__proto__", {
+      storePath: path,
+      replace: false,
+    });
+    await renameProfile("__proto__", "constructor", { storePath: path, replace: false });
+    await duplicateProfile("constructor", "toString", { storePath: path, replace: false });
+    await assert.rejects(
+      () => renameProfile("missing", "other", { storePath: path, replace: false }),
+      /not found/
+    );
+    await assert.rejects(
+      () => duplicateProfile("missing", "other", { storePath: path, replace: false }),
+      /not found/
+    );
+
+    const profiles = (await readProfileStore(path)).profiles;
+    assert.deepEqual(Object.keys(profiles).sort(), ["constructor", "toString"]);
+    assert.equal(profiles.constructor?.name, "constructor");
+    assert.equal(profiles.toString?.name, "toString");
+    assert.equal(Object.hasOwn(profiles, "other"), false);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

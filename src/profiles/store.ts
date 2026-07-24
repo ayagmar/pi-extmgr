@@ -174,6 +174,58 @@ export async function deleteNamedProfile(path: string, name: string): Promise<bo
   });
 }
 
+function normalizeStoredProfileName(name: string, label: string): string {
+  const normalized = name.trim();
+  if (!normalized) throw new Error(`${label} must not be empty.`);
+  return normalized;
+}
+
+export async function renameNamedProfile(
+  path: string,
+  sourceName: string,
+  destinationName: string,
+  options?: { replace?: boolean }
+): Promise<ProfileStoreFile> {
+  return enqueueWrite(path, async () => {
+    const source = normalizeStoredProfileName(sourceName, "Source profile name");
+    const destination = normalizeStoredProfileName(destinationName, "Destination profile name");
+    const store = await readProfileStore(path);
+    const profile = getNamedProfile(store, source);
+    if (!profile) throw new Error(`Saved profile not found: ${source}`);
+    if (source === destination) return store;
+    if (hasOwn(store.profiles, destination) && options?.replace !== true) {
+      throw new Error(`A saved profile named ${destination} already exists.`);
+    }
+    store.profiles[destination] = { ...profile, name: destination };
+    delete store.profiles[source];
+    const written = parseProfileStore(store, path);
+    await writeAtomically(path, written, "profiles");
+    return written;
+  });
+}
+
+export async function duplicateNamedProfile(
+  path: string,
+  sourceName: string,
+  destinationName: string,
+  options?: { replace?: boolean }
+): Promise<ProfileStoreFile> {
+  return enqueueWrite(path, async () => {
+    const source = normalizeStoredProfileName(sourceName, "Source profile name");
+    const destination = normalizeStoredProfileName(destinationName, "Destination profile name");
+    const store = await readProfileStore(path);
+    const profile = getNamedProfile(store, source);
+    if (!profile) throw new Error(`Saved profile not found: ${source}`);
+    if (hasOwn(store.profiles, destination) && options?.replace !== true) {
+      throw new Error(`A saved profile named ${destination} already exists.`);
+    }
+    store.profiles[destination] = { ...profile, name: destination };
+    const written = parseProfileStore(store, path);
+    await writeAtomically(path, written, "profiles");
+    return written;
+  });
+}
+
 export function getNamedProfile(store: ProfileStoreFile, name: string): ExtmgrProfile | undefined {
   return hasOwn(store.profiles, name) ? store.profiles[name] : undefined;
 }

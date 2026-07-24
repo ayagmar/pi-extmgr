@@ -11,7 +11,7 @@ import { showInstalledPackagesLegacy, showInteractive, showListOnly } from "../u
 import { notify } from "../utils/notify.js";
 import { handleAutoUpdateSubcommand } from "./auto-update.js";
 import { clearMetadataCacheCommand } from "./cache.js";
-import { getLocalCompletionIndex } from "./completion.js";
+import { getLocalCompletionIndex, getProfileCompletionOptions } from "./completion.js";
 import { handleHistorySubcommand } from "./history.js";
 import { handleInstallSubcommand, INSTALL_USAGE } from "./install.js";
 import { handleProfileSubcommand } from "./profile.js";
@@ -254,27 +254,8 @@ export function getExtensionsAutocompleteItems(prefix: string): AutocompleteItem
       return completionItems(["--all", "--preview", ...local.installedPackages], activePrefix);
     }
     if (command === "profile") {
-      const actions = [
-        "export",
-        "save",
-        "list",
-        "delete",
-        "dry-run",
-        "apply",
-        "compare",
-        "import",
-        "check",
-        "recover",
-      ];
-      if (completedArgs.length === 0) return completionItems(actions, activePrefix);
-      const action = completedArgs[0];
-      if (["delete", "dry-run", "apply", "compare"].includes(action ?? "")) {
-        return completionItems(local.savedProfiles, activePrefix);
-      }
-      if (action === "import") return completionItems(["--name", "--force"], activePrefix);
-      if (action === "check") return completionItems(["--json", "--strict"], activePrefix);
-      if (action === "recover") return completionItems(["list"], activePrefix);
-      return null;
+      const options = getProfileCompletionOptions(completedArgs);
+      return options ? completionItems(options, activePrefix) : null;
     }
     if (command === "history") {
       const historyActions = [

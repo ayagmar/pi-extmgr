@@ -5,8 +5,6 @@
  * The application engine lives in ../profiles/execute.ts and runtime-state
  * capture/diagnostics in ../profiles/runtime-state.ts.
  */
-import { writeFile } from "node:fs/promises";
-import { resolve } from "node:path";
 import {
   type ExtensionAPI,
   type ExtensionCommandContext,
@@ -17,34 +15,37 @@ import { loadProjectProfilePolicy, validateProfilePolicy } from "../profiles/com
 import { formatPlan, reviewAndApplyProfileWithOutcome } from "../profiles/execute.js";
 import { calculateProfileDiagnostics, getCurrentProfile } from "../profiles/runtime-state.js";
 import {
+  deleteProfile,
+  duplicateProfile,
+  exportProfile,
+  getProfile,
+  listProfiles,
+  prepareProfileImport,
+  renameProfile,
+  saveProfile,
+  type PreparedProfileImport,
+} from "../profiles/management.js";
+import {
   type ExtmgrProfile,
   type ProfilePackage,
   parseExternalProfile,
 } from "../profiles/schema.js";
-import { type LoadedProfileSource, loadProfileSource } from "../profiles/source.js";
-import {
-  deleteNamedProfile,
-  getNamedProfile,
-  getProfileStorePath,
-  readProfileRestorePoints,
-  readProfileStore,
-  saveNamedProfile,
-} from "../profiles/store.js";
+import { loadProfileSource } from "../profiles/source.js";
+import { readProfileRestorePoints } from "../profiles/store.js";
 import { showListReport, showReport } from "../ui/report.js";
 import { isProjectTrusted } from "../utils/mode.js";
 import { notify } from "../utils/notify.js";
 import { confirmAction } from "../utils/ui-helpers.js";
 
 export const PROFILE_USAGE =
-  "Usage: /extensions profile <export|save|list|delete|dry-run|apply|compare|import|check|recover> [name|source] [--json|--strict|--force|--name <name>]";
+  "Usage: /extensions profile <export|save|list|delete|rename|duplicate|dry-run|apply|compare|import|check|recover> [name|source] [destination] [--json|--strict|--force|--name <name>]";
 
 async function resolveNamedOrSourceProfile(
   requested: string | undefined,
   ctx: ExtensionCommandContext
 ): Promise<ExtmgrProfile | undefined> {
-  const store = await readProfileStore(getProfileStorePath());
   if (requested) {
-    const named = getNamedProfile(store, requested);
+    const named = await getProfile(requested);
     if (named) return named;
     const loaded = await loadProfileSource(requested, {
       cwd: ctx.cwd,
@@ -56,10 +57,11 @@ async function resolveNamedOrSourceProfile(
     return parsed.profile;
   }
   if (!ctx.hasUI) return undefined;
-  const names = Object.keys(store.profiles).sort();
+  const profiles = await listProfiles();
+  const names = profiles.map((profile) => profile.name);
   if (names.length === 0) return undefined;
   const choice = await ctx.ui.select("Select saved profile", names);
-  return choice ? getNamedProfile(store, choice) : undefined;
+  return choice ? profiles.find((profile) => profile.name === choice) : undefined;
 }
 
 interface ParsedOptions {
@@ -80,7 +82,7 @@ function parseOptions(tokens: string[]): ParsedOptions {
     const token = tokens[index];
     if (token === "--json") json = true;
     else if (token === "--strict") strict = true;
-    else if (token === "--force" || token === "--replace") force = true;
+    else if (token === "--force") force = true;
     else if (token === "--name") {
       const value = tokens[index + 1];
       if (!value) throw new Error("--name requires a value.");
@@ -92,32 +94,13 @@ function parseOptions(tokens: string[]): ParsedOptions {
   return { positionals, json, strict, force, ...(name ? { name } : {}) };
 }
 
-function withImportMetadata(profile: ExtmgrProfile, loaded: LoadedProfileSource): ExtmgrProfile {
-  return {
-    ...profile,
-    importMetadata: {
-      origin: loaded.origin,
-      finalOrigin: loaded.finalOrigin,
-      ...(loaded.fetchedAt ? { fetchedAt: loaded.fetchedAt } : {}),
-      contentFingerprint: loaded.contentFingerprint,
-      warnings: [...loaded.warnings],
-    },
-  };
-}
-
 async function saveImportedProfile(
-  profile: ExtmgrProfile,
-  loaded: LoadedProfileSource,
+  prepared: PreparedProfileImport,
   options: ParsedOptions,
   ctx: ExtensionCommandContext
 ): Promise<void> {
-  let imported = withImportMetadata(
-    { ...profile, ...(options.name ? { name: options.name.trim() } : {}) },
-    loaded
-  );
-  if (!imported.name.trim()) throw new Error("Imported profile requires a name or --name value.");
-  const storePath = getProfileStorePath();
-  const existing = getNamedProfile(await readProfileStore(storePath), imported.name);
+  let imported = prepared.profile;
+  const existing = await getProfile(imported.name);
   let replace = options.force;
   if (existing && !replace) {
     if (!ctx.hasUI)
@@ -132,7 +115,7 @@ async function saveImportedProfile(
       imported = { ...imported, name: renamed.trim() };
     } else return;
   }
-  await saveNamedProfile(storePath, imported, { replace });
+  await saveProfile(imported, imported.name, { replace });
   notify(ctx, `Imported profile ${imported.name}. It was saved but not applied.`, "info");
 }
 
@@ -147,14 +130,12 @@ async function handleImport(
     throw new Error(
       "Usage: /extensions profile import <local-path|https-url> [--name <name>] [--force]"
     );
-  const loaded = await loadProfileSource(source, {
+  const prepared = await prepareProfileImport(source, {
     cwd: ctx.cwd,
     ...(ctx.signal ? { signal: ctx.signal } : {}),
+    ...(options.name ? { name: options.name } : {}),
   });
-  const parsed = parseExternalProfile(loaded.value, { requireName: !options.name });
-  if (!parsed.ok)
-    throw new Error(parsed.errors.map((issue) => `${issue.path}: ${issue.message}`).join("\n"));
-  const profile = options.name ? { ...parsed.profile, name: options.name.trim() } : parsed.profile;
+  const { loaded, profile } = prepared;
   const current = await getCurrentProfile(ctx, pi);
   const plan = planProfileApplication(current, profile, {
     projectCwd: ctx.cwd,
@@ -170,14 +151,14 @@ async function handleImport(
     `Final origin: ${loaded.finalOrigin}`,
     `Origin status: ${loaded.immutableOrigin === true ? "immutable" : loaded.immutableOrigin === false ? "floating" : "local"}`,
     `Content fingerprint: ${loaded.contentFingerprint}`,
-    `Schema: v${parsed.migration.fromVersion}${parsed.migration.migrated ? " (migrated)" : ""}`,
+    `Schema: v${prepared.migration.fromVersion}${prepared.migration.migrated ? " (migrated)" : ""}`,
     `Packages: ${profile.packages.length} (${profile.packages.filter((pkg) => pkg.scope === "global").length} global, ${profile.packages.filter((pkg) => pkg.scope === "project").length} project)`,
     `Preview: ${plan.add.length} add, ${plan.remove.length} remove, ${plan.update.length} change`,
     `Policy: ${importViolations.length === 0 ? "pass" : `${importViolations.length} violation(s)`}`,
     `Compatibility: ${importDiagnostics.filter((item) => item.compatibility === "unknown").length} unknown`,
     `Integrity: ${importDiagnostics.filter((item) => item.integrity === "unknown").length} unknown`,
     ...importViolations.map((violation) => `Policy violation: ${violation.message}`),
-    ...[...parsed.warnings, ...loaded.warnings].map((warning) => `Warning: ${warning}`),
+    ...[...prepared.warnings, ...loaded.warnings].map((warning) => `Warning: ${warning}`),
   ];
   await showReport(ctx, {
     title: `Import profile: ${profile.name}`,
@@ -204,7 +185,7 @@ async function handleImport(
         return;
     }
   }
-  await saveImportedProfile(profile, loaded, options, ctx);
+  await saveImportedProfile(prepared, options, ctx);
 }
 
 export interface ProfileCheckResult {
@@ -423,6 +404,8 @@ export async function handleProfileSubcommand(
       "save",
       "list",
       "delete",
+      "rename",
+      "duplicate",
       "dry-run",
       "apply",
       "compare",
@@ -439,9 +422,9 @@ export async function handleProfileSubcommand(
     if (action === "check") return await handleCheck(tokens.slice(1), ctx, pi);
     if (action === "recover") return await handleRecover(tokens.slice(1), ctx, pi);
     const requested = tokens[1];
-    const storePath = getProfileStorePath();
+    const force = tokens.includes("--force");
     if (action === "list") {
-      const names = Object.keys((await readProfileStore(storePath)).profiles).sort();
+      const names = (await listProfiles()).map((profile) => profile.name);
       notify(
         ctx,
         names.length ? `Saved profiles:\n${names.join("\n")}` : "No saved profiles.",
@@ -451,22 +434,47 @@ export async function handleProfileSubcommand(
     }
     if (action === "save") {
       if (!requested?.trim()) {
-        notify(ctx, "Usage: /extensions profile save <name>", "info");
+        notify(ctx, "Usage: /extensions profile save <name> [--force]", "info");
         return;
       }
-      const profile = { ...(await getCurrentProfile(ctx, pi)), name: requested.trim() };
-      const existing = getNamedProfile(await readProfileStore(storePath), profile.name);
-      let replace = tokens.includes("--force") || tokens.includes("--replace");
-      if (existing && !replace && ctx.hasUI)
-        replace = await confirmAction(ctx, "Replace saved profile", `Replace ${profile.name}?`);
-      await saveNamedProfile(storePath, profile, { replace });
-      notify(ctx, `Saved profile ${profile.name}.`, "info");
+      const name = requested.trim();
+      const current = await getCurrentProfile(ctx, pi);
+      let replace = force;
+      if ((await getProfile(name)) && !replace) {
+        if (!ctx.hasUI) {
+          throw new Error(
+            `A saved profile named ${name} already exists; pass --force to replace it.`
+          );
+        }
+        replace = await confirmAction(ctx, "Replace saved profile", `Replace ${name}?`);
+        if (!replace) {
+          notify(ctx, `Saving profile ${name} cancelled.`, "info");
+          return;
+        }
+      }
+      await saveProfile(current, name, { replace });
+      notify(ctx, `Saved profile ${name}.`, "info");
       return;
     }
     if (action === "delete") {
-      if (!requested || !(await deleteNamedProfile(storePath, requested)))
+      if (!requested || !(await deleteProfile(requested)))
         notify(ctx, `Saved profile not found: ${requested ?? "(missing name)"}`, "warning");
       else notify(ctx, `Deleted profile ${requested}.`, "info");
+      return;
+    }
+    if (action === "rename" || action === "duplicate") {
+      const destination = tokens[2];
+      if (!requested?.trim() || !destination?.trim()) {
+        notify(ctx, `Usage: /extensions profile ${action} <from> <to> [--force]`, "info");
+        return;
+      }
+      if (action === "rename") {
+        await renameProfile(requested, destination, { replace: force });
+        notify(ctx, `Renamed profile ${requested} to ${destination}.`, "info");
+      } else {
+        await duplicateProfile(requested, destination, { replace: force });
+        notify(ctx, `Duplicated profile ${requested} as ${destination}.`, "info");
+      }
       return;
     }
 
@@ -476,8 +484,7 @@ export async function handleProfileSubcommand(
         notify(ctx, "Usage: /extensions profile export <path>", "info");
         return;
       }
-      const destination = resolve(ctx.cwd, requested);
-      await writeFile(destination, `${JSON.stringify(current, null, 2)}\n`, { flag: "wx" });
+      const destination = await exportProfile(current, requested, { cwd: ctx.cwd });
       notify(ctx, `Exported profile to ${destination}`, "info");
       return;
     }

@@ -149,10 +149,13 @@ Or press `Ctrl+Alt+E` from anywhere in the pi TUI.
 /extensions update [source]      # Update one package (or all when omitted)
 /extensions auto-update [every]  # No arg opens wizard in UI; accepts 1d, 1w, 1mo, never, etc.
 /extensions doctor                # Inspect ownership and package compatibility
-/extensions profile list           # List named profiles
-/extensions profile save <name>   # Save the current package profile
+/extensions profile list              # List named profiles
+/extensions profile save <name> [--force] # Save the current package profile
+/extensions profile export <path>     # Export; refuses to overwrite an existing file
 /extensions profile apply <name|path> # Safely apply a profile
-/extensions profile delete <name> # Delete a named profile
+/extensions profile rename <from> <to> # Rename a named profile
+/extensions profile duplicate <from> <to> # Duplicate a named profile
+/extensions profile delete <name>     # Delete a named profile
 /extensions trash <list|restore|purge> # Manage local extension trash
 /extensions history [options]    # View change history (supports filters)
 /extensions clear-cache          # Clear persistent + runtime extmgr caches
