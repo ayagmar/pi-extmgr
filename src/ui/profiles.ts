@@ -7,11 +7,9 @@ import {
   type ExtensionCommandContext,
 } from "@earendil-works/pi-coding-agent";
 import { Container, type SelectItem, SelectList, Spacer, Text } from "@earendil-works/pi-tui";
-import {
-  getCurrentProfile,
-  handleProfileSubcommand,
-  reviewAndApplyProfileWithOutcome,
-} from "../commands/profile.js";
+import { handleProfileSubcommand } from "../commands/profile.js";
+import { reviewAndApplyProfileWithOutcome } from "../profiles/execute.js";
+import { getCurrentProfile } from "../profiles/runtime-state.js";
 import { type ExtmgrProfile } from "../profiles/schema.js";
 import { getProfileStorePath, readProfileStore } from "../profiles/store.js";
 import { activeKeyHint } from "../utils/key-hints.js";

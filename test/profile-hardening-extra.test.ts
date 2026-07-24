@@ -3,10 +3,11 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { applyProfileWithOutcome, calculateProfileDiagnostics } from "../src/commands/profile.js";
 import { validateCompatibility } from "../src/doctor/compatibility.js";
 import { type PackageCatalog, setPackageCatalogFactory } from "../src/packages/catalog.js";
 import { planProfileApplication } from "../src/profiles/apply.js";
+import { applyProfileWithOutcome } from "../src/profiles/execute.js";
+import { calculateProfileDiagnostics } from "../src/profiles/runtime-state.js";
 import { normalizeProfile, parseExternalProfile } from "../src/profiles/schema.js";
 import { loadProfileSource } from "../src/profiles/source.js";
 import {
