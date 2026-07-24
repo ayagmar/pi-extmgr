@@ -10,10 +10,7 @@ import {
   type ExtensionCommandContext,
   getAgentDir,
 } from "@earendil-works/pi-coding-agent";
-import { planProfileApplication } from "../profiles/apply.js";
-import { loadProjectProfilePolicy, validateProfilePolicy } from "../profiles/compare.js";
 import { formatPlan, reviewAndApplyProfileWithOutcome } from "../profiles/execute.js";
-import { calculateProfileDiagnostics, getCurrentProfile } from "../profiles/runtime-state.js";
 import {
   buildProfileImportReview,
   deleteProfile,
@@ -21,11 +18,13 @@ import {
   exportProfile,
   getProfile,
   listProfiles,
+  type PreparedProfileImport,
   prepareProfileImport,
   renameProfile,
   saveProfile,
-  type PreparedProfileImport,
 } from "../profiles/management.js";
+import { evaluateProfileReview, formatProfileReviewDetails } from "../profiles/review.js";
+import { getCurrentProfile } from "../profiles/runtime-state.js";
 import {
   type ExtmgrProfile,
   type ProfilePackage,
@@ -34,20 +33,24 @@ import {
 import { loadProfileSource } from "../profiles/source.js";
 import { readProfileRestorePoints } from "../profiles/store.js";
 import { showListReport, showReport } from "../ui/report.js";
-import { isProjectTrusted } from "../utils/mode.js";
 import { notify } from "../utils/notify.js";
 import { confirmAction } from "../utils/ui-helpers.js";
 
 export const PROFILE_USAGE =
   "Usage: /extensions profile <export|save|list|delete|rename|duplicate|dry-run|apply|compare|import|check|recover> [name|source] [destination] [--json|--strict|--force|--name <name>]";
 
+interface ResolvedProfile {
+  profile: ExtmgrProfile;
+  originWarnings: string[];
+}
+
 async function resolveNamedOrSourceProfile(
   requested: string | undefined,
   ctx: ExtensionCommandContext
-): Promise<ExtmgrProfile | undefined> {
+): Promise<ResolvedProfile | undefined> {
   if (requested) {
     const named = await getProfile(requested);
-    if (named) return named;
+    if (named) return { profile: named, originWarnings: [] };
     const loaded = await loadProfileSource(requested, {
       cwd: ctx.cwd,
       ...(ctx.signal ? { signal: ctx.signal } : {}),
@@ -55,14 +58,15 @@ async function resolveNamedOrSourceProfile(
     const parsed = parseExternalProfile(loaded.value);
     if (!parsed.ok)
       throw new Error(parsed.errors.map((issue) => `${issue.path}: ${issue.message}`).join("\n"));
-    return parsed.profile;
+    return { profile: parsed.profile, originWarnings: loaded.warnings };
   }
   if (!ctx.hasUI) return undefined;
   const profiles = await listProfiles();
   const names = profiles.map((profile) => profile.name);
   if (names.length === 0) return undefined;
   const choice = await ctx.ui.select("Select saved profile", names);
-  return choice ? profiles.find((profile) => profile.name === choice) : undefined;
+  const profile = choice ? profiles.find((candidate) => candidate.name === choice) : undefined;
+  return profile ? { profile, originWarnings: [] } : undefined;
 }
 
 interface ParsedOptions {
@@ -138,16 +142,17 @@ async function handleImport(
   });
   const { profile } = prepared;
   const current = await getCurrentProfile(ctx, pi);
-  const importDiagnostics = await calculateProfileDiagnostics(profile, ctx, pi);
-  const importPolicy = await loadProjectProfilePolicy(ctx.cwd, undefined, isProjectTrusted(ctx));
-  const importViolations = importPolicy
-    ? validateProfilePolicy(profile, importPolicy, importDiagnostics)
-    : [];
+  const importReview = await evaluateProfileReview(current, profile, ctx, pi, {
+    originWarnings: [...prepared.warnings, ...prepared.loaded.warnings],
+  });
+  const importDiagnostics = importReview.diagnostics;
+  const importViolations = importReview.policyViolations;
   const review = buildProfileImportReview(prepared, current, {
     projectCwd: ctx.cwd,
     globalCwd: getAgentDir(),
     diagnostics: importDiagnostics,
     policyViolations: importViolations,
+    review: importReview,
   });
   await showReport(ctx, {
     title: `Import profile: ${profile.name}`,
@@ -162,7 +167,10 @@ async function handleImport(
       await showReport(ctx, {
         title: `Planned changes: ${profile.name}`,
         placement: "center",
-        lines: formatPlan(review.plan).split("\n"),
+        lines: [
+          ...formatPlan(review.plan).split("\n"),
+          ...formatProfileReviewDetails(importReview),
+        ],
       });
       if (
         !(await confirmAction(
@@ -239,20 +247,12 @@ export async function checkProfileSource(
     if (!parsed.ok)
       throw new Error(parsed.errors.map((issue) => `${issue.path}: ${issue.message}`).join("; "));
     const current = await getCurrentProfile(ctx, options?.pi);
-    const plan = planProfileApplication(current, parsed.profile, {
-      projectCwd: ctx.cwd,
-      globalCwd: getAgentDir(),
+    const review = await evaluateProfileReview(current, parsed.profile, ctx, options?.pi, {
+      originWarnings: loaded.warnings,
     });
-    const diagnostics = await calculateProfileDiagnostics(parsed.profile, ctx, options?.pi);
-    const policy = await loadProjectProfilePolicy(ctx.cwd, undefined, isProjectTrusted(ctx));
-    const violations = policy ? validateProfilePolicy(parsed.profile, policy, diagnostics) : [];
-    const originWarnings = [
-      ...new Set([...loaded.warnings, ...(parsed.profile.importMetadata?.warnings ?? [])]),
-    ];
-    const drift = plan.add.length + plan.remove.length + plan.update.length > 0;
-    const hasDiagnosticFailure = diagnostics.some(
-      (item) => item.compatibility === "failed" || item.integrity === "failed"
-    );
+    const { plan, diagnostics, policyViolations: violations, originWarnings } = review;
+    const drift = review.hasChanges;
+    const hasDiagnosticFailure = review.confirmedFailures.length > 0;
     const status: ProfileCheckResult["status"] =
       violations.length > 0
         ? "policy-violation"
@@ -272,7 +272,7 @@ export async function checkProfileSource(
       drift,
       strict,
       status,
-      counts: { add: plan.add.length, remove: plan.remove.length, change: plan.update.length },
+      counts: review.counts,
       policyViolations: violations.map((violation) => violation.message),
       compatibilityUnknown: diagnostics
         .filter((item) => item.compatibility === "unknown")
@@ -477,24 +477,23 @@ export async function handleProfileSubcommand(
       notify(ctx, `Exported profile to ${destination}`, "info");
       return;
     }
-    const desired = await resolveNamedOrSourceProfile(requested, ctx);
-    if (!desired) {
+    const resolved = await resolveNamedOrSourceProfile(requested, ctx);
+    if (!resolved) {
       notify(ctx, "No saved profile selected.", "info");
       return;
     }
-    const plan = planProfileApplication(current, desired, {
-      projectCwd: ctx.cwd,
-      globalCwd: getAgentDir(),
-    });
+    const { profile: desired, originWarnings } = resolved;
     if (action === "apply") {
       if (!pi) throw new Error("Profile application requires the extension API.");
-      await reviewAndApplyProfileWithOutcome(current, desired, ctx, pi);
+      await reviewAndApplyProfileWithOutcome(current, desired, ctx, pi, { originWarnings });
       return;
     }
+    const review = await evaluateProfileReview(current, desired, ctx, pi, { originWarnings });
     await showReport(ctx, {
       title: `Planned changes: ${desired.name}`,
       placement: "center",
-      lines: formatPlan(plan).split("\n"),
+      level: review.blockingReasons.length > 0 ? "error" : "info",
+      lines: [...formatPlan(review.plan).split("\n"), ...formatProfileReviewDetails(review)],
     });
   } catch (error) {
     notify(

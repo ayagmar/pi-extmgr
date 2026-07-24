@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -7,6 +7,7 @@ import { validateCompatibility } from "../src/doctor/compatibility.js";
 import { type PackageCatalog, setPackageCatalogFactory } from "../src/packages/catalog.js";
 import { planProfileApplication } from "../src/profiles/apply.js";
 import { applyProfileWithOutcome } from "../src/profiles/execute.js";
+import { evaluateProfileReview } from "../src/profiles/review.js";
 import { calculateProfileDiagnostics } from "../src/profiles/runtime-state.js";
 import { normalizeProfile, parseExternalProfile } from "../src/profiles/schema.js";
 import { loadProfileSource } from "../src/profiles/source.js";
@@ -125,6 +126,210 @@ void test("profile store treats prototype-shaped names as ordinary own keys", as
   } finally {
     await rm(root, { recursive: true, force: true });
   }
+});
+
+void test("canonical profile review classifies no-op, drift, policy, failure, and unknown diagnostics", async () => {
+  await withProfileEnvironment(async (root) => {
+    const restoreCatalog = mockPackageCatalog({ packages: [] });
+    try {
+      const { ctx } = createMockHarness({ cwd: root, hasUI: false });
+      const current = normalizeProfile({ name: "current", packages: [] });
+      const noOp = await evaluateProfileReview(current, current, ctx);
+      assert.equal(noOp.hasChanges, false);
+      assert.equal(noOp.canApply, false);
+
+      const desired = normalizeProfile({
+        name: "desired",
+        packages: [{ source: "npm:demo@1.0.0", scope: "global" }],
+      });
+      const drift = await evaluateProfileReview(current, desired, ctx);
+      assert.equal(drift.hasChanges, true);
+      assert.equal(drift.diagnostics[0]?.compatibility, "unknown");
+      assert.equal(drift.blockingReasons.length, 0);
+      assert.equal(drift.canApply, true);
+
+      await mkdir(join(root, ".pi"), { recursive: true });
+      await writeFile(
+        join(root, ".pi", "extmgr-policy.json"),
+        JSON.stringify({ schemaVersion: 1, allowedScopes: ["project"] }),
+        "utf8"
+      );
+      const policyCtx = createMockHarness({ cwd: root, hasUI: false, projectTrusted: true }).ctx;
+      const policy = await evaluateProfileReview(current, desired, policyCtx);
+      assert.equal(policy.policyViolations.length, 1);
+      assert.equal(policy.canApply, false);
+    } finally {
+      restoreCatalog();
+    }
+  });
+});
+
+void test("RPC and non-interactive apply summaries include unknown diagnostics and origin warnings", async () => {
+  await withProfileEnvironment(async (root) => {
+    const restoreCatalog = mockPackageCatalog({ packages: [] });
+    try {
+      const current = normalizeProfile({ name: "current", packages: [] });
+      const desired = normalizeProfile({
+        name: "desired",
+        packages: [{ source: "npm:demo@1.0.0", scope: "global" }],
+      });
+      let rpcMessage = "";
+      const rpc = createMockHarness({
+        cwd: root,
+        hasUI: true,
+        mode: "rpc",
+        confirmImpl: (_title, message) => {
+          rpcMessage = message ?? "";
+          return false;
+        },
+      });
+
+      const rpcOutcome = await applyProfileWithOutcome(current, desired, rpc.ctx, rpc.pi, {
+        originWarnings: ["source provenance was not verified"],
+      });
+      assert.equal(rpcOutcome.applied, false);
+      assert.match(rpcMessage, /Compatibility unknown: npm:demo@1\.0\.0 \(global\)/);
+      assert.match(rpcMessage, /Origin warning: source provenance was not verified/);
+
+      const noOpProfile = normalizeProfile({
+        name: "same",
+        packages: [{ source: "npm:demo@1.0.0", scope: "global" }],
+      });
+      const nonInteractive = createMockHarness({ cwd: root, hasUI: false, mode: "print" });
+      const output: string[] = [];
+      const originalLog = console.log;
+      console.log = (...values: unknown[]) => output.push(values.join(" "));
+      try {
+        const noOpOutcome = await applyProfileWithOutcome(
+          noOpProfile,
+          noOpProfile,
+          nonInteractive.ctx,
+          nonInteractive.pi,
+          { originWarnings: ["local import warning"] }
+        );
+        assert.equal(noOpOutcome.applied, false);
+      } finally {
+        console.log = originalLog;
+      }
+      const summary = output.join("\n");
+      assert.match(summary, /Compatibility unknown: npm:demo@1\.0\.0 \(global\)/);
+      assert.match(summary, /Origin warning: local import warning/);
+    } finally {
+      restoreCatalog();
+    }
+  });
+});
+
+void test("post-install confirmed incompatibility rolls back before obsolete removal", async () => {
+  await withProfileEnvironment(async (root) => {
+    const oldRoot = join(root, "old");
+    const obsoleteRoot = join(root, "obsolete");
+    const incompatibleRoot = join(root, "incompatible");
+    await Promise.all([
+      mkdir(oldRoot, { recursive: true }),
+      mkdir(obsoleteRoot, { recursive: true }),
+      mkdir(incompatibleRoot, { recursive: true }),
+    ]);
+    await writeFile(
+      join(oldRoot, "package.json"),
+      JSON.stringify({ name: "old", version: "1.0.0" })
+    );
+    await writeFile(
+      join(obsoleteRoot, "package.json"),
+      JSON.stringify({ name: "obsolete", version: "1.0.0" })
+    );
+    await writeFile(
+      join(incompatibleRoot, "package.json"),
+      JSON.stringify({ name: "new", version: "1.0.0", engines: { node: ">999" } })
+    );
+    let packages = [
+      {
+        source: "npm:old@1.0.0",
+        name: "old",
+        version: "1.0.0",
+        scope: "global" as const,
+        resolvedPath: oldRoot,
+      },
+      {
+        source: "npm:obsolete@1.0.0",
+        name: "obsolete",
+        version: "1.0.0",
+        scope: "global" as const,
+        resolvedPath: obsoleteRoot,
+      },
+    ];
+    const removed: string[] = [];
+    setPackageCatalogFactory(
+      () =>
+        ({
+          listInstalledPackages: () => Promise.resolve(packages.map((pkg) => ({ ...pkg }))),
+          checkForAvailableUpdates: () => Promise.resolve([]),
+          install: async (source, _scope) => {
+            const target =
+              source === "npm:new@1.0.0"
+                ? {
+                    source,
+                    name: "new",
+                    version: "1.0.0",
+                    scope: "global" as const,
+                    resolvedPath: incompatibleRoot,
+                  }
+                : source === "npm:old@1.0.0"
+                  ? {
+                      source,
+                      name: "old",
+                      version: "1.0.0",
+                      scope: "global" as const,
+                      resolvedPath: oldRoot,
+                    }
+                  : {
+                      source,
+                      name: "obsolete",
+                      version: "1.0.0",
+                      scope: "global" as const,
+                      resolvedPath: obsoleteRoot,
+                    };
+            packages = [...packages.filter((pkg) => pkg.name !== target.name), target];
+          },
+          remove: async (source) => {
+            removed.push(source);
+            packages = packages.filter((pkg) => pkg.source !== source);
+          },
+          update: async () => undefined,
+        }) satisfies PackageCatalog
+    );
+    try {
+      const { ctx, pi } = createMockHarness({ cwd: root, hasUI: false });
+      const outcome = await applyProfileWithOutcome(
+        normalizeProfile({
+          name: "current",
+          packages: [
+            { source: "npm:old@1.0.0", scope: "global" },
+            { source: "npm:obsolete@1.0.0", scope: "global" },
+          ],
+        }),
+        normalizeProfile({
+          name: "target",
+          packages: [{ source: "npm:new@1.0.0", scope: "global" }],
+        }),
+        ctx,
+        pi
+      );
+      assert.equal(outcome.applied, false);
+      assert.equal(outcome.restored, true);
+      assert.deepEqual(
+        removed.filter((source) => source === "npm:obsolete@1.0.0"),
+        []
+      );
+      assert.ok(
+        outcome.operations?.some(
+          (operation) => operation.action === "verify" && operation.status === "failed"
+        )
+      );
+    } finally {
+      setPackageCatalogFactory();
+    }
+  });
 });
 
 void test("profile planning executes exact npm and git targets and models scope moves as updates", () => {

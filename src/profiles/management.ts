@@ -2,6 +2,7 @@ import { writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { type ProfilePlan, planProfileApplication } from "./apply.js";
 import { type ProfilePackageDiagnostic, type ProfilePolicyViolation } from "./compare.js";
+import { formatProfileReviewDetails, type ProfileReview } from "./review.js";
 import { type ExtmgrProfile, parseExternalProfile } from "./schema.js";
 import { type LoadedProfileSource, loadProfileSource } from "./source.js";
 import {
@@ -40,6 +41,7 @@ export interface ProfileImportReviewOptions {
   globalCwd: string;
   diagnostics: ProfilePackageDiagnostic[];
   policyViolations: ProfilePolicyViolation[];
+  review?: ProfileReview;
 }
 
 function storePath(options?: ProfileStoreOptions): string {
@@ -132,15 +134,20 @@ export function buildProfileImportReview(
   options: ProfileImportReviewOptions
 ): ProfileImportReview {
   const { loaded, profile } = prepared;
-  const plan = planProfileApplication(current, profile, {
-    projectCwd: options.projectCwd,
-    globalCwd: options.globalCwd,
-  });
+  const plan =
+    options.review?.plan ??
+    planProfileApplication(current, profile, {
+      projectCwd: options.projectCwd,
+      globalCwd: options.globalCwd,
+    });
+  const diagnostics = options.review?.diagnostics ?? options.diagnostics;
+  const policyViolations = options.review?.policyViolations ?? options.policyViolations;
   const globalPackages = profile.packages.filter((pkg) => pkg.scope === "global").length;
   const projectPackages = profile.packages.filter((pkg) => pkg.scope === "project").length;
   return {
     plan,
-    level: loaded.warnings.length > 0 ? "warning" : "info",
+    level:
+      (options.review?.originWarnings.length ?? loaded.warnings.length) > 0 ? "warning" : "info",
     summaryLines: [
       `Origin: ${loaded.origin}`,
       `Final origin: ${loaded.finalOrigin}`,
@@ -149,11 +156,23 @@ export function buildProfileImportReview(
       `Schema: v${prepared.migration.fromVersion}${prepared.migration.migrated ? " (migrated)" : ""}`,
       `Packages: ${profile.packages.length} (${globalPackages} global, ${projectPackages} project)`,
       `Preview: ${plan.add.length} add, ${plan.remove.length} remove, ${plan.update.length} change`,
-      `Policy: ${options.policyViolations.length === 0 ? "pass" : `${options.policyViolations.length} violation(s)`}`,
-      `Compatibility: ${options.diagnostics.filter((item) => item.compatibility === "unknown").length} unknown`,
-      `Integrity: ${options.diagnostics.filter((item) => item.integrity === "unknown").length} unknown`,
-      ...options.policyViolations.map((violation) => `Policy violation: ${violation.message}`),
-      ...[...prepared.warnings, ...loaded.warnings].map((warning) => `Warning: ${warning}`),
+      `Policy: ${policyViolations.length === 0 ? "pass" : `${policyViolations.length} violation(s)`}`,
+      ...(options.review
+        ? [
+            `Compatibility: ${options.review.unknownCounts.compatibility} unknown`,
+            `Integrity: ${options.review.unknownCounts.integrity} unknown`,
+            ...formatProfileReviewDetails(options.review),
+          ]
+        : [
+            `Compatibility: ${diagnostics.filter((item) => item.compatibility === "unknown").length} unknown`,
+            `Integrity: ${diagnostics.filter((item) => item.integrity === "unknown").length} unknown`,
+          ]),
+      ...policyViolations.map((violation) => `Policy violation: ${violation.message}`),
+      ...(options.review
+        ? []
+        : [...new Set([...prepared.warnings, ...loaded.warnings])].map(
+            (warning) => `Warning: ${warning}`
+          )),
     ],
   };
 }

@@ -12,7 +12,12 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { getPackageCatalog } from "../packages/catalog.js";
 import { runTaskWithLoader } from "../ui/async-task.js";
-import { showProfileDiff } from "../ui/profile-review.js";
+import {
+  describeProfilePackage,
+  describeProfilePackageChanges,
+  describeProfilePackageSettings,
+  showProfileDiff,
+} from "../ui/profile-review.js";
 import { hasCustomUI, isProjectTrusted } from "../utils/mode.js";
 import { notify } from "../utils/notify.js";
 import {
@@ -24,8 +29,8 @@ import { getProjectConfigDir } from "../utils/pi-paths.js";
 import { markReloadRequired } from "../utils/reload-state.js";
 import { throwIfSettingsErrors } from "../utils/settings-errors.js";
 import { confirmAction, confirmReload } from "../utils/ui-helpers.js";
-import { type ProfilePlan, planProfileApplication } from "./apply.js";
-import { loadProjectProfilePolicy, validateProfilePolicy } from "./compare.js";
+import { type ProfilePlan } from "./apply.js";
+import { evaluateProfileReview, formatProfileReviewDetails, type ProfileReview } from "./review.js";
 import {
   calculateProfileDiagnostics,
   profileMutationSource,
@@ -60,15 +65,25 @@ export interface ProfileApplicationOutcome {
 export function formatPlan(plan: ProfilePlan): string {
   return [
     `Add: ${plan.add.length}`,
-    ...plan.add.map((pkg) => `  + ${getEffectivePackageSource(pkg)} (${pkg.scope})`),
+    ...plan.add.flatMap((pkg) => [
+      `  + ${describeProfilePackage(pkg)}`,
+      ...describeProfilePackageSettings(pkg).map((detail) => `    ${detail}`),
+    ]),
     `Remove: ${plan.remove.length}`,
-    ...plan.remove.map((pkg) => `  - ${getEffectivePackageSource(pkg)} (${pkg.scope})`),
+    ...plan.remove.flatMap((pkg) => [
+      `  - ${describeProfilePackage(pkg)}`,
+      ...describeProfilePackageSettings(pkg, "-").map((detail) => `    ${detail}`),
+    ]),
     `Change: ${plan.update.length}`,
-    ...plan.update.map(
-      ({ from, to }) =>
-        `  ~ ${getEffectivePackageSource(from)} (${from.scope}) -> ${getEffectivePackageSource(to)} (${to.scope})`
-    ),
+    ...plan.update.flatMap(({ from, to }) => [
+      `  ~ ${describeProfilePackage(from)} -> ${describeProfilePackage(to)}`,
+      ...describeProfilePackageChanges(from, to).map((change) => `    ${change}`),
+    ]),
   ].join("\n");
+}
+
+function formatProfileApplySummary(review: ProfileReview): string {
+  return [formatPlan(review.plan), ...formatProfileReviewDetails(review)].join("\n");
 }
 
 function configuredEntry(
@@ -251,7 +266,7 @@ export async function applyProfileWithOutcome(
   desired: ExtmgrProfile,
   ctx: ExtensionCommandContext,
   pi: ExtensionAPI,
-  options?: { reviewed?: boolean }
+  options?: { preflight?: ProfileReview; originWarnings?: string[] }
 ): Promise<ProfileApplicationOutcome> {
   const validationProblems = [
     ...validateOwnedProfile(current).map((problem) => `current: ${problem}`),
@@ -265,36 +280,35 @@ export async function applyProfileWithOutcome(
     );
     return { applied: false, reloaded: false, operations: [] };
   }
-  const diagnostics = await calculateProfileDiagnostics(desired, ctx, pi);
-  const policy = await loadProjectProfilePolicy(ctx.cwd, undefined, isProjectTrusted(ctx));
-  const violations = policy ? validateProfilePolicy(desired, policy, diagnostics) : [];
-  if (violations.length > 0) {
-    notify(
-      ctx,
-      `Profile policy rejected application:\n${violations.map((violation) => `- ${violation.message}`).join("\n")}`,
-      "error"
-    );
+  const review =
+    options?.preflight ??
+    (await evaluateProfileReview(current, desired, ctx, pi, {
+      ...(options?.originWarnings ? { originWarnings: options.originWarnings } : {}),
+    }));
+  const reviewSummary = formatProfileApplySummary(review);
+  if (review.blockingReasons.length > 0) {
+    notify(ctx, `Profile preflight rejected application:\n${reviewSummary}`, "error");
     return { applied: false, reloaded: false, operations: [] };
   }
 
-  const plan = planProfileApplication(current, desired, {
-    projectCwd: ctx.cwd,
-    globalCwd: getAgentDir(),
-  });
-  if (plan.add.length + plan.remove.length + plan.update.length === 0) {
-    notify(ctx, "Profile already matches the installed package state.", "info");
+  const plan = review.plan;
+  if (!review.hasChanges) {
+    notify(ctx, `Profile already matches the installed package state.\n\n${reviewSummary}`, "info");
     return { applied: false, reloaded: false, operations: [] };
   }
-  if (
-    options?.reviewed !== true &&
-    !(await confirmAction(
-      ctx,
-      "Apply profile",
-      `${desired.name}\n\n${formatPlan(plan)}\n\nApply these changes?`
-    ))
-  ) {
-    notify(ctx, "Profile application cancelled.", "info");
-    return { applied: false, reloaded: false, operations: [] };
+  if (options?.preflight === undefined) {
+    if (!ctx.hasUI) {
+      notify(ctx, `Profile apply summary:\n${reviewSummary}`, "info");
+    } else if (
+      !(await confirmAction(
+        ctx,
+        "Apply profile",
+        `${desired.name}\n\n${reviewSummary}\n\nApply these changes?`
+      ))
+    ) {
+      notify(ctx, "Profile application cancelled.", "info");
+      return { applied: false, reloaded: false, operations: [] };
+    }
   }
 
   const restorePoint = await saveProfileRestorePoint(current, `Before applying ${desired.name}`);
@@ -322,15 +336,14 @@ export async function applyProfileWithOutcome(
           pendingOperation = undefined;
         }
         pendingOperation = { action: "verify" };
+        const installedTargets = [
+          ...plan.add,
+          ...plan.update
+            .filter((change) => requiresInstall(change, ctx))
+            .map((change) => change.to),
+        ];
         const missingBeforePersist = await verifyInstalledTargets(
-          {
-            ...desired,
-            packages: desired.packages.filter(
-              (pkg) =>
-                plan.add.includes(pkg) ||
-                plan.update.some((change) => change.to === pkg && requiresInstall(change, ctx))
-            ),
-          },
+          { ...desired, packages: installedTargets },
           ctx,
           pi
         );
@@ -338,6 +351,19 @@ export async function applyProfileWithOutcome(
           throw new Error(
             `Installed result verification failed: ${missingBeforePersist.join(", ")}`
           );
+        const postInstallDiagnostics = await calculateProfileDiagnostics(
+          { ...desired, packages: installedTargets },
+          ctx,
+          pi
+        );
+        const postInstallFailures = postInstallDiagnostics.filter(
+          (diagnostic) => diagnostic.compatibility === "failed" || diagnostic.integrity === "failed"
+        );
+        if (postInstallFailures.length > 0)
+          throw new Error(
+            `Post-install diagnostic verification failed: ${postInstallFailures.map((diagnostic) => `${diagnostic.source} (${diagnostic.scope})`).join(", ")}`
+          );
+        operations.push({ ...pendingOperation, status: "completed" });
         pendingOperation = undefined;
 
         setMessage("Preserving complete package settings and filters...");
@@ -407,24 +433,19 @@ export async function reviewAndApplyProfileWithOutcome(
   current: ExtmgrProfile,
   desired: ExtmgrProfile,
   ctx: ExtensionCommandContext,
-  pi: ExtensionAPI
+  pi: ExtensionAPI,
+  options?: { originWarnings?: string[] }
 ): Promise<ProfileApplicationOutcome> {
-  if (!hasCustomUI(ctx)) return applyProfileWithOutcome(current, desired, ctx, pi);
+  if (!hasCustomUI(ctx)) return applyProfileWithOutcome(current, desired, ctx, pi, options);
 
-  const plan = planProfileApplication(current, desired, {
-    projectCwd: ctx.cwd,
-    globalCwd: getAgentDir(),
-  });
-  if (plan.add.length + plan.remove.length + plan.update.length === 0) {
-    return applyProfileWithOutcome(current, desired, ctx, pi);
+  const preflight = await evaluateProfileReview(current, desired, ctx, pi, options);
+  if (!preflight.hasChanges) {
+    return applyProfileWithOutcome(current, desired, ctx, pi, { preflight });
   }
 
-  const policy = await loadProjectProfilePolicy(ctx.cwd, undefined, isProjectTrusted(ctx));
-  const diagnostics = policy ? await calculateProfileDiagnostics(desired, ctx, pi) : [];
-  const violations = policy ? validateProfilePolicy(desired, policy, diagnostics) : [];
-  const review = await showProfileDiff(current, desired, violations, ctx);
-  if (review !== "apply") {
+  const decision = await showProfileDiff(current, desired, preflight, ctx);
+  if (decision !== "apply") {
     return { applied: false, reloaded: false, operations: [] };
   }
-  return applyProfileWithOutcome(current, desired, ctx, pi, { reviewed: true });
+  return applyProfileWithOutcome(current, desired, ctx, pi, { preflight });
 }

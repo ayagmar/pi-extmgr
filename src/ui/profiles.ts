@@ -6,7 +6,6 @@ import {
   getAgentDir,
 } from "@earendil-works/pi-coding-agent";
 import { Container, type SelectItem, SelectList, Spacer, Text } from "@earendil-works/pi-tui";
-import { loadProjectProfilePolicy, validateProfilePolicy } from "../profiles/compare.js";
 import { formatPlan, reviewAndApplyProfileWithOutcome } from "../profiles/execute.js";
 import {
   buildProfileImportReview,
@@ -17,10 +16,11 @@ import {
   prepareProfileImport,
   saveProfile,
 } from "../profiles/management.js";
-import { calculateProfileDiagnostics, getCurrentProfile } from "../profiles/runtime-state.js";
+import { evaluateProfileReview, formatProfileReviewDetails } from "../profiles/review.js";
+import { getCurrentProfile } from "../profiles/runtime-state.js";
 import { type ExtmgrProfile } from "../profiles/schema.js";
 import { activeKeyHint } from "../utils/key-hints.js";
-import { isProjectTrusted, requireCustomUI, runCustomUI } from "../utils/mode.js";
+import { requireCustomUI, runCustomUI } from "../utils/mode.js";
 import { notify } from "../utils/notify.js";
 import { confirmAction } from "../utils/ui-helpers.js";
 import { showReport } from "./report.js";
@@ -265,20 +265,17 @@ export async function showProfiles(
           let imported = prepared.profile;
           let replace = false;
           const current = await getCurrentProfile(ctx, pi);
-          const importDiagnostics = await calculateProfileDiagnostics(imported, ctx, pi);
-          const importPolicy = await loadProjectProfilePolicy(
-            ctx.cwd,
-            undefined,
-            isProjectTrusted(ctx)
-          );
-          const importViolations = importPolicy
-            ? validateProfilePolicy(imported, importPolicy, importDiagnostics)
-            : [];
+          const importReview = await evaluateProfileReview(current, imported, ctx, pi, {
+            originWarnings: [...prepared.warnings, ...prepared.loaded.warnings],
+          });
+          const importDiagnostics = importReview.diagnostics;
+          const importViolations = importReview.policyViolations;
           const review = buildProfileImportReview(prepared, current, {
             projectCwd: ctx.cwd,
             globalCwd: getAgentDir(),
             diagnostics: importDiagnostics,
             policyViolations: importViolations,
+            review: importReview,
           });
           await showReport(ctx, {
             title: `Import profile: ${imported.name}`,
@@ -296,7 +293,10 @@ export async function showProfiles(
             await showReport(ctx, {
               title: `Planned changes: ${imported.name}`,
               placement: "center",
-              lines: formatPlan(review.plan).split("\n"),
+              lines: [
+                ...formatPlan(review.plan).split("\n"),
+                ...formatProfileReviewDetails(importReview),
+              ],
             });
             if (
               !(await confirmAction(

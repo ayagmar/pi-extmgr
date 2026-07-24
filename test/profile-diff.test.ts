@@ -98,6 +98,67 @@ void test("profile diff rendering stays within narrow widths and hides apply whe
   assert.ok(lines.some((line) => line.includes("npm:very-long-package-name")));
 });
 
+void test("profile diff renders deterministic packageSettings additions, removals, and changes", () => {
+  const changes = describeProfilePackageChanges(
+    {
+      source: "npm:demo@1.0.0",
+      scope: "global",
+      packageSettings: { zeta: "old", retained: ["a"], unknown: { z: 1, a: 2 } },
+    },
+    {
+      source: "npm:demo@1.0.0",
+      scope: "global",
+      packageSettings: { alpha: ["new"], retained: ["b"], unknown: { a: 2, z: 3 } },
+    }
+  );
+  assert.ok(changes.some((change) => change.includes("packageSettings +alpha")));
+  assert.ok(changes.some((change) => change.includes("packageSettings -zeta")));
+  assert.ok(changes.some((change) => change.includes("packageSettings ~retained")));
+  assert.ok(changes.some((change) => change.includes("packageSettings ~unknown")));
+
+  const lines = renderProfileDiffLines(
+    normalizeProfile({
+      name: "current",
+      packages: [{ source: "npm:demo@1.0.0", scope: "global" }],
+    }),
+    normalizeProfile({
+      name: "settings",
+      packages: [{ source: "npm:demo@1.0.0", scope: "global", packageSettings: {} }],
+    }),
+    [],
+    48,
+    plainTheme,
+    { canApply: true, cancelHint: "Esc back" }
+  );
+  assert.ok(lines.every((line) => visibleWidth(line) <= 48));
+  assert.ok(lines.some((line) => line.includes("packageSettings explicitly set to {}")));
+});
+
+void test("removed packages disclose packageSettings in wide and narrow layouts", () => {
+  const current = normalizeProfile({
+    name: "current",
+    packages: [
+      {
+        source: "npm:removed@1.0.0",
+        scope: "global",
+        packageSettings: { skills: ["skills/team.md"], retainedUnknownKey: { enabled: true } },
+      },
+    ],
+  });
+  const desired = normalizeProfile({ name: "target", packages: [] });
+
+  for (const width of [48, 120]) {
+    const lines = renderProfileDiffLines(current, desired, [], width, plainTheme, {
+      canApply: true,
+      cancelHint: "Esc back",
+    });
+    assert.ok(lines.every((line) => visibleWidth(line) <= width));
+    const rendered = lines.join("");
+    assert.ok(rendered.includes("packageSettings -skills="));
+    assert.ok(rendered.includes('retainedUnknownKey={"enabled":true}'));
+  }
+});
+
 void test("profile diff rendering reports when nothing changes", () => {
   const profile = normalizeProfile({
     name: "same",

@@ -438,6 +438,33 @@ void test("profile check --json emits one deterministic machine-readable result"
   }
 });
 
+void test("profile compare reports a no-op as informational rather than an error", async () => {
+  const root = await mkdtemp(join(tmpdir(), "pi-extmgr-profile-compare-noop-"));
+  const restoreCatalog = mockPackageCatalog({ packages: [] });
+  try {
+    const source = join(root, "profile.json");
+    await writeFile(
+      source,
+      JSON.stringify({ schemaVersion: 1, name: "same", packages: [] }),
+      "utf8"
+    );
+    const { ctx, pi, notifications } = createMockHarness({
+      cwd: root,
+      hasUI: true,
+      mode: "rpc",
+    });
+
+    await handleProfileSubcommand(["compare", source], ctx, pi);
+
+    const report = notifications.find((item) => item.message.startsWith("Planned changes:"));
+    assert.equal(report?.level, "info");
+    assert.match(report?.message ?? "", /Add: 0/);
+  } finally {
+    restoreCatalog();
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 void test("manager help stays compact and width-safe", () => {
   const lines = buildHelpLines();
   assert.ok(lines.every((line) => visibleWidth(line) <= 88));
