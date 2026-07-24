@@ -13,7 +13,7 @@ import {
 import { getPackageCatalog } from "../packages/catalog.js";
 import { runTaskWithLoader } from "../ui/async-task.js";
 import { showProfileDiff } from "../ui/profile-review.js";
-import { isProjectTrusted } from "../utils/mode.js";
+import { hasCustomUI, isProjectTrusted } from "../utils/mode.js";
 import { notify } from "../utils/notify.js";
 import {
   getPackageSourceKind,
@@ -409,7 +409,7 @@ export async function reviewAndApplyProfileWithOutcome(
   ctx: ExtensionCommandContext,
   pi: ExtensionAPI
 ): Promise<ProfileApplicationOutcome> {
-  if (!ctx.hasUI) return applyProfileWithOutcome(current, desired, ctx, pi);
+  if (!hasCustomUI(ctx)) return applyProfileWithOutcome(current, desired, ctx, pi);
 
   const plan = planProfileApplication(current, desired, {
     projectCwd: ctx.cwd,

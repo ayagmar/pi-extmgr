@@ -4,12 +4,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { runResolvedCommand } from "../src/commands/registry.js";
+import { reviewAndApplyProfileWithOutcome } from "../src/profiles/execute.js";
 import { configurePackageExtensions } from "../src/ui/package-config.js";
 import { showRemote } from "../src/ui/remote.js";
 import { createMockHarness } from "./helpers/mocks.js";
 import { mockPackageCatalog } from "./helpers/package-catalog.js";
 
-void test("/extensions falls back cleanly when custom TUI is unavailable", async () => {
+void test("/extensions does not attempt custom panels in explicit RPC mode", async () => {
   const cwd = await mkdtemp(join(tmpdir(), "pi-extmgr-rpc-"));
   const restoreCatalog = mockPackageCatalog({
     packages: [
@@ -21,7 +22,7 @@ void test("/extensions falls back cleanly when custom TUI is unavailable", async
     const { pi, ctx, notifications, customCallCount } = createMockHarness({
       cwd,
       hasUI: true,
-      hasCustomUI: false,
+      mode: "rpc",
       execImpl: (command, args) => {
         if (command === "npm" && args[0] === "view" && args[2] === "description") {
           return { code: 0, stdout: '"demo package"', stderr: "", killed: false };
@@ -88,7 +89,7 @@ void test("/extensions falls back when custom() degrades to undefined", async ()
   }
 });
 
-void test("/extensions installed lists packages from both scopes without custom TUI", async () => {
+void test("/extensions installed does not attempt a custom report in explicit RPC mode", async () => {
   const restoreCatalog = mockPackageCatalog({
     packages: [
       { source: "npm:demo-pkg@1.0.0", name: "demo-pkg", version: "1.0.0", scope: "global" },
@@ -99,7 +100,7 @@ void test("/extensions installed lists packages from both scopes without custom 
   try {
     const { pi, ctx, notifications, customCallCount } = createMockHarness({
       hasUI: true,
-      hasCustomUI: false,
+      mode: "rpc",
       execImpl: (command, args) => {
         if (command === "npm" && args[0] === "view" && args[2] === "description") {
           return { code: 0, stdout: '"demo package"', stderr: "", killed: false };
@@ -132,7 +133,7 @@ void test("/extensions installed lists packages from both scopes without custom 
 void test("remote browsing warns instead of calling custom UI in RPC mode", async () => {
   const { pi, ctx, notifications, customCallCount } = createMockHarness({
     hasUI: true,
-    hasCustomUI: false,
+    mode: "rpc",
   });
 
   await showRemote("", ctx, pi);
@@ -145,7 +146,7 @@ void test("remote browsing warns instead of calling custom UI in RPC mode", asyn
   );
 });
 
-void test("remote install prompt still works without custom TUI", async () => {
+void test("remote install prompt still works in RPC mode", async () => {
   const installs: { source: string; scope: "global" | "project" }[] = [];
   const restoreCatalog = mockPackageCatalog({
     installImpl: (source, scope) => {
@@ -156,7 +157,7 @@ void test("remote install prompt still works without custom TUI", async () => {
   try {
     const { pi, ctx, customCallCount, inputPrompts } = createMockHarness({
       hasUI: true,
-      hasCustomUI: false,
+      mode: "rpc",
       inputResult: "npm:demo-pkg",
       selectResult: "Global (~/.pi/agent/settings.json)",
       confirmImpl: (title) => title === "Install Package",
@@ -213,7 +214,57 @@ void test("package config handles custom() degrading to undefined", async () => 
   }
 });
 
-void test("package config warns and exits when custom TUI is unavailable", async () => {
+void test("RPC profile apply uses confirmation and never attempts custom UI", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "pi-extmgr-rpc-profile-"));
+  let installs = 0;
+  let applyConfirmations = 0;
+  const restoreCatalog = mockPackageCatalog({
+    packages: [],
+    installImpl: () => {
+      installs += 1;
+    },
+  });
+
+  try {
+    const { pi, ctx, confirmPrompts, customCallCount } = createMockHarness({
+      cwd,
+      hasUI: true,
+      mode: "rpc",
+      confirmImpl: (title) => {
+        if (title !== "Apply profile") return false;
+        applyConfirmations += 1;
+        return applyConfirmations === 2;
+      },
+    });
+    const current = { schemaVersion: 1 as const, name: "current", packages: [] };
+    const desired = {
+      schemaVersion: 1 as const,
+      name: "rpc-profile",
+      packages: [{ source: "npm:demo", scope: "global" as const, version: "1.0.0" }],
+    };
+
+    const cancelled = await reviewAndApplyProfileWithOutcome(current, desired, ctx, pi);
+
+    assert.equal(cancelled.applied, false);
+    assert.equal(installs, 0, "RPC must not apply before confirmation");
+    assert.equal(customCallCount(), 0);
+
+    const applied = await reviewAndApplyProfileWithOutcome(current, desired, ctx, pi);
+
+    assert.equal(applied.applied, true);
+    assert.equal(installs, 1, "RPC should apply after confirmation");
+    assert.equal(customCallCount(), 0);
+    assert.deepEqual(
+      confirmPrompts.filter((title) => title === "Apply profile"),
+      ["Apply profile", "Apply profile"]
+    );
+  } finally {
+    restoreCatalog();
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
+
+void test("package config does not attempt custom UI in RPC mode", async () => {
   const cwd = await mkdtemp(join(tmpdir(), "pi-extmgr-rpc-config-"));
   const pkgRoot = join(cwd, "vendor", "demo");
 
@@ -229,7 +280,7 @@ void test("package config warns and exits when custom TUI is unavailable", async
     const { pi, ctx, notifications, customCallCount } = createMockHarness({
       cwd,
       hasUI: true,
-      hasCustomUI: false,
+      mode: "rpc",
     });
 
     const result = await configurePackageExtensions(

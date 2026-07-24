@@ -8,6 +8,7 @@ void test("runTaskWithLoader falls back to running the task when custom UI degra
   const result = await runTaskWithLoader(
     {
       hasUI: true,
+      mode: "tui",
       ui: {
         custom: async () => undefined,
       },
@@ -34,6 +35,7 @@ void test("runTaskWithLoader does not rerun the task when custom UI returned und
   const result = await runTaskWithLoader(
     {
       hasUI: true,
+      mode: "tui",
       ui: {
         custom: async (
           factory: (
@@ -119,6 +121,7 @@ void test("cancelled loaders block late status rendering", async () => {
   const result = await runTaskWithLoader(
     {
       hasUI: true,
+      mode: "tui",
       ui: {
         custom: async (
           factory: (

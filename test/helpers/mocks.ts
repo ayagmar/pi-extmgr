@@ -22,6 +22,7 @@ export interface NotificationRecord {
 export interface MockHarnessOptions {
   cwd?: string;
   hasUI?: boolean;
+  mode?: "tui" | "rpc" | "json" | "print";
   hasCustomUI?: boolean;
   execImpl?: ExecImpl;
   inputResult?: string;
@@ -194,7 +195,7 @@ export function createMockHarness(options: MockHarnessOptions = {}): {
 
   const ctx = {
     hasUI: options.hasUI ?? false,
-    mode: options.hasUI ? "tui" : "print",
+    mode: options.mode ?? (options.hasUI ? "tui" : "print"),
     cwd: options.cwd ?? getDefaultTestCwd(),
     isProjectTrusted: () => options.projectTrusted ?? true,
     ui,

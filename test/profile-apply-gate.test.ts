@@ -95,7 +95,7 @@ void test("the direct interactive apply command also requires the inline diff re
     });
 
     try {
-      const { pi, ctx } = createMockHarness({ hasUI: true });
+      const { pi, ctx } = createMockHarness({ hasUI: true, mode: "tui" });
       let sawDiff = false;
       (ctx.ui as { custom: (factory: unknown) => Promise<unknown> }).custom = (factory) =>
         captureCustomComponent(factory, ctx.ui.theme, (component, lines, completion) => {

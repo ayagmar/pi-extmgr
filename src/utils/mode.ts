@@ -21,7 +21,7 @@ export function getUICapability(ctx: AnyContext): UICapability {
     return "none";
   }
 
-  return typeof ctx.ui?.custom === "function" ? "custom" : "dialog";
+  return ctx.mode === "tui" && typeof ctx.ui?.custom === "function" ? "custom" : "dialog";
 }
 
 export function hasCustomUI(ctx: AnyContext): boolean {
