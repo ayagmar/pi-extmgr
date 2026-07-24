@@ -6,9 +6,10 @@ import {
   getAgentDir,
 } from "@earendil-works/pi-coding-agent";
 import { Container, type SelectItem, SelectList, Spacer, Text } from "@earendil-works/pi-tui";
-import { planProfileApplication } from "../profiles/apply.js";
+import { loadProjectProfilePolicy, validateProfilePolicy } from "../profiles/compare.js";
 import { formatPlan, reviewAndApplyProfileWithOutcome } from "../profiles/execute.js";
 import {
+  buildProfileImportReview,
   deleteProfile,
   exportProfile,
   getProfile,
@@ -16,10 +17,10 @@ import {
   prepareProfileImport,
   saveProfile,
 } from "../profiles/management.js";
-import { getCurrentProfile } from "../profiles/runtime-state.js";
+import { calculateProfileDiagnostics, getCurrentProfile } from "../profiles/runtime-state.js";
 import { type ExtmgrProfile } from "../profiles/schema.js";
 import { activeKeyHint } from "../utils/key-hints.js";
-import { requireCustomUI, runCustomUI } from "../utils/mode.js";
+import { isProjectTrusted, requireCustomUI, runCustomUI } from "../utils/mode.js";
 import { notify } from "../utils/notify.js";
 import { confirmAction } from "../utils/ui-helpers.js";
 import { showReport } from "./report.js";
@@ -263,6 +264,28 @@ export async function showProfiles(
           });
           let imported = prepared.profile;
           let replace = false;
+          const current = await getCurrentProfile(ctx, pi);
+          const importDiagnostics = await calculateProfileDiagnostics(imported, ctx, pi);
+          const importPolicy = await loadProjectProfilePolicy(
+            ctx.cwd,
+            undefined,
+            isProjectTrusted(ctx)
+          );
+          const importViolations = importPolicy
+            ? validateProfilePolicy(imported, importPolicy, importDiagnostics)
+            : [];
+          const review = buildProfileImportReview(prepared, current, {
+            projectCwd: ctx.cwd,
+            globalCwd: getAgentDir(),
+            diagnostics: importDiagnostics,
+            policyViolations: importViolations,
+          });
+          await showReport(ctx, {
+            title: `Import profile: ${imported.name}`,
+            placement: "center",
+            level: review.level,
+            lines: review.summaryLines,
+          });
           const action = await ctx.ui.select("Import profile", [
             "Save",
             "Review changes",
@@ -270,14 +293,10 @@ export async function showProfiles(
           ]);
           if (action === "Cancel" || !action) continue;
           if (action === "Review changes") {
-            const plan = planProfileApplication(await getCurrentProfile(ctx, pi), imported, {
-              projectCwd: ctx.cwd,
-              globalCwd: getAgentDir(),
-            });
             await showReport(ctx, {
               title: `Planned changes: ${imported.name}`,
               placement: "center",
-              lines: formatPlan(plan).split("\n"),
+              lines: formatPlan(review.plan).split("\n"),
             });
             if (
               !(await confirmAction(

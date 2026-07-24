@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { initTheme } from "@earendil-works/pi-coding-agent";
 import { visibleWidth } from "@earendil-works/pi-tui";
-import { getProfileStorePath, saveNamedProfile } from "../src/profiles/store.js";
+import { getProfileStorePath, readProfileStore, saveNamedProfile } from "../src/profiles/store.js";
 import { showHealth } from "../src/ui/health.js";
 import { showProfiles } from "../src/ui/profiles.js";
 import { captureCustomComponent } from "./helpers/custom-component.js";
@@ -36,6 +36,77 @@ void test("profiles screen keeps profile management in a dedicated workspace", a
   } finally {
     if (previousCacheDir === undefined) delete process.env.PI_EXTMGR_CACHE_DIR;
     else process.env.PI_EXTMGR_CACHE_DIR = previousCacheDir;
+    await rm(cacheDir, { recursive: true, force: true });
+  }
+});
+
+void test("profiles import shows its diagnostics summary before Save", async () => {
+  const root = await mkdtemp(join(tmpdir(), "pi-extmgr-profile-import-ui-"));
+  const cacheDir = await mkdtemp(join(tmpdir(), "pi-extmgr-profile-import-ui-cache-"));
+  const previousCacheDir = process.env.PI_EXTMGR_CACHE_DIR;
+  process.env.PI_EXTMGR_CACHE_DIR = cacheDir;
+  const restoreCatalog = mockPackageCatalog({ packages: [] });
+
+  try {
+    const source = join(root, "profile.json");
+    await writeFile(
+      source,
+      JSON.stringify({
+        schemaVersion: 1,
+        name: "team",
+        packages: [{ source: "npm:demo", scope: "project" }],
+      }),
+      "utf8"
+    );
+    const { pi, ctx } = createMockHarness({ cwd: root, hasUI: true, inputResult: source });
+    const events: string[] = [];
+    let summaryLines: string[] = [];
+    let profileListVisits = 0;
+    (
+      ctx.ui as unknown as {
+        select: (title: string, options?: string[]) => Promise<string | undefined>;
+      }
+    ).select = (title) => {
+      if (title === "Import profile") {
+        events.push("select");
+        return Promise.resolve("Save");
+      }
+      return Promise.resolve(undefined);
+    };
+    (ctx.ui as { custom: (factory: unknown) => Promise<unknown> }).custom = (factory) =>
+      captureCustomComponent(factory, ctx.ui.theme, (component, lines, completion) => {
+        if (lines.some((line) => line.includes("Save current package set"))) {
+          profileListVisits += 1;
+          if (profileListVisits === 1) {
+            component.handleInput?.("\u001b[B");
+            component.handleInput?.("\r");
+          } else {
+            component.handleInput?.("\u001b");
+          }
+          return completion;
+        }
+        if (lines.some((line) => line.includes("Import profile: team"))) {
+          events.push("summary");
+          summaryLines = lines;
+        }
+        component.handleInput?.("\u001b");
+        return completion;
+      });
+
+    await showProfiles(ctx, pi);
+
+    assert.deepEqual(events, ["summary", "select"]);
+    assert.ok(summaryLines.some((line) => line.includes("Origin:")));
+    assert.ok(summaryLines.some((line) => line.includes("Preview: 1 add")));
+    assert.ok(summaryLines.some((line) => line.includes("Policy: pass")));
+    assert.ok(summaryLines.some((line) => line.includes("Compatibility: 1 unknown")));
+    assert.ok(summaryLines.some((line) => line.includes("Integrity: 1 unknown")));
+    assert.equal((await readProfileStore(getProfileStorePath())).profiles.team?.name, "team");
+  } finally {
+    restoreCatalog();
+    if (previousCacheDir === undefined) delete process.env.PI_EXTMGR_CACHE_DIR;
+    else process.env.PI_EXTMGR_CACHE_DIR = previousCacheDir;
+    await rm(root, { recursive: true, force: true });
     await rm(cacheDir, { recursive: true, force: true });
   }
 });

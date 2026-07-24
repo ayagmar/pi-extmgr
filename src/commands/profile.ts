@@ -15,6 +15,7 @@ import { loadProjectProfilePolicy, validateProfilePolicy } from "../profiles/com
 import { formatPlan, reviewAndApplyProfileWithOutcome } from "../profiles/execute.js";
 import { calculateProfileDiagnostics, getCurrentProfile } from "../profiles/runtime-state.js";
 import {
+  buildProfileImportReview,
   deleteProfile,
   duplicateProfile,
   exportProfile,
@@ -135,36 +136,24 @@ async function handleImport(
     ...(ctx.signal ? { signal: ctx.signal } : {}),
     ...(options.name ? { name: options.name } : {}),
   });
-  const { loaded, profile } = prepared;
+  const { profile } = prepared;
   const current = await getCurrentProfile(ctx, pi);
-  const plan = planProfileApplication(current, profile, {
-    projectCwd: ctx.cwd,
-    globalCwd: getAgentDir(),
-  });
   const importDiagnostics = await calculateProfileDiagnostics(profile, ctx, pi);
   const importPolicy = await loadProjectProfilePolicy(ctx.cwd, undefined, isProjectTrusted(ctx));
   const importViolations = importPolicy
     ? validateProfilePolicy(profile, importPolicy, importDiagnostics)
     : [];
-  const summaryLines = [
-    `Origin: ${loaded.origin}`,
-    `Final origin: ${loaded.finalOrigin}`,
-    `Origin status: ${loaded.immutableOrigin === true ? "immutable" : loaded.immutableOrigin === false ? "floating" : "local"}`,
-    `Content fingerprint: ${loaded.contentFingerprint}`,
-    `Schema: v${prepared.migration.fromVersion}${prepared.migration.migrated ? " (migrated)" : ""}`,
-    `Packages: ${profile.packages.length} (${profile.packages.filter((pkg) => pkg.scope === "global").length} global, ${profile.packages.filter((pkg) => pkg.scope === "project").length} project)`,
-    `Preview: ${plan.add.length} add, ${plan.remove.length} remove, ${plan.update.length} change`,
-    `Policy: ${importViolations.length === 0 ? "pass" : `${importViolations.length} violation(s)`}`,
-    `Compatibility: ${importDiagnostics.filter((item) => item.compatibility === "unknown").length} unknown`,
-    `Integrity: ${importDiagnostics.filter((item) => item.integrity === "unknown").length} unknown`,
-    ...importViolations.map((violation) => `Policy violation: ${violation.message}`),
-    ...[...prepared.warnings, ...loaded.warnings].map((warning) => `Warning: ${warning}`),
-  ];
+  const review = buildProfileImportReview(prepared, current, {
+    projectCwd: ctx.cwd,
+    globalCwd: getAgentDir(),
+    diagnostics: importDiagnostics,
+    policyViolations: importViolations,
+  });
   await showReport(ctx, {
     title: `Import profile: ${profile.name}`,
     placement: "center",
-    level: loaded.warnings.length > 0 ? "warning" : "info",
-    lines: summaryLines,
+    level: review.level,
+    lines: review.summaryLines,
   });
   if (ctx.hasUI) {
     const action = await ctx.ui.select("Import profile", ["Save", "Review changes", "Cancel"]);
@@ -173,7 +162,7 @@ async function handleImport(
       await showReport(ctx, {
         title: `Planned changes: ${profile.name}`,
         placement: "center",
-        lines: formatPlan(plan).split("\n"),
+        lines: formatPlan(review.plan).split("\n"),
       });
       if (
         !(await confirmAction(

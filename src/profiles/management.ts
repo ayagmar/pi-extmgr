@@ -1,5 +1,7 @@
 import { writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
+import { type ProfilePlan, planProfileApplication } from "./apply.js";
+import { type ProfilePackageDiagnostic, type ProfilePolicyViolation } from "./compare.js";
 import { type ExtmgrProfile, parseExternalProfile } from "./schema.js";
 import { type LoadedProfileSource, loadProfileSource } from "./source.js";
 import {
@@ -25,6 +27,19 @@ export interface PreparedProfileImport {
   loaded: LoadedProfileSource;
   migration: { fromVersion: number; migrated: boolean };
   warnings: string[];
+}
+
+export interface ProfileImportReview {
+  plan: ProfilePlan;
+  summaryLines: string[];
+  level: "info" | "warning";
+}
+
+export interface ProfileImportReviewOptions {
+  projectCwd: string;
+  globalCwd: string;
+  diagnostics: ProfilePackageDiagnostic[];
+  policyViolations: ProfilePolicyViolation[];
 }
 
 function storePath(options?: ProfileStoreOptions): string {
@@ -109,6 +124,38 @@ export async function duplicateProfile(
     { replace: options.replace }
   );
   return written.profiles[destinationName.trim()] as ExtmgrProfile;
+}
+
+export function buildProfileImportReview(
+  prepared: PreparedProfileImport,
+  current: ExtmgrProfile,
+  options: ProfileImportReviewOptions
+): ProfileImportReview {
+  const { loaded, profile } = prepared;
+  const plan = planProfileApplication(current, profile, {
+    projectCwd: options.projectCwd,
+    globalCwd: options.globalCwd,
+  });
+  const globalPackages = profile.packages.filter((pkg) => pkg.scope === "global").length;
+  const projectPackages = profile.packages.filter((pkg) => pkg.scope === "project").length;
+  return {
+    plan,
+    level: loaded.warnings.length > 0 ? "warning" : "info",
+    summaryLines: [
+      `Origin: ${loaded.origin}`,
+      `Final origin: ${loaded.finalOrigin}`,
+      `Origin status: ${loaded.immutableOrigin === true ? "immutable" : loaded.immutableOrigin === false ? "floating" : "local"}`,
+      `Content fingerprint: ${loaded.contentFingerprint}`,
+      `Schema: v${prepared.migration.fromVersion}${prepared.migration.migrated ? " (migrated)" : ""}`,
+      `Packages: ${profile.packages.length} (${globalPackages} global, ${projectPackages} project)`,
+      `Preview: ${plan.add.length} add, ${plan.remove.length} remove, ${plan.update.length} change`,
+      `Policy: ${options.policyViolations.length === 0 ? "pass" : `${options.policyViolations.length} violation(s)`}`,
+      `Compatibility: ${options.diagnostics.filter((item) => item.compatibility === "unknown").length} unknown`,
+      `Integrity: ${options.diagnostics.filter((item) => item.integrity === "unknown").length} unknown`,
+      ...options.policyViolations.map((violation) => `Policy violation: ${violation.message}`),
+      ...[...prepared.warnings, ...loaded.warnings].map((warning) => `Warning: ${warning}`),
+    ],
+  };
 }
 
 export async function prepareProfileImport(
