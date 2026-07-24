@@ -84,7 +84,8 @@ version manager, or install project-local with `pi install npm:pi-extmgr -l`.
   - Status line summary (`pkg count • scheduled update checks • known updates`)
   - History now records local extension deletions and scheduled update checks configuration changes
 - **Overlay-first output**
-  - Help, item details, bulk summaries, history, trash lists, and profile check reports open in a floating scrollable panel instead of the chat transcript
+  - Help, item details, bulk summaries, doctor, history, trash lists, and profile check/import reports open in a floating scrollable panel instead of the chat transcript
+  - Reference peeks (help, details) float beside the list; standalone reports (doctor, history, summaries) center on screen
   - Package updates show progress in a corner overlay while the session stays visible
   - A one-line attention widget above the editor appears when updates are known or a reload is pending, and clears once handled
   - The terminal title reflects the active workspace while the manager is open

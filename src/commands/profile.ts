@@ -895,6 +895,7 @@ async function handleImport(
   ];
   await showReport(ctx, {
     title: `Import profile: ${profile.name}`,
+    placement: "center",
     level: loaded.warnings.length > 0 ? "warning" : "info",
     lines: summaryLines,
   });
@@ -902,7 +903,11 @@ async function handleImport(
     const action = await ctx.ui.select("Import profile", ["Save", "Review changes", "Cancel"]);
     if (action === "Cancel" || !action) return;
     if (action === "Review changes") {
-      notify(ctx, formatPlan(plan), "info");
+      await showReport(ctx, {
+        title: `Planned changes: ${profile.name}`,
+        placement: "center",
+        lines: formatPlan(plan).split("\n"),
+      });
       if (
         !(await confirmAction(
           ctx,
@@ -1054,6 +1059,7 @@ async function handleCheck(
   }
   await showReport(ctx, {
     title: `Profile check: ${source ?? "(missing source)"}`,
+    placement: "center",
     level: result.ok ? "info" : "error",
     lines: [
       `Profile: ${result.valid ? "valid" : "invalid"}`,
@@ -1203,7 +1209,11 @@ export async function handleProfileSubcommand(
       await reviewAndApplyProfileWithOutcome(current, desired, ctx, pi);
       return;
     }
-    notify(ctx, formatPlan(plan), "info");
+    await showReport(ctx, {
+      title: `Planned changes: ${desired.name}`,
+      placement: "center",
+      lines: formatPlan(plan).split("\n"),
+    });
   } catch (error) {
     notify(
       ctx,

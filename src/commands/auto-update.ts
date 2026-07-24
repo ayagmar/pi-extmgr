@@ -3,6 +3,7 @@ import {
   type ExtensionCommandContext,
   type ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
+import { showReport } from "../ui/report.js";
 import {
   disableAutoUpdate,
   enableAutoUpdate,
@@ -41,24 +42,27 @@ export async function handleAutoUpdateSubcommand(
 
   if (!duration) {
     const status = getAutoUpdateStatus(ctx);
-    notify(ctx, `Scheduled update checks: ${status}`, "info");
-
-    const usage = [
-      "Usage: /extensions auto-update <duration>",
-      "",
-      "Duration examples:",
-      "  never   - Disable scheduled update checks",
-      "  1h      - Check every hour",
-      "  2h      - Check every 2 hours",
-      "  1d      - Check daily",
-      "  3d      - Check every 3 days",
-      "  1w      - Check weekly",
-      "  2w      - Check every 2 weeks",
-      "  1mo     - Check monthly",
-      "  daily   - Check daily (alias)",
-      "  weekly  - Check weekly (alias)",
-    ];
-    notify(ctx, usage.join("\n"), "info");
+    await showReport(ctx, {
+      title: "Scheduled update checks",
+      placement: "center",
+      lines: [
+        `Current: ${status}`,
+        "",
+        "Usage: /extensions auto-update <duration>",
+        "",
+        "Duration examples:",
+        "  never   - Disable scheduled update checks",
+        "  1h      - Check every hour",
+        "  2h      - Check every 2 hours",
+        "  1d      - Check daily",
+        "  3d      - Check every 3 days",
+        "  1w      - Check weekly",
+        "  2w      - Check every 2 weeks",
+        "  1mo     - Check monthly",
+        "  daily   - Check daily (alias)",
+        "  weekly  - Check weekly (alias)",
+      ],
+    });
     return;
   }
 

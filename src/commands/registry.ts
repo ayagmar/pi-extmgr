@@ -6,6 +6,7 @@ import { getRuntimeOwners } from "../doctor/runtime.js";
 import { getInstalledPackagesAllScopes } from "../packages/discovery.js";
 import { promptRemove, removePackage, showInstalledPackagesList } from "../packages/management.js";
 import { showRemote } from "../ui/remote.js";
+import { showReport } from "../ui/report.js";
 import { showInstalledPackagesLegacy, showInteractive, showListOnly } from "../ui/unified.js";
 import { notify } from "../utils/notify.js";
 import { handleAutoUpdateSubcommand } from "./auto-update.js";
@@ -48,7 +49,12 @@ async function showDoctor(ctx: ExtensionCommandContext, pi: ExtensionAPI): Promi
       }
     }
   }
-  notify(ctx, lines.join("\n"), conflicts.length > 0 ? "warning" : "info");
+  await showReport(ctx, {
+    title: "Doctor",
+    placement: "center",
+    level: conflicts.length > 0 ? "warning" : "info",
+    lines,
+  });
 }
 
 function requireInteractiveCommand(ctx: ExtensionCommandContext, feature: string): void {
