@@ -29,6 +29,56 @@ void test("runTaskWithLoader falls back to running the task when custom UI degra
   assert.equal(runs, 1);
 });
 
+void test("floating loaders are centered relative to the terminal", async () => {
+  let capturedOptions: unknown;
+
+  const result = await runTaskWithLoader(
+    {
+      hasUI: true,
+      mode: "tui",
+      ui: {
+        custom: async (
+          factory: (
+            tui: unknown,
+            theme: unknown,
+            keybindings: unknown,
+            done: (value: unknown) => void
+          ) => { dispose?(): void },
+          options: unknown
+        ) => {
+          capturedOptions = options;
+          let complete: (value: unknown) => void = () => undefined;
+          const completion = new Promise<unknown>((resolve) => {
+            complete = resolve;
+          });
+          const component = factory(
+            { requestRender: () => undefined },
+            { fg: (_name: string, text: string) => text, bold: (text: string) => text },
+            {},
+            complete
+          );
+          const value = await completion;
+          component.dispose?.();
+          return value;
+        },
+      },
+    } as never,
+    {
+      title: "Update",
+      message: "Updating...",
+      cancellable: false,
+      overlay: true,
+    },
+    async () => "ok"
+  );
+
+  assert.equal(result, "ok");
+  assert.deepEqual(capturedOptions, {
+    overlay: true,
+    overlayOptions: { anchor: "center", width: "45%", minWidth: 40, margin: 2 },
+  });
+});
+
 void test("runTaskWithLoader does not rerun the task when custom UI returned undefined after starting it", async () => {
   let runs = 0;
 

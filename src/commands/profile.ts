@@ -156,7 +156,7 @@ async function handleImport(
   });
   await showReport(ctx, {
     title: `Import profile: ${profile.name}`,
-    placement: "center",
+    size: "wide",
     level: review.level,
     lines: review.summaryLines,
   });
@@ -166,7 +166,7 @@ async function handleImport(
     if (action === "Review changes") {
       await showReport(ctx, {
         title: `Planned changes: ${profile.name}`,
-        placement: "center",
+        size: "wide",
         lines: [
           ...formatPlan(review.plan).split("\n"),
           ...formatProfileReviewDetails(importReview),
@@ -315,7 +315,7 @@ async function handleCheck(
   }
   await showReport(ctx, {
     title: `Profile check: ${source ?? "(missing source)"}`,
-    placement: "center",
+    size: "wide",
     level: result.ok ? "info" : "error",
     lines: [
       `Profile: ${result.valid ? "valid" : "invalid"}`,
@@ -491,7 +491,7 @@ export async function handleProfileSubcommand(
     const review = await evaluateProfileReview(current, desired, ctx, pi, { originWarnings });
     await showReport(ctx, {
       title: `Planned changes: ${desired.name}`,
-      placement: "center",
+      size: "wide",
       level: review.blockingReasons.length > 0 ? "error" : "info",
       lines: [...formatPlan(review.plan).split("\n"), ...formatProfileReviewDetails(review)],
     });

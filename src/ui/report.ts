@@ -30,29 +30,25 @@ export interface ReportOptions {
   title: string;
   lines: string[];
   level?: NotifyLevel;
-  /**
-   * Overlay placement. "side" (default) floats top-right for reference
-   * reading next to list UIs; "center" suits reports that are the user's
-   * sole focus, such as operation summaries.
-   */
-  placement?: "side" | "center";
+  /** Reports are centered; use wide for dense summaries and comparisons. */
+  size?: "compact" | "wide";
 }
 
-// Never gate placements behind `visible`: an invisible overlay cannot take
-// focus, so its close key would never arrive and showReport would hang.
-// No maxHeight either: the panel sizes its own viewport from terminal rows,
-// and an external clamp would slice off the footer with the close hint.
-const PLACEMENT_OPTIONS = {
-  side: {
-    anchor: "top-right",
+// Never gate panes behind `visible`: an invisible overlay cannot take focus,
+// so its close key would never arrive and showReport would hang. No maxHeight
+// either: the panel sizes its own viewport from terminal rows, and an external
+// clamp would slice off the footer with the close hint.
+const SIZE_OPTIONS = {
+  compact: {
+    anchor: "center",
     width: "55%",
-    minWidth: 46,
-    margin: 1,
+    minWidth: 42,
+    margin: 2,
   },
-  center: {
+  wide: {
     anchor: "center",
     width: "70%",
-    minWidth: 46,
+    minWidth: 42,
     margin: 2,
   },
 } as const satisfies Record<string, OverlayOptions>;
@@ -174,7 +170,7 @@ export async function showReport(ctx: AnyContext, options: ReportOptions): Promi
       ),
     {
       overlay: true,
-      overlayOptions: { ...PLACEMENT_OPTIONS[options.placement ?? "side"] },
+      overlayOptions: { ...SIZE_OPTIONS[options.size ?? "compact"] },
     }
   );
 
@@ -193,7 +189,7 @@ export async function showListReport(
   ctx: AnyContext,
   title: string,
   items: string[],
-  options?: Pick<ReportOptions, "placement" | "level">
+  options?: Pick<ReportOptions, "size" | "level">
 ): Promise<void> {
   if (items.length === 0) {
     notify(ctx, `No ${title.toLowerCase()} found.`, "info");

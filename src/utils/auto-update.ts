@@ -106,7 +106,9 @@ export async function checkForUpdates(
     ctx.cwd,
     isProjectTrusted(ctx)
   ).checkForAvailableUpdates();
-  const updatesAvailable = updates.map((update) => normalizePackageIdentity(update.source));
+  const updatesAvailable = [
+    ...new Set(updates.map((update) => normalizePackageIdentity(update.source))),
+  ];
   const updatedPackageNames = updates.map((update) => update.displayName);
 
   const checkedAt = Date.now();
@@ -146,6 +148,46 @@ export function getAutoUpdateStatus(ctx: ExtensionCommandContext | ExtensionCont
 export function getKnownUpdates(ctx: ExtensionCommandContext | ExtensionContext): Set<string> {
   const config = getAutoUpdateConfig(ctx);
   return new Set(config.updatesAvailable ?? []);
+}
+
+function sameUpdateIdentities(left: ReadonlySet<string>, right: ReadonlySet<string>): boolean {
+  return left.size === right.size && [...left].every((identity) => right.has(identity));
+}
+
+/**
+ * Reconcile cached update badges with Pi's live package-manager result.
+ *
+ * Update markers are persisted so scheduled checks survive restarts, but a
+ * package may be updated outside extmgr. A live refresh prevents those cached
+ * markers from continuing to claim that an already-current package is stale.
+ * Registry failures retain the last known result rather than hiding a possibly
+ * valid update.
+ */
+export async function refreshKnownUpdates(
+  pi: ExtensionAPI,
+  ctx: ExtensionCommandContext | ExtensionContext
+): Promise<Set<string>> {
+  const config = getAutoUpdateConfig(ctx);
+  const cached = new Set(config.updatesAvailable ?? []);
+
+  try {
+    const updates = await getPackageCatalog(
+      ctx.cwd,
+      isProjectTrusted(ctx)
+    ).checkForAvailableUpdates();
+    const refreshed = new Set(updates.map((update) => normalizePackageIdentity(update.source)));
+
+    if (!sameUpdateIdentities(cached, refreshed)) {
+      saveAutoUpdateConfig(pi, {
+        ...config,
+        updatesAvailable: [...refreshed],
+      });
+    }
+
+    return refreshed;
+  } catch {
+    return cached;
+  }
 }
 
 /**

@@ -8,12 +8,43 @@ import {
   enableAutoUpdate,
   getKnownUpdates,
   isAutoUpdateRunning,
+  refreshKnownUpdates,
   startAutoUpdateTimer,
   stopAutoUpdateTimer,
 } from "../src/utils/auto-update.js";
 import { parseDuration } from "../src/utils/settings.js";
 import { createMockHarness } from "./helpers/mocks.js";
 import { mockPackageCatalog } from "./helpers/package-catalog.js";
+
+void test("refreshKnownUpdates clears stale markers after an external package update", async () => {
+  const restoreCatalog = mockPackageCatalog({
+    packages: [{ source: "npm:demo-pkg", name: "demo-pkg", scope: "global" }],
+    updates: [],
+  });
+
+  try {
+    const { pi, ctx, entries } = createMockHarness();
+    entries.push({
+      type: "custom",
+      customType: "extmgr-auto-update",
+      data: {
+        enabled: true,
+        intervalMs: 60 * 60 * 1000,
+        displayText: "1 hour",
+        updatesAvailable: ["npm:demo-pkg"],
+      },
+    });
+
+    const updates = await refreshKnownUpdates(pi, ctx);
+
+    assert.deepEqual([...updates], []);
+    const latest = entries.at(-1)?.data as { updatesAvailable?: string[] } | undefined;
+    assert.equal(latest?.updatesAvailable, undefined);
+    assert.deepEqual([...getKnownUpdates(ctx)], []);
+  } finally {
+    restoreCatalog();
+  }
+});
 
 void test("parseDuration supports flexible durations", () => {
   assert.deepEqual(parseDuration("1h"), { ms: 60 * 60 * 1000, display: "1 hour" });

@@ -72,7 +72,7 @@ interface LoaderConfig {
   cancellable?: boolean;
   fallbackWithoutLoader?: boolean;
   /**
-   * Render the loader as a floating corner overlay instead of replacing the
+   * Render the loader as a centered floating overlay instead of replacing the
    * editor. Use for mutations that run while the transcript stays relevant.
    */
   overlay?: boolean;
@@ -228,7 +228,7 @@ export async function runTaskWithLoader<T>(
     config.overlay
       ? {
           overlay: true,
-          overlayOptions: { anchor: "bottom-right", width: "45%", minWidth: 40, margin: 1 },
+          overlayOptions: { anchor: "center", width: "45%", minWidth: 40, margin: 2 },
         }
       : undefined
   );

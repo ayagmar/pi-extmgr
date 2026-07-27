@@ -175,7 +175,7 @@ async function showHistoryHelp(ctx: ExtensionCommandContext): Promise<void> {
     "  /extensions history --global --failed --since 14d",
   ];
 
-  await showReport(ctx, { title: "History usage", placement: "center", lines });
+  await showReport(ctx, { title: "History usage", size: "wide", lines });
 }
 
 function formatSessionSuffix(sessionFile: string): string {
@@ -222,7 +222,7 @@ export async function handleHistorySubcommand(
       `Extension Change History (global, recent ${changes.length})`,
       lines,
       {
-        placement: "center",
+        size: "wide",
       }
     );
     return;
@@ -236,6 +236,6 @@ export async function handleHistorySubcommand(
 
   const lines = changes.map(formatChangeEntry);
   await showListReport(ctx, `Extension Change History (recent ${changes.length})`, lines, {
-    placement: "center",
+    size: "wide",
   });
 }

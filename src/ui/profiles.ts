@@ -279,7 +279,7 @@ export async function showProfiles(
           });
           await showReport(ctx, {
             title: `Import profile: ${imported.name}`,
-            placement: "center",
+            size: "wide",
             level: review.level,
             lines: review.summaryLines,
           });
@@ -292,7 +292,7 @@ export async function showProfiles(
           if (action === "Review changes") {
             await showReport(ctx, {
               title: `Planned changes: ${imported.name}`,
-              placement: "center",
+              size: "wide",
               lines: [
                 ...formatPlan(review.plan).split("\n"),
                 ...formatProfileReviewDetails(importReview),

@@ -135,7 +135,7 @@ void test("long reports scroll instead of truncating content", async () => {
   );
 });
 
-void test("report placement selects side or center overlay anchoring", async () => {
+void test("report panes stay centered at compact or wide responsive widths", async () => {
   const { ctx } = createMockHarness({ hasUI: true });
   const capturedOptions: unknown[] = [];
   (ctx.ui as { custom: (factory: unknown, options?: unknown) => Promise<unknown> }).custom = (
@@ -150,16 +150,26 @@ void test("report placement selects side or center overlay anchoring", async () 
   };
 
   await showReport(ctx, { title: "Side", lines: ["x"] });
-  await showReport(ctx, { title: "Center", lines: ["x"], placement: "center" });
+  await showReport(ctx, { title: "Wide", lines: ["x"], size: "wide" });
 
-  const [side, center] = capturedOptions as Array<{
+  const [compact, wide] = capturedOptions as Array<{
     overlay?: boolean;
-    overlayOptions?: { anchor?: string };
+    overlayOptions?: { anchor?: string; width?: string; margin?: number };
   }>;
-  assert.equal(side?.overlay, true);
-  assert.equal(side?.overlayOptions?.anchor, "top-right");
-  assert.equal(center?.overlay, true);
-  assert.equal(center?.overlayOptions?.anchor, "center");
+  assert.equal(compact?.overlay, true);
+  assert.deepEqual(compact?.overlayOptions, {
+    anchor: "center",
+    width: "55%",
+    minWidth: 42,
+    margin: 2,
+  });
+  assert.equal(wide?.overlay, true);
+  assert.deepEqual(wide?.overlayOptions, {
+    anchor: "center",
+    width: "70%",
+    minWidth: 42,
+    margin: 2,
+  });
 });
 
 void test("reports fall back to notifications without custom UI", async () => {

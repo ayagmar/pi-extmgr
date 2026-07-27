@@ -51,7 +51,7 @@ async function showDoctor(ctx: ExtensionCommandContext, pi: ExtensionAPI): Promi
   }
   await showReport(ctx, {
     title: "Doctor",
-    placement: "center",
+    size: "wide",
     level: conflicts.length > 0 ? "warning" : "info",
     lines,
   });

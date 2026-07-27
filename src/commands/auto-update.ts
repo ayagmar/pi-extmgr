@@ -44,7 +44,7 @@ export async function handleAutoUpdateSubcommand(
     const status = getAutoUpdateStatus(ctx);
     await showReport(ctx, {
       title: "Scheduled update checks",
-      placement: "center",
+      size: "wide",
       lines: [
         `Current: ${status}`,
         "",

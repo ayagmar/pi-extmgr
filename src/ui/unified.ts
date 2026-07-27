@@ -17,7 +17,7 @@ import { getInstalledPackages } from "../packages/discovery.js";
 import { discoverPackageExtensions } from "../packages/extensions.js";
 import { showInstalledPackagesList } from "../packages/management.js";
 import { type State, type UnifiedAction } from "../types/index.js";
-import { getKnownUpdates } from "../utils/auto-update.js";
+import { refreshKnownUpdates } from "../utils/auto-update.js";
 import { formatEntry as formatExtEntry } from "../utils/format.js";
 import { hasCustomUI, isProjectTrusted, runCustomUI } from "../utils/mode.js";
 import { notify } from "../utils/notify.js";
@@ -107,12 +107,15 @@ async function showInteractiveOnce(
         installedPackagesPromise,
       ]);
 
-      setMessage("Loading package extension states...");
-      const packageExtensions = await discoverPackageExtensions(installedPackages, ctx.cwd, {
-        projectTrusted: isProjectTrusted(ctx),
-      });
+      setMessage("Checking package updates and extension states...");
+      const [packageExtensions, knownUpdates] = await Promise.all([
+        discoverPackageExtensions(installedPackages, ctx.cwd, {
+          projectTrusted: isProjectTrusted(ctx),
+        }),
+        refreshKnownUpdates(pi, ctx),
+      ]);
 
-      return { localEntries, installedPackages, packageExtensions };
+      return { localEntries, installedPackages, packageExtensions, knownUpdates };
     }
   );
 
@@ -126,12 +129,11 @@ async function showInteractiveOnce(
     return true;
   }
 
-  const { localEntries, installedPackages, packageExtensions } = initialData;
+  const { localEntries, installedPackages, packageExtensions, knownUpdates } = initialData;
   const viewsPath = getSavedViewsPath(ctx.cwd);
   let savedViews = await readSavedViews(viewsPath);
 
-  // Build unified items list.
-  const knownUpdates = getKnownUpdates(ctx);
+  // Build the list from the live update check performed by the loading task.
   const items = buildUnifiedItems(localEntries, installedPackages, knownUpdates, packageExtensions);
 
   // If nothing found, show quick actions

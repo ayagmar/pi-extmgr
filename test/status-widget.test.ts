@@ -53,6 +53,35 @@ void test("attention widget appears while a reload is pending and clears afterwa
   });
 });
 
+void test("attention widget drops stale update prompts after packages were updated externally", async () => {
+  await withIsolatedState(async () => {
+    const restoreCatalog = mockPackageCatalog({
+      packages: [{ source: "npm:demo", name: "demo", scope: "global" }],
+      updates: [],
+    });
+    try {
+      const { pi, ctx, entries, statuses, widgets } = createMockHarness({ hasUI: true });
+      entries.push({
+        type: "custom",
+        customType: "extmgr-auto-update",
+        data: {
+          enabled: true,
+          intervalMs: 60 * 60 * 1000,
+          displayText: "1 hour",
+          updatesAvailable: ["npm:demo"],
+        },
+      });
+
+      await updateExtmgrStatus(ctx, pi);
+
+      assert.equal(widgets.get("extmgr-attention"), undefined);
+      assert.doesNotMatch(statuses.get("extmgr") ?? "", /1 update/);
+    } finally {
+      restoreCatalog();
+    }
+  });
+});
+
 void test("workspace titles are set per screen and restored to pi's format", () => {
   const { ctx, titles } = createMockHarness({ hasUI: true, cwd: "/workspace/demo-project" });
 

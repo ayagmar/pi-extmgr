@@ -8,7 +8,7 @@ import {
   getAgentDir,
 } from "@earendil-works/pi-coding-agent";
 import { getPackageCatalog, type PackageCatalog } from "../packages/catalog.js";
-import { getAutoUpdateStatus } from "./auto-update.js";
+import { getAutoUpdateStatus, refreshKnownUpdates } from "./auto-update.js";
 import { isProjectTrusted } from "./mode.js";
 import { normalizePackageIdentity } from "./package-source.js";
 import { getProjectConfigDir } from "./pi-paths.js";
@@ -77,12 +77,18 @@ export async function updateExtmgrStatus(
       statusParts.push(autoUpdateStatus);
     }
 
-    // Validate updates against actually installed packages (handles external pi update)
+    // Remove markers for uninstalled packages first. If any cached markers
+    // remain, reconcile them with a live package-manager check so updates made
+    // outside extmgr do not leave stale badges and attention prompts behind.
     const knownUpdates = autoUpdateConfig.updatesAvailable ?? [];
-    const validUpdates = filterStaleUpdates(knownUpdates, packages, ctx.cwd);
-
-    // If stale updates were filtered, persist the correction
-    if (validUpdates.length !== knownUpdates.length) {
+    let validUpdates = filterStaleUpdates(knownUpdates, packages, ctx.cwd);
+    if (validUpdates.length > 0) {
+      validUpdates = filterStaleUpdates(
+        [...(await refreshKnownUpdates(pi, ctx))],
+        packages,
+        ctx.cwd
+      );
+    } else if (validUpdates.length !== knownUpdates.length) {
       saveAutoUpdateConfig(pi, {
         ...autoUpdateConfig,
         updatesAvailable: validUpdates,
