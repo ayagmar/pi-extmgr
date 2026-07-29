@@ -77,7 +77,9 @@ async function updatePackageInternal(
         overlay: true,
       },
       async ({ setMessage }) => {
-        await getPackageCatalog(ctx.cwd, isProjectTrusted(ctx)).update(source, (event) => {
+        await getPackageCatalog(ctx.cwd, isProjectTrusted(ctx), {
+          suppressOutput: ctx.mode === "tui",
+        }).update(source, (event) => {
           setMessage(getProgressMessage(event, `Updating ${source}...`));
         });
         return undefined;
@@ -132,7 +134,9 @@ async function updatePackagesInternal(
         overlay: true,
       },
       async ({ setMessage }) => {
-        await getPackageCatalog(ctx.cwd, isProjectTrusted(ctx)).update(undefined, (event) => {
+        await getPackageCatalog(ctx.cwd, isProjectTrusted(ctx), {
+          suppressOutput: ctx.mode === "tui",
+        }).update(undefined, (event) => {
           setMessage(getProgressMessage(event, "Updating all packages..."));
         });
         return undefined;
@@ -303,13 +307,11 @@ async function executeRemovalTargets(
           fallbackWithoutLoader: true,
         },
         async ({ setMessage }) => {
-          await getPackageCatalog(ctx.cwd, isProjectTrusted(ctx)).remove(
-            target.source,
-            target.scope,
-            (event) => {
-              setMessage(getProgressMessage(event, `Removing ${target.source}...`));
-            }
-          );
+          await getPackageCatalog(ctx.cwd, isProjectTrusted(ctx), {
+            suppressOutput: ctx.mode === "tui",
+          }).remove(target.source, target.scope, (event) => {
+            setMessage(getProgressMessage(event, `Removing ${target.source}...`));
+          });
           return undefined;
         }
       );

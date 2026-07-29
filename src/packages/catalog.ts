@@ -33,7 +33,16 @@ export interface PackageCatalog {
   update(source?: string, onProgress?: (event: ProgressEvent) => void): Promise<void>;
 }
 
-type PackageCatalogFactory = (cwd: string, projectTrusted?: boolean) => PackageCatalog;
+export interface PackageCatalogOptions {
+  /** Keep package-manager subprocess output out of Pi's interactive TUI. */
+  suppressOutput?: boolean;
+}
+
+type PackageCatalogFactory = (
+  cwd: string,
+  projectTrusted?: boolean,
+  options?: PackageCatalogOptions
+) => PackageCatalog;
 
 let packageCatalogFactory: PackageCatalogFactory = createDefaultPackageCatalog;
 
@@ -83,10 +92,39 @@ function setProgressCallback(
   packageManager.setProgressCallback(onProgress);
 }
 
-function createDefaultPackageCatalog(cwd: string, projectTrusted = false): PackageCatalog {
+function suppressPackageManagerOutput(packageManager: DefaultPackageManager): void {
+  // Pi's package manager intentionally inherits stderr for CLI feedback. That
+  // output corrupts the screen when an extension owns the interactive TUI.
+  // These methods are private in Pi's public types, but the package manager's
+  // command runner only needs the returned child's streams drained.
+  const internal = packageManager as unknown as {
+    spawnCommand: (...args: unknown[]) => {
+      stdout?: { resume(): void };
+      stderr?: { resume(): void };
+    };
+    spawnCaptureCommand: (...args: unknown[]) => {
+      stdout?: { resume(): void };
+      stderr?: { resume(): void };
+    };
+  };
+  const capture = internal.spawnCaptureCommand.bind(packageManager);
+  internal.spawnCommand = (...args) => {
+    const child = capture(...args);
+    child.stdout?.resume();
+    child.stderr?.resume();
+    return child;
+  };
+}
+
+function createDefaultPackageCatalog(
+  cwd: string,
+  projectTrusted = false,
+  options: PackageCatalogOptions = {}
+): PackageCatalog {
   const agentDir = getAgentDir();
   const settingsManager = SettingsManager.create(cwd, agentDir, { projectTrusted });
   const packageManager = new DefaultPackageManager({ cwd, agentDir, settingsManager });
+  if (options.suppressOutput) suppressPackageManagerOutput(packageManager);
 
   return {
     listInstalledPackages(options) {
@@ -159,8 +197,12 @@ function createDefaultPackageCatalog(cwd: string, projectTrusted = false): Packa
   };
 }
 
-export function getPackageCatalog(cwd: string, projectTrusted = false): PackageCatalog {
-  return packageCatalogFactory(cwd, projectTrusted);
+export function getPackageCatalog(
+  cwd: string,
+  projectTrusted = false,
+  options?: PackageCatalogOptions
+): PackageCatalog {
+  return packageCatalogFactory(cwd, projectTrusted, options);
 }
 
 export function setPackageCatalogFactory(factory?: PackageCatalogFactory): void {
