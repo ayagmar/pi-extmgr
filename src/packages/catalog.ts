@@ -92,26 +92,43 @@ function setProgressCallback(
   packageManager.setProgressCallback(onProgress);
 }
 
-function suppressPackageManagerOutput(packageManager: DefaultPackageManager): void {
-  // Pi's package manager intentionally inherits stderr for CLI feedback. That
-  // output corrupts the screen when an extension owns the interactive TUI.
-  // These methods are private in Pi's public types, but the package manager's
-  // command runner only needs the returned child's streams drained.
-  const internal = packageManager as unknown as {
-    spawnCommand: (...args: unknown[]) => {
-      stdout?: { resume(): void };
-      stderr?: { resume(): void };
-    };
-    spawnCaptureCommand: (...args: unknown[]) => {
-      stdout?: { resume(): void };
-      stderr?: { resume(): void };
-    };
-  };
+interface PackageManagerChild {
+  stdout?: { resume?: () => void };
+  stderr?: { resume?: () => void };
+}
+
+interface PackageManagerRuntime {
+  spawnCommand?: (...args: unknown[]) => PackageManagerChild;
+  spawnCaptureCommand?: (...args: unknown[]) => PackageManagerChild;
+}
+
+/**
+ * Adapt Pi's inherited-output command runner for an extmgr-owned TUI.
+ *
+ * Pi does not expose a public output-mode option yet, so this deliberately
+ * small compatibility boundary is kept isolated and fails loudly if the
+ * private runtime shape changes. Captured streams are resumed immediately;
+ * the caller still owns the child's exit/error listeners and semantics.
+ */
+export function suppressPackageManagerOutput(packageManager: unknown): void {
+  const internal = packageManager as PackageManagerRuntime;
+  if (typeof internal.spawnCommand !== "function") {
+    throw new Error("Pi package manager cannot suppress output: spawnCommand is unavailable");
+  }
+  if (typeof internal.spawnCaptureCommand !== "function") {
+    throw new Error(
+      "Pi package manager cannot suppress output: spawnCaptureCommand is unavailable"
+    );
+  }
+
   const capture = internal.spawnCaptureCommand.bind(packageManager);
   internal.spawnCommand = (...args) => {
     const child = capture(...args);
-    child.stdout?.resume();
-    child.stderr?.resume();
+    if (!child || typeof child !== "object") {
+      throw new Error("Pi package manager cannot suppress output: invalid child process");
+    }
+    child.stdout?.resume?.();
+    child.stderr?.resume?.();
     return child;
   };
 }

@@ -357,7 +357,7 @@ export async function handlePackageItemAction(
       return outcome.reloaded;
     }
     case "update": {
-      const outcome = await updatePackageWithOutcome(pkg.source, ctx, pi);
+      const outcome = await updatePackageWithOutcome(pkg.source, ctx, pi, pkg.scope);
       return outcome.reloaded;
     }
     case "remove": {

@@ -1,11 +1,15 @@
 /** Coordinated bulk package operations for the Installed workspace. */
 import { type ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import { getPackageCatalog } from "../../packages/catalog.js";
-import { applyPackageExtensionStateChanges } from "../../packages/extensions.js";
+import {
+  clearPackageEntrypointCache,
+  applyPackageExtensionStateChanges,
+} from "../../packages/extensions.js";
 import { type State, type UnifiedItem } from "../../types/index.js";
 import { parseChoiceByLabel } from "../../utils/command.js";
 import { isProjectTrusted } from "../../utils/mode.js";
 import { normalizePackageIdentity } from "../../utils/package-source.js";
+import { clearSearchCache } from "../../packages/discovery.js";
 import { confirmReload } from "../../utils/ui-helpers.js";
 import { runTaskWithLoader } from "../async-task.js";
 import { showReport } from "../report.js";
@@ -42,23 +46,32 @@ async function runBulkOperation(
       overlay: true,
     },
     async ({ setMessage }) => {
-      const catalog = getPackageCatalog(ctx.cwd, isProjectTrusted(ctx));
+      const catalog = getPackageCatalog(ctx.cwd, isProjectTrusted(ctx), {
+        suppressOutput: ctx.mode === "tui",
+      });
       const completed: string[] = [];
       const failed: string[] = [];
       const skipped: string[] = [];
       const availableUpdates =
         action === "update"
           ? new Set(
-              (await catalog.checkForAvailableUpdates()).map(
-                (update) => `${update.scope}\0${normalizePackageIdentity(update.source)}`
+              (await catalog.checkForAvailableUpdates()).map((update) =>
+                normalizePackageIdentity(update.source)
               )
             )
           : undefined;
+      const updatedIdentities = new Set<string>();
       for (const item of selectedPackages) {
+        const identity = normalizePackageIdentity(item.source);
         setMessage(`${BULK_ACTION_OPTIONS[action]}: ${item.displayName}...`);
         try {
           if (action === "update") {
-            if (!availableUpdates?.has(`${item.scope}\0${normalizePackageIdentity(item.source)}`)) {
+            if (updatedIdentities.has(identity)) {
+              skipped.push(`${item.displayName}: already attempted for all matching scopes`);
+              continue;
+            }
+            updatedIdentities.add(identity);
+            if (!availableUpdates?.has(identity)) {
               skipped.push(`${item.displayName}: already current or pinned`);
               continue;
             }
@@ -89,6 +102,10 @@ async function runBulkOperation(
             `${item.displayName}: ${error instanceof Error ? error.message : String(error)}`
           );
         }
+      }
+      if (completed.length > 0 && (action === "update" || action === "remove")) {
+        clearSearchCache();
+        clearPackageEntrypointCache();
       }
       return { completed, failed, skipped };
     }
@@ -124,7 +141,9 @@ export async function handleBulkAction(
 
   const confirmed = await ctx.ui.confirm(
     "Bulk package operation",
-    `${BULK_ACTION_OPTIONS[action]} for ${selectedPackages.length} package(s)?`
+    `${BULK_ACTION_OPTIONS[action]} for ${selectedPackages.length} package(s)?${
+      action === "update" ? " Updates apply to every configured scope matching each source." : ""
+    }`
   );
   if (!confirmed) return "resume";
 

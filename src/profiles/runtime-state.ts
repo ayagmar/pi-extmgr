@@ -8,6 +8,7 @@ import {
   type ExtensionAPI,
   type ExtensionCommandContext,
   getAgentDir,
+  VERSION,
   type PackageSource,
   SettingsManager,
 } from "@earendil-works/pi-coding-agent";
@@ -242,7 +243,7 @@ export async function calculateProfileDiagnostics(
   const installed = await getInstalledPackagesAllScopes(ctx);
   const [runtimeTargets, compatibility] = await Promise.all([
     describeInstalledRuntimeTargets(installed, ctx, pi),
-    inspectInstalledPackageCompatibility(installed),
+    inspectInstalledPackageCompatibility(installed, { piVersion: VERSION }),
   ]);
   return desired.packages.map((pkg) => {
     const source = getEffectivePackageSource(pkg);

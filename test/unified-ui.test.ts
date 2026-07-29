@@ -578,6 +578,7 @@ void test("/extensions keeps staged changes while peeking at help", async () => 
 void test("/extensions bulk updates use one flow and summarize partial failures", async () => {
   const cwd = await mkdtemp(join(tmpdir(), "pi-extmgr-unified-bulk-"));
   const updated: string[] = [];
+  const catalogOptions: { suppressOutput?: boolean }[] = [];
   const restoreCatalog = mockPackageCatalog({
     packages: [
       { source: "npm:alpha", name: "alpha", scope: "global" },
@@ -590,6 +591,9 @@ void test("/extensions bulk updates use one flow and summarize partial failures"
     updateImpl: (source) => {
       if (source === "npm:beta") throw new Error("registry unavailable");
       if (source) updated.push(source);
+    },
+    catalogOptionsImpl: (options) => {
+      if (options) catalogOptions.push(options);
     },
   });
   try {
@@ -624,7 +628,14 @@ void test("/extensions bulk updates use one flow and summarize partial failures"
     await showInteractive(ctx, pi);
 
     assert.deepEqual(updated, ["npm:alpha"]);
+    assert.ok(catalogOptions.length > 0);
+    assert.ok(catalogOptions.every((options) => options.suppressOutput === true));
     assert.equal(reloadCount(), 0);
+    assert.equal(
+      managerCalls,
+      2,
+      "expected a declined reload to rebuild the manager from live data"
+    );
     assert.equal(confirmPrompts.filter((title) => title === "Reload Required").length, 1);
     const summaryText = summaryLines.join("\n");
     assert.ok(summaryText.includes("1 succeeded"), "expected the summary to count successes");

@@ -12,6 +12,10 @@ import {
   installPackageWithOutcome,
 } from "../src/packages/install.js";
 import { removePackage, updatePackage, updatePackages } from "../src/packages/management.js";
+import {
+  clearPackageEntrypointCache,
+  discoverPackageExtensionEntrypoints,
+} from "../src/packages/extensions.js";
 import { getExtmgrTrashDir } from "../src/utils/pi-paths.js";
 import { createMockHarness } from "./helpers/mocks.js";
 import { mockPackageCatalog } from "./helpers/package-catalog.js";
@@ -439,6 +443,69 @@ void test("updatePackage reloads after a real update", async () => {
     output.some((line) => line.includes("Reload pi to apply changes. (Package updated.)")),
     true
   );
+});
+
+void test("successful package updates invalidate entrypoint discovery cache", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "pi-extmgr-update-cache-"));
+  const packageRoot = join(cwd, "pkg");
+  await mkdir(packageRoot, { recursive: true });
+  await writeFile(
+    join(packageRoot, "package.json"),
+    JSON.stringify({ pi: { extensions: ["index.ts"] } }),
+    "utf8"
+  );
+  await writeFile(join(packageRoot, "index.ts"), "// old\n", "utf8");
+  try {
+    assert.deepEqual(await discoverPackageExtensionEntrypoints(packageRoot), ["index.ts"]);
+    const restoreCatalog = mockPackageCatalog({
+      packages: [{ source: "npm:pkg", name: "pkg", scope: "project", resolvedPath: packageRoot }],
+      updates: [{ source: "npm:pkg", displayName: "pkg", type: "npm", scope: "project" }],
+      updateImpl: async () => {
+        await rm(join(packageRoot, "index.ts"));
+        await writeFile(join(packageRoot, "new.ts"), "// new\n", "utf8");
+        await writeFile(
+          join(packageRoot, "package.json"),
+          JSON.stringify({ pi: { extensions: ["new.ts"] } }),
+          "utf8"
+        );
+      },
+    });
+    try {
+      const { pi, ctx } = createMockHarness({ cwd });
+      await updatePackage("npm:pkg", ctx, pi);
+      assert.deepEqual(await discoverPackageExtensionEntrypoints(packageRoot), ["new.ts"]);
+    } finally {
+      restoreCatalog();
+    }
+  } finally {
+    clearPackageEntrypointCache();
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
+
+void test("scoped update rows explicitly confirm the all-scope Pi behavior", async () => {
+  const updated: string[] = [];
+  const restoreCatalog = mockPackageCatalog({
+    packages: [
+      { source: "npm:demo", name: "demo", scope: "global" },
+      { source: "npm:demo", name: "demo", scope: "project" },
+    ],
+    updates: [{ source: "npm:demo", displayName: "demo", type: "npm", scope: "global" }],
+    updateImpl: (source) => {
+      if (source) updated.push(source);
+    },
+  });
+  try {
+    const { pi, ctx, confirmPrompts } = createMockHarness({
+      hasUI: true,
+      confirmResult: true,
+    });
+    await updatePackage("npm:demo", ctx, pi);
+    assert.deepEqual(updated, ["npm:demo"]);
+    assert.ok(confirmPrompts.some((title) => title === "Update package in all scopes"));
+  } finally {
+    restoreCatalog();
+  }
 });
 
 void test("updatePackage handles update checks that fail", async () => {

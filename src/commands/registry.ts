@@ -1,4 +1,8 @@
-import { type ExtensionAPI, type ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
+import {
+  type ExtensionAPI,
+  type ExtensionCommandContext,
+  VERSION,
+} from "@earendil-works/pi-coding-agent";
 import { type AutocompleteItem } from "@earendil-works/pi-tui";
 import { inspectInstalledPackageCompatibility } from "../doctor/compatibility.js";
 import { findRuntimeConflicts } from "../doctor/conflicts.js";
@@ -25,7 +29,9 @@ async function showDoctor(ctx: ExtensionCommandContext, pi: ExtensionAPI): Promi
   const owners = getRuntimeOwners(pi);
   const conflicts = findRuntimeConflicts(owners);
   const packages = await getInstalledPackagesAllScopes(ctx);
-  const compatibility = await inspectInstalledPackageCompatibility(packages);
+  const compatibility = await inspectInstalledPackageCompatibility(packages, {
+    piVersion: VERSION,
+  });
   const lines = [`Runtime ownership: ${owners.length} command/tool entries`];
   lines.push("Installed package compatibility:");
   if (compatibility.length === 0) {

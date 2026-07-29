@@ -53,7 +53,7 @@ function normalizePackageRootCandidate(candidate: string): string {
   return resolved;
 }
 
-async function getGlobalNpmRoot(cwd: string): Promise<string | undefined> {
+export async function getGlobalNpmRoot(cwd: string): Promise<string | undefined> {
   let npmCommand: ReturnType<typeof resolveConfiguredNpmRootCommand>;
   try {
     npmCommand = resolveConfiguredNpmRootCommand(cwd);
@@ -61,7 +61,14 @@ async function getGlobalNpmRoot(cwd: string): Promise<string | undefined> {
     return undefined;
   }
 
-  const cacheKey = [npmCommand.command, ...npmCommand.args].join("\0");
+  // Bun's global root can vary by project bunfig.toml and by the configured
+  // environment, even when the executable and arguments are identical.
+  const cacheKey = [
+    npmCommand.command,
+    ...npmCommand.args,
+    resolve(cwd),
+    process.env.BUN_INSTALL_GLOBAL_DIR ?? "",
+  ].join("\0");
 
   if (globalNpmRootCache?.key === cacheKey) {
     return globalNpmRootCache.root ?? undefined;

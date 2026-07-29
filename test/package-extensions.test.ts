@@ -1,15 +1,76 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
+import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { join } from "node:path";
 import test from "node:test";
 import {
   clearPackageEntrypointCache,
   discoverPackageExtensionEntrypoints,
+  getGlobalNpmRoot,
   discoverPackageExtensions,
   setPackageExtensionState,
 } from "../src/packages/extensions.js";
 import { type InstalledPackage } from "../src/types/index.js";
+
+void test("Bun global root cache is scoped by project cwd and bunfig", async () => {
+  const agentDir = await mkdtemp(join(tmpdir(), "pi-extmgr-bun-agent-"));
+  const cwdA = await mkdtemp(join(tmpdir(), "pi-extmgr-bun-a-"));
+  const cwdB = await mkdtemp(join(tmpdir(), "pi-extmgr-bun-b-"));
+  const bun = join(agentDir, "bun");
+  const oldAgentDir = process.env.PI_CODING_AGENT_DIR;
+  const oldBunGlobalDir = process.env.BUN_INSTALL_GLOBAL_DIR;
+  process.env.PI_CODING_AGENT_DIR = agentDir;
+  delete process.env.BUN_INSTALL_GLOBAL_DIR;
+  try {
+    await writeFile(bun, "#!/bin/sh\necho /tmp/fake-bun-bin\n", "utf8");
+    await chmod(bun, 0o755);
+    await writeFile(join(agentDir, "settings.json"), JSON.stringify({ npmCommand: [bun] }), "utf8");
+    const rootA = join(cwdA, "bun-global");
+    const rootB = join(cwdB, "bun-global");
+    await mkdir(join(cwdA, ".pi"), { recursive: true });
+    await mkdir(join(cwdB, ".pi"), { recursive: true });
+    await writeFile(join(cwdA, "bunfig.toml"), `[install]\nglobalDir = "${rootA}"\n`, "utf8");
+    await writeFile(join(cwdB, "bunfig.toml"), `[install]\nglobalDir = "${rootB}"\n`, "utf8");
+    for (const [root, entry] of [
+      [rootA, "a.ts"],
+      [rootB, "b.ts"],
+    ] as const) {
+      const packageRoot = join(root, "node_modules", "demo");
+      await mkdir(packageRoot, { recursive: true });
+      await writeFile(
+        join(packageRoot, "package.json"),
+        JSON.stringify({ pi: { extensions: [entry] } }),
+        "utf8"
+      );
+      await writeFile(join(packageRoot, entry), "// extension\n", "utf8");
+    }
+
+    const packageRecord = () => [{ source: "npm:demo", name: "demo", scope: "global" as const }];
+    assert.equal(await getGlobalNpmRoot(cwdA), join(rootA, "node_modules"));
+    assert.equal(await getGlobalNpmRoot(cwdB), join(rootB, "node_modules"));
+    assert.equal(
+      (await discoverPackageExtensions(packageRecord(), cwdA))[0]?.extensionPath,
+      "a.ts"
+    );
+    assert.equal(
+      (await discoverPackageExtensions(packageRecord(), cwdB))[0]?.extensionPath,
+      "b.ts"
+    );
+    assert.equal(getAgentDir(), agentDir);
+  } finally {
+    if (oldAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+    else process.env.PI_CODING_AGENT_DIR = oldAgentDir;
+    if (oldBunGlobalDir === undefined) delete process.env.BUN_INSTALL_GLOBAL_DIR;
+    else process.env.BUN_INSTALL_GLOBAL_DIR = oldBunGlobalDir;
+    clearPackageEntrypointCache();
+    await Promise.all([
+      rm(cwdA, { recursive: true, force: true }),
+      rm(cwdB, { recursive: true, force: true }),
+      rm(agentDir, { recursive: true, force: true }),
+    ]);
+  }
+});
 
 void test("discoverPackageExtensionEntrypoints reuses results until explicitly cleared", async () => {
   const cwd = await mkdtemp(join(tmpdir(), "pi-extmgr-cwd-"));

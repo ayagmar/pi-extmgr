@@ -5,6 +5,7 @@ import {
   type ExtensionAPI,
   type ExtensionCommandContext,
   getAgentDir,
+  VERSION,
   type Theme,
 } from "@earendil-works/pi-coding-agent";
 import { Key, matchesKey, truncateToWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
@@ -68,7 +69,7 @@ async function loadHealthSnapshot(
   return {
     owners: owners.length,
     conflicts: findRuntimeConflicts(owners),
-    compatibility: await inspectInstalledPackageCompatibility(packages),
+    compatibility: await inspectInstalledPackageCompatibility(packages, { piVersion: VERSION }),
     reload: await readReloadState(),
     trash: await listExtensionTrash(getTrashRoot()),
   };

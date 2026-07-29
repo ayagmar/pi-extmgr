@@ -7,7 +7,7 @@ import {
   getAgentDir,
 } from "@earendil-works/pi-coding-agent";
 import { UI } from "../constants.js";
-import { type InstalledPackage } from "../types/index.js";
+import { type InstalledPackage, type Scope } from "../types/index.js";
 import { runTaskWithLoader } from "../ui/async-task.js";
 import { showListReport } from "../ui/report.js";
 import { parseChoiceByLabel } from "../utils/command.js";
@@ -44,13 +44,35 @@ const REMOVAL_SCOPE_CHOICES = {
 async function updatePackageInternal(
   source: string,
   ctx: ExtensionCommandContext,
-  pi: ExtensionAPI
+  pi: ExtensionAPI,
+  selectedScope?: Scope
 ): Promise<PackageMutationOutcome> {
   showProgress(ctx, "Updating", source);
 
   const updateIdentity = normalizePackageIdentity(source, { cwd: ctx.cwd });
+  let updatesEveryMatchingScope = false;
 
   try {
+    const matchingScopes = new Set(
+      (await getInstalledPackagesAllScopes(ctx))
+        .filter((pkg) => normalizePackageIdentity(pkg.source, { cwd: ctx.cwd }) === updateIdentity)
+        .map((pkg) => pkg.scope)
+    );
+    updatesEveryMatchingScope = matchingScopes.size > 1;
+
+    if (ctx.hasUI && updatesEveryMatchingScope) {
+      const confirmed = await ctx.ui.confirm(
+        "Update package in all scopes",
+        `Update ${source} in every configured scope matching this source${
+          selectedScope ? ` (selected ${selectedScope} row)` : ""
+        }?`
+      );
+      if (!confirmed) {
+        notify(ctx, "Package update cancelled.", "info");
+        return { reloaded: false };
+      }
+    }
+
     const updates = await getPackageCatalog(
       ctx.cwd,
       isProjectTrusted(ctx)
@@ -94,8 +116,15 @@ async function updatePackageInternal(
     return { reloaded: false };
   }
 
+  clearSearchCache();
+  clearPackageEntrypointCache();
   logPackageUpdate(pi, source, source, undefined, true);
-  success(ctx, `Updated ${source}`);
+  success(
+    ctx,
+    updatesEveryMatchingScope
+      ? `Updated ${source} in every configured scope matching this source.`
+      : `Updated ${source}.`
+  );
   clearUpdatesAvailable(pi, ctx, [updateIdentity]);
 
   const reloaded = await confirmReload(ctx, "Package updated.");
@@ -151,8 +180,10 @@ async function updatePackagesInternal(
     return { reloaded: false };
   }
 
+  clearSearchCache();
+  clearPackageEntrypointCache();
   logPackageUpdate(pi, BULK_UPDATE_LABEL, BULK_UPDATE_LABEL, undefined, true);
-  success(ctx, "Packages updated");
+  success(ctx, "Packages updated in every configured scope.");
   clearUpdatesAvailable(pi, ctx);
 
   const reloaded = await confirmReload(ctx, "Packages updated.");
@@ -173,9 +204,10 @@ export async function updatePackage(
 export async function updatePackageWithOutcome(
   source: string,
   ctx: ExtensionCommandContext,
-  pi: ExtensionAPI
+  pi: ExtensionAPI,
+  selectedScope?: Scope
 ): Promise<PackageMutationOutcome> {
-  return updatePackageInternal(source, ctx, pi);
+  return updatePackageInternal(source, ctx, pi, selectedScope);
 }
 
 export async function updatePackages(

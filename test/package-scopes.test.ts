@@ -3,12 +3,51 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { getPackageCatalog } from "../src/packages/catalog.js";
+import { getPackageCatalog, suppressPackageManagerOutput } from "../src/packages/catalog.js";
 import {
   comparePackageScopes,
   getPackageScopeLabel,
   movePackageBetweenScopes,
 } from "../src/packages/scopes.js";
+
+void test("TUI output shim drains captured streams and preserves child errors", async () => {
+  const events: string[] = [];
+  const child = {
+    stdout: { resume: () => events.push("stdout") },
+    stderr: { resume: () => events.push("stderr") },
+    once: (event: string, listener: (error: Error) => void) => {
+      if (event === "error") listener(new Error("child failed"));
+      return child;
+    },
+  };
+  const manager = {
+    spawnCommand: () => {
+      throw new Error("inherited output should not be used");
+    },
+    spawnCaptureCommand: () => child,
+  };
+
+  suppressPackageManagerOutput(manager);
+  const result = (manager.spawnCommand as (...args: unknown[]) => typeof child)("git", []);
+  result.once("error", (error: Error) => events.push(error.message));
+  assert.deepEqual(events, ["stdout", "stderr", "child failed"]);
+
+  assert.throws(
+    () => suppressPackageManagerOutput({ spawnCaptureCommand: () => child }),
+    /spawnCommand is unavailable/
+  );
+  assert.throws(
+    () => suppressPackageManagerOutput({ spawnCommand: () => child }),
+    /spawnCaptureCommand is unavailable/
+  );
+
+  const invalidChildManager = {
+    spawnCommand: () => child,
+    spawnCaptureCommand: () => undefined,
+  };
+  suppressPackageManagerOutput(invalidChildManager);
+  assert.throws(() => invalidChildManager.spawnCommand(), /invalid child process/);
+});
 
 void test("comparePackageScopes identifies project overrides and scope-only packages", () => {
   const result = comparePackageScopes([

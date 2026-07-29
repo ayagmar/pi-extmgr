@@ -322,11 +322,22 @@ export async function setExtensionState(
     if (!entry.activePath || !entry.disabledPath) {
       return { ok: false, error: "Missing paths" };
     }
-    if (target === "enabled") {
-      await rename(entry.disabledPath, entry.activePath);
-    } else {
-      await rename(entry.activePath, entry.disabledPath);
+
+    const source = target === "enabled" ? entry.disabledPath : entry.activePath;
+    const destination = target === "enabled" ? entry.activePath : entry.disabledPath;
+    if (source === destination) return { ok: true };
+
+    // Check before rename so an active/disabled pair is never silently
+    // overwritten. This is intentionally a preflight: filesystem races can
+    // still only be mitigated, not made transactional, by this API.
+    if (await fileExists(destination)) {
+      return {
+        ok: false,
+        error: `Cannot ${target === "enabled" ? "enable" : "disable"} extension: destination already exists (${destination})`,
+      };
     }
+
+    await rename(source, destination);
     return { ok: true };
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : String(error) };
