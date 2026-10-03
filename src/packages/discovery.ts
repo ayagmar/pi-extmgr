@@ -26,7 +26,7 @@ import { readSummary } from "../utils/fs.js";
 import { isProjectTrusted } from "../utils/mode.js";
 import { fetchWithTimeout } from "../utils/network.js";
 import { execNpm } from "../utils/npm-exec.js";
-import { normalizePackageIdentity } from "../utils/package-source.js";
+import { getPackageSourceKind, normalizePackageIdentity } from "../utils/package-source.js";
 import { getProjectConfigDir } from "../utils/pi-paths.js";
 import { getPackageCatalog } from "./catalog.js";
 
@@ -533,9 +533,12 @@ async function addPackageMetadata(
         if (!needsDescription && !needsSize) return;
 
         try {
+          const sourceKind = getPackageSourceKind(pkg.source);
           if (pkg.source.endsWith(".ts") || pkg.source.endsWith(".js")) {
             if (needsDescription) {
-              pkg.description = await readSummary(pkg.source);
+              // Relative sources are relative to the settings file, not to the
+              // process; pi's resolved path is the file it actually loads.
+              pkg.description = await readSummary(pkg.resolvedPath ?? pkg.source);
             }
           } else if (pkg.source.startsWith("npm:")) {
             const parsed = parseNpmSource(pkg.source);
@@ -572,7 +575,7 @@ async function addPackageMetadata(
                 pkg.size = await fetchPackageSize(pkgName, ctx, pi, signal);
               }
             }
-          } else if (pkg.source.startsWith("git:")) {
+          } else if (sourceKind === "git") {
             if (needsDescription) pkg.description = "git repository";
           } else {
             if (needsDescription) pkg.description = "local package";
