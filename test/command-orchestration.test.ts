@@ -108,3 +108,24 @@ void test("runResolvedCommand install rejects conflicting scope flags", async ()
   const installCalls = calls.filter((c) => c.command === "pi" && c.args[0] === "install");
   assert.equal(installCalls.length, 0);
 });
+
+void test("autocomplete only suggests arguments the commands accept", () => {
+  assert.deepEqual(
+    getExtensionsAutocompleteItems("auto-update ")?.map((item) => item.value),
+    ["daily", "weekly", "monthly", "never"]
+  );
+  assert.deepEqual(
+    getExtensionsAutocompleteItems("trash ")?.map((item) => item.value),
+    ["list", "restore", "purge"]
+  );
+  assert.deepEqual(
+    getExtensionsAutocompleteItems("trash purge ")?.map((item) => item.value),
+    ["all"]
+  );
+  assert.equal(getExtensionsAutocompleteItems("trash restore "), null);
+  // Completion is an interactive-editor feature, and --global is refused there.
+  assert.equal(
+    getExtensionsAutocompleteItems("history --")?.some((item) => item.value === "--global"),
+    false
+  );
+});

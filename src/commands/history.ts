@@ -11,7 +11,7 @@ import {
 } from "../utils/history.js";
 import { notify } from "../utils/notify.js";
 
-const HISTORY_ACTIONS: ChangeAction[] = [
+export const HISTORY_ACTIONS: readonly ChangeAction[] = [
   "extension_toggle",
   "extension_delete",
   "package_install",
@@ -37,7 +37,7 @@ interface HistoryParseState {
 
 type HistoryOptionHandler = (tokens: string[], index: number, state: HistoryParseState) => number;
 
-const HISTORY_ACTION_SET = new Set<ChangeAction>(HISTORY_ACTIONS);
+const HISTORY_ACTION_SET: ReadonlySet<string> = new Set<string>(HISTORY_ACTIONS);
 
 const HISTORY_OPTION_HANDLERS: Record<string, HistoryOptionHandler> = {
   "--help": (_tokens, _index, state) => {

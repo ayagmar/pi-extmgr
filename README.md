@@ -161,7 +161,7 @@ Report panels (help, details, doctor, history) are overlays and keep these keys.
 /extensions remove [source]      # Remove package
 /extensions uninstall [source]   # Alias: remove
 /extensions update [source]      # Update one package (or all when omitted)
-/extensions auto-update [every]  # No arg opens wizard in UI; accepts 1d, 1w, 1mo, never, etc.
+/extensions auto-update [every]  # No arg opens wizard in UI; accepts 1d, 1w, 1mo, daily, weekly, monthly, never, etc.
 /extensions doctor                # Inspect ownership and package compatibility
 /extensions profile list              # List named profiles
 /extensions profile save <name> [--force] # Save the current package profile
