@@ -21,7 +21,13 @@ import {
 import { notify, error as notifyError, success } from "../utils/notify.js";
 import { execNpm } from "../utils/npm-exec.js";
 import { normalizePackageIdentity } from "../utils/package-source.js";
-import { getAgentDir, getExtmgrTrashDir, getProjectExtensionsDir } from "../utils/pi-paths.js";
+import {
+  getAgentDir,
+  getExtmgrTrashDir,
+  getGlobalSettingsLabel,
+  getProjectExtensionsDir,
+  getProjectSettingsLabel,
+} from "../utils/pi-paths.js";
 import { getProgressMessage } from "../utils/progress.js";
 import { clearUpdatesAvailable } from "../utils/settings.js";
 import { updateExtmgrStatus } from "../utils/status.js";
@@ -46,11 +52,13 @@ export interface InstallOutcome {
   reloaded: boolean;
 }
 
-const INSTALL_SCOPE_CHOICES = {
-  global: "Global (~/.pi/agent/settings.json)",
-  project: ".pi/settings.json",
-  cancel: "Cancel",
-} as const;
+function installScopeChoices() {
+  return {
+    global: `Global (${getGlobalSettingsLabel()})`,
+    project: getProjectSettingsLabel(),
+    cancel: "Cancel",
+  };
+}
 
 async function resolveInstallScope(
   ctx: ExtensionCommandContext,
@@ -60,9 +68,10 @@ async function resolveInstallScope(
 
   if (!ctx.hasUI) return "global";
 
+  const choices = installScopeChoices();
   const choice = parseChoiceByLabel(
-    INSTALL_SCOPE_CHOICES,
-    await ctx.ui.select("Install scope", Object.values(INSTALL_SCOPE_CHOICES))
+    choices,
+    await ctx.ui.select("Install scope", Object.values(choices))
   );
 
   return choice === "cancel" ? undefined : choice;

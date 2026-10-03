@@ -584,13 +584,17 @@ void test("discoverPackageExtensions resolves npm project package without resolv
   }
 });
 
-void test("discoverPackageExtensions resolves npm global package via PI_PACKAGE_DIR", async () => {
+void test("discoverPackageExtensions resolves user npm packages from the managed agent npm root", async () => {
   const cwd = await mkdtemp(join(tmpdir(), "pi-extmgr-cwd-"));
-  const packageDir = await mkdtemp(join(tmpdir(), "pi-extmgr-package-dir-"));
+  const agentDir = await mkdtemp(join(tmpdir(), "pi-extmgr-agent-dir-"));
+  const piPackageDir = await mkdtemp(join(tmpdir(), "pi-extmgr-pi-install-dir-"));
+  const oldAgentDir = process.env.PI_CODING_AGENT_DIR;
   const oldPackageDir = process.env.PI_PACKAGE_DIR;
-  process.env.PI_PACKAGE_DIR = packageDir;
+  process.env.PI_CODING_AGENT_DIR = agentDir;
+  // PI_PACKAGE_DIR names pi's own install dir (Nix/Guix); it holds no user packages.
+  process.env.PI_PACKAGE_DIR = piPackageDir;
 
-  const pkgRoot = join(packageDir, "npm", "node_modules", "demo-global");
+  const pkgRoot = join(agentDir, "npm", "node_modules", "demo-global");
 
   try {
     await mkdir(pkgRoot, { recursive: true });
@@ -613,14 +617,14 @@ void test("discoverPackageExtensions resolves npm global package via PI_PACKAGE_
     assert.equal(discovered.length, 1);
     assert.equal(discovered[0]?.extensionPath, "index.ts");
   } finally {
-    if (oldPackageDir === undefined) {
-      delete process.env.PI_PACKAGE_DIR;
-    } else {
-      process.env.PI_PACKAGE_DIR = oldPackageDir;
-    }
+    if (oldAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+    else process.env.PI_CODING_AGENT_DIR = oldAgentDir;
+    if (oldPackageDir === undefined) delete process.env.PI_PACKAGE_DIR;
+    else process.env.PI_PACKAGE_DIR = oldPackageDir;
 
     await rm(cwd, { recursive: true, force: true });
-    await rm(packageDir, { recursive: true, force: true });
+    await rm(agentDir, { recursive: true, force: true });
+    await rm(piPackageDir, { recursive: true, force: true });
   }
 });
 

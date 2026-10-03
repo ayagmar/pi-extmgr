@@ -6,7 +6,12 @@ import {
   normalizePackageIdentity,
   packageSourceString,
 } from "../utils/package-source.js";
-import { CONFIG_DIR_NAME, getAgentDir, getProjectConfigDir } from "../utils/pi-paths.js";
+import {
+  getAgentDir,
+  getGlobalSettingsLabel,
+  getProjectConfigDir,
+  getProjectSettingsLabel,
+} from "../utils/pi-paths.js";
 import { throwIfSettingsErrors } from "../utils/settings-errors.js";
 
 export interface PackageScopeComparison {
@@ -67,8 +72,8 @@ export function comparePackageScopes(
 
 export function getPackageScopeLabel(scope: Scope): string {
   return scope === "project"
-    ? `project (${CONFIG_DIR_NAME}/settings.json)`
-    : "global (~/.pi/agent/settings.json)";
+    ? `project (${getProjectSettingsLabel()})`
+    : `global (${getGlobalSettingsLabel()})`;
 }
 
 function packageMatches(value: PackageSource, source: string, cwd: string, scope: Scope): boolean {
