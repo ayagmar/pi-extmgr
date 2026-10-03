@@ -1,63 +1,131 @@
 name: Release
 
+# Single release path for this package:
+#   release-it bumps the version, writes CHANGELOG.md, commits, tags, pushes and
+#   creates the GitHub release; then `npm publish` runs via npm trusted publishing
+#   (OIDC, provenance included). No long-lived npm token is needed.
+#
+# One-time setup per package (npmjs.com → package → Settings → Trusted publishing):
+#   GitHub Actions · user: ayagmar · repo: <this repo> · workflow: release.yml · allow `npm publish`.
+# Trusted publishing can only be configured once the package exists on npm. For the very
+# first publish, run this workflow with `bootstrap: true` and an `NPM_TOKEN` repo secret
+# (granular, publish-only, short expiry), then configure trusted publishing and delete the secret.
+
 on:
   workflow_dispatch:
     inputs:
-      release_type:
-        description: Release bump type
-        required: true
+      increment:
+        description: Version bump (auto = derive from Conventional Commits)
         type: choice
-        options:
-          - patch
-          - minor
-          - major
-        default: patch
-      first_release:
-        description: Use --first-release for initial npm publish
-        required: true
+        options: [auto, patch, minor, major]
+        default: auto
+      dry_run:
+        description: Dry run (no commit, tag, push, GitHub release or publish)
+        type: boolean
+        default: false
+      publish_only:
+        description: Skip release-it and only publish the version already tagged at HEAD (recovery)
+        type: boolean
+        default: false
+      bootstrap:
+        description: First publish only — authenticate with the NPM_TOKEN secret instead of OIDC
         type: boolean
         default: false
 
 concurrency:
-  group: release-${{ github.repository }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: release-${{ github.repository }}
+  cancel-in-progress: false
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   release:
-    if: ${{ github.ref_name == github.event.repository.default_branch }}
+    if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
     runs-on: ubuntu-latest
-
+    permissions:
+      contents: write
+      id-token: write
+    env:
+      INCREMENT: ${{ inputs.increment }}
+      DRY_RUN: ${{ inputs.dry_run }}
+      PUBLISH_ONLY: ${{ inputs.publish_only }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v6
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
-          node-version: "24"
-          registry-url: "https://registry.npmjs.org"
-          cache: "pnpm"
+          node-version: 24
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Check
+        run: pnpm run check
 
       - name: Configure git author
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-      - name: Release
+      - name: Version, changelog, tag and GitHub release
+        if: inputs.publish_only == false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-          RELEASE_TYPE: ${{ inputs.release_type }}
-          FIRST_RELEASE: ${{ inputs.first_release }}
-        run: pnpm run release:ci
+        run: |
+          args=(--ci)
+          [ "$INCREMENT" != "auto" ] && args+=(--increment "$INCREMENT")
+          [ "$DRY_RUN" = "true" ] && args+=(--dry-run)
+          pnpm exec release-it "${args[@]}"
+
+      - name: Verify tagged version is unpublished
+        id: version
+        run: |
+          name=$(node -p 'require("./package.json").name')
+          version=$(node -p 'require("./package.json").version')
+          echo "name=$name" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if [ "$DRY_RUN" != "true" ] && ! git tag --points-at HEAD | grep -qx "v$version"; then
+            echo "::error::HEAD is not tagged v$version"
+            exit 1
+          fi
+          if npm view "$name@$version" version >/dev/null 2>&1; then
+            if [ "$DRY_RUN" = "true" ]; then
+              echo "::notice::$name@$version is already on npm (expected for a dry run)"
+            else
+              echo "::error::$name@$version is already published"
+              exit 1
+            fi
+          fi
+
+      - name: Use bootstrap token
+        if: inputs.bootstrap && inputs.dry_run == false
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          if [ -z "$NPM_TOKEN" ]; then
+            echo "::error::bootstrap requires an NPM_TOKEN repository secret"
+            exit 1
+          fi
+          echo "//registry.npmjs.org/:_authToken=${NPM_TOKEN}" > "$HOME/.npmrc"
+
+      - name: Publish to npm
+        run: |
+          args=(--access public)
+          [ "$DRY_RUN" = "true" ] && args+=(--dry-run)
+          npm publish "${args[@]}"
+
+      - name: Summary
+        if: success()
+        run: |
+          {
+            echo "### ${{ steps.version.outputs.name }}@${{ steps.version.outputs.version }}"
+            [ "$DRY_RUN" = "true" ] && echo "Dry run — nothing was pushed or published."
+          } >> "$GITHUB_STEP_SUMMARY"

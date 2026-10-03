@@ -1,0 +1,25 @@
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      pi:
+        patterns:
+          - "@earendil-works/*"
+          - "typebox"
+      dev-dependencies:
+        dependency-type: development
+        exclude-patterns:
+          - "@earendil-works/*"
+          - "typebox"
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns:
+          - "*"

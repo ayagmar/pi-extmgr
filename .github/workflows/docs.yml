@@ -2,29 +2,34 @@ name: Docs Build Check
 
 on:
   push:
-    branches: [master, main]
+    branches: [master]
     paths:
       - "docs/**"
   pull_request:
     paths:
       - "docs/**"
 
+permissions:
+  contents: read
+
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
-          node-version: "24"
+          node-version: 24
+          cache: npm
+          cache-dependency-path: docs/package-lock.json
 
       - name: Install and Build CSS
         working-directory: ./docs
         run: |
-          npm install
+          npm ci
           npm run build
 
       - name: Check build output exists
