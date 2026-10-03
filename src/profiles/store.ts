@@ -36,24 +36,6 @@ function hasOwn(object: object, key: PropertyKey): boolean {
   return Object.hasOwn(object, key);
 }
 
-export function normalizeProfileStore(input: unknown): ProfileStoreFile {
-  if (!input || typeof input !== "object" || Array.isArray(input)) return emptyStore();
-  const value = input as Record<string, unknown>;
-  if (value.version !== 1) return emptyStore();
-  const profilesValue = value.profiles;
-  if (!profilesValue || typeof profilesValue !== "object" || Array.isArray(profilesValue)) {
-    return emptyStore();
-  }
-  const profiles = safeDictionary<ExtmgrProfile>();
-  for (const [rawName, rawProfile] of Object.entries(profilesValue)) {
-    const name = rawName.trim();
-    if (!name) continue;
-    const profile = normalizeProfile(rawProfile);
-    profiles[name] = { ...profile, name };
-  }
-  return { version: 1, profiles };
-}
-
 function parseProfileStore(input: unknown, path: string): ProfileStoreFile {
   if (!input || typeof input !== "object" || Array.isArray(input)) {
     throw new Error(`Unsupported or malformed profile store: ${path}`);

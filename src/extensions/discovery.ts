@@ -2,7 +2,7 @@
  * Local extension discovery
  *
  * This module handles discovery and management of local Pi extensions
- * in both global (~/.pi/agent/extensions) and project (.pi/extensions) scopes.
+ * in both global (<agentDir>/extensions) and project (.pi/extensions) scopes.
  */
 
 import { type Dirent } from "node:fs";

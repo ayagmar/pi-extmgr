@@ -1,4 +1,4 @@
-import { mkdir, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileExists } from "../utils/fs.js";
 
@@ -212,25 +212,6 @@ export async function listExtensionTrash(
   if (kept.length !== file.records.length)
     await updateTrashFile(trashRoot, () => ({ version: 1, records: kept }));
   return kept;
-}
-
-export async function listExtensionTrashOrphans(trashRoot: string): Promise<string[]> {
-  try {
-    const records = new Set(
-      (await readTrashFile(trashRoot)).records.map((record) => resolve(record.trashPath))
-    );
-    const entries = await readdir(trashRoot);
-    return entries
-      .filter(
-        (name) =>
-          name !== "records.json" && !name.startsWith("records.corrupt-") && !name.startsWith(".")
-      )
-      .map((name) => resolve(trashRoot, name))
-      .filter((path) => !records.has(path));
-  } catch (error) {
-    if (error instanceof Error && "code" in error && error.code === "ENOENT") return [];
-    throw error;
-  }
 }
 
 export async function undoExtensionTrash(record: TrashRecord): Promise<void> {

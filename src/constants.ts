@@ -31,8 +31,6 @@ export const TIMEOUTS = {
   weeklyDownloads: 5_000,
 } as const;
 
-export type TimeoutKey = keyof typeof TIMEOUTS;
-
 /**
  * Cache limits and TTL values (in milliseconds or count)
  */
@@ -47,8 +45,6 @@ export const CACHE_LIMITS = {
   packageInfoTTL: 6 * 60 * 60 * 1000,
 } as const;
 
-export type CacheLimitKey = keyof typeof CACHE_LIMITS;
-
 /**
  * UI Constants
  *
@@ -62,5 +58,3 @@ export const UI = {
   /** Extended confirmation timeout for destructive operations: 1 minute */
   longConfirmTimeout: 60_000,
 } as const;
-
-export type UIKey = keyof typeof UI;

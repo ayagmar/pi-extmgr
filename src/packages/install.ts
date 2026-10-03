@@ -22,8 +22,8 @@ import { notify, error as notifyError, success } from "../utils/notify.js";
 import { execNpm } from "../utils/npm-exec.js";
 import { normalizePackageIdentity } from "../utils/package-source.js";
 import {
-  getAgentDir,
   getExtmgrTrashDir,
+  getGlobalExtensionsDir,
   getGlobalSettingsLabel,
   getProjectExtensionsDir,
   getProjectSettingsLabel,
@@ -97,10 +97,7 @@ async function resolveInstallScope(
 }
 
 function getExtensionInstallDir(ctx: ExtensionCommandContext, scope: InstallScope): string {
-  if (scope === "project") {
-    return getProjectExtensionsDir(ctx.cwd);
-  }
-  return join(getAgentDir(), "extensions");
+  return scope === "project" ? getProjectExtensionsDir(ctx.cwd) : getGlobalExtensionsDir();
 }
 
 async function ensureTarAvailable(
