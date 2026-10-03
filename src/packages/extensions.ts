@@ -173,8 +173,12 @@ function getScopedPackages(
   settings: SettingsManager,
   scope: Scope
 ): (string | PackageSettingsObject)[] {
+  // getPackages() returns the merged view, where trusted project packages
+  // replace the global list; writing that back would leak them into global.
   const packages =
-    scope === "project" ? settings.getProjectSettings().packages : settings.getPackages();
+    scope === "project"
+      ? settings.getProjectSettings().packages
+      : settings.getGlobalSettings().packages;
   return packages ? [...packages] : [];
 }
 

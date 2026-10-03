@@ -14,6 +14,9 @@ import {
 import { calculateProfileDiagnostics } from "./runtime-state.js";
 import { type ExtmgrProfile } from "./schema.js";
 
+export const PROJECT_TRUST_REQUIRED =
+  "Project-scoped profile packages require a trusted project. Trust this project in pi first.";
+
 export interface ProfileReviewCounts {
   add: number;
   remove: number;
@@ -81,7 +84,12 @@ export async function evaluateProfileReview(
     ...new Set([...(desired.importMetadata?.warnings ?? []), ...(options?.originWarnings ?? [])]),
   ].sort((left, right) => left.localeCompare(right));
   const hasChanges = plan.add.length + plan.remove.length + plan.update.length > 0;
+  const projectTrustReasons =
+    !isProjectTrusted(ctx) && desired.packages.some((pkg) => pkg.scope === "project")
+      ? [PROJECT_TRUST_REQUIRED]
+      : [];
   const blockingReasons = [
+    ...projectTrustReasons,
     ...policyViolations.map((violation) => violation.message),
     ...confirmedFailures.map(
       (diagnostic) =>
