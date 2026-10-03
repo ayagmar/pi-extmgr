@@ -121,13 +121,16 @@ function sanitizeAutoUpdateConfig(input: unknown): AutoUpdateConfig {
   return config;
 }
 
+/**
+ * The schedule is not conversation state: read the most recently appended
+ * entry in the whole session file, not the current /tree branch. Reading the
+ * branch made an older branch point look "off", and the next scheduled check
+ * then persisted that as disabled.
+ */
 function getSessionConfig(
   ctx: ExtensionCommandContext | ExtensionContext
 ): AutoUpdateConfig | undefined {
-  const entries =
-    typeof ctx.sessionManager.getBranch === "function"
-      ? ctx.sessionManager.getBranch()
-      : ctx.sessionManager.getEntries();
+  const entries = ctx.sessionManager.getEntries();
 
   for (let i = entries.length - 1; i >= 0; i--) {
     const entry = entries[i];
@@ -240,7 +243,7 @@ export async function hydrateAutoUpdateConfig(
 /**
  * Get auto-update config.
  * Priority:
- *  1) latest value in current session branch entries
+ *  1) latest value appended to the current session
  *  2) persisted value on disk
  *  3) defaults
  */
