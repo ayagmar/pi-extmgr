@@ -1,5 +1,9 @@
 /** Package metadata caching and retrieval for the Discover workspace. */
-import { type ExtensionAPI, type ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
+import {
+  type ExtensionAPI,
+  type ExtensionCommandContext,
+  VERSION,
+} from "@earendil-works/pi-coding-agent";
 import { CACHE_LIMITS, TIMEOUTS } from "../../constants.js";
 import { validateCompatibility } from "../../doctor/compatibility.js";
 import { fetchNpmWeeklyDownloads } from "../../packages/discovery.js";
@@ -140,6 +144,7 @@ export async function buildPackageInfoText(
             packageName,
             ...(info.engines?.node ? { engines: { node: info.engines.node } } : {}),
             ...(info.engines?.pi ? { requiredPi: info.engines.pi } : {}),
+            piVersion: VERSION,
             nodeVersion: process.version,
           });
           if (diagnostic.node === "incompatible" || diagnostic.pi === "incompatible") {

@@ -20,11 +20,29 @@ export interface CompatibilityDiagnostic {
 type Version = [number, number, number];
 type Comparator = { operator: ">=" | ">" | "<=" | "<" | "="; version: Version };
 
-function parseVersion(value: string, allowPartial = false): Version | undefined {
+function parseVersionParts(value: string): { version: Version; parts: 1 | 2 | 3 } | undefined {
   const match = value.trim().match(/^v?(\d+)(?:\.(\d+))?(?:\.(\d+))?$/);
   if (!match?.[1]) return undefined;
-  if (!allowPartial && (match[2] === undefined || match[3] === undefined)) return undefined;
-  return [Number(match[1]), Number(match[2] ?? 0), Number(match[3] ?? 0)];
+  const parts = match[3] !== undefined ? 3 : match[2] !== undefined ? 2 : 1;
+  return { version: [Number(match[1]), Number(match[2] ?? 0), Number(match[3] ?? 0)], parts };
+}
+
+function parseVersion(value: string, allowPartial = false): Version | undefined {
+  const parsed = parseVersionParts(value);
+  if (!parsed || (!allowPartial && parsed.parts < 3)) return undefined;
+  return parsed.version;
+}
+
+/** Exclusive upper bound of a caret or tilde range, following npm semver for partial versions. */
+function rangeUpperBound(kind: "caret" | "tilde", version: Version, parts: 1 | 2 | 3): Version {
+  const [major, minor, patch] = version;
+  // `~1` and `^1` (and `^0`) only pin the major version.
+  if (parts === 1) return [major + 1, 0, 0];
+  if (kind === "tilde") return [major, minor + 1, 0];
+  if (major > 0) return [major + 1, 0, 0];
+  // `^0.0` pins the minor version like `^0.x`; only a full `^0.0.z` pins the patch.
+  if (minor > 0 || parts === 2) return [0, minor + 1, 0];
+  return [0, 0, patch + 1];
 }
 
 function compare(left: Version, right: Version): number {
@@ -58,22 +76,12 @@ function expandToken(token: string): Comparator[] | undefined {
   if (caret?.[1] || tilde?.[1]) {
     const value = caret?.[1] ?? tilde?.[1];
     if (!value) return undefined;
-    const version = parseVersion(value, true);
-    if (!version) return undefined;
-    let upper: Version;
-    if (caret) {
-      upper =
-        version[0] > 0
-          ? [version[0] + 1, 0, 0]
-          : version[1] > 0
-            ? [0, version[1] + 1, 0]
-            : [0, 0, version[2] + 1];
-    } else {
-      upper = [version[0], version[1] + 1, 0];
-    }
+    const parsed = parseVersionParts(value);
+    if (!parsed) return undefined;
+    const { version, parts } = parsed;
     return [
       { operator: ">=", version },
-      { operator: "<", version: upper },
+      { operator: "<", version: rangeUpperBound(caret ? "caret" : "tilde", version, parts) },
     ];
   }
   const match = token.match(/^(>=|<=|>|<|=)?(v?\d+(?:\.\d+){0,2})$/);
