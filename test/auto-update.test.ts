@@ -453,3 +453,37 @@ void test("a scheduled check still running at session shutdown leaves the retire
     stopAutoUpdateTimer();
   }
 });
+
+void test("a scheduled check after /tree navigation keeps the schedule enabled", async () => {
+  // The schedule entry was appended after the branch point the user moved back to.
+  const entries: { type: "custom"; customType: string; data: unknown }[] = [
+    {
+      type: "custom",
+      customType: "extmgr-auto-update",
+      data: { enabled: true, intervalMs: 24 * 60 * 60 * 1000, displayText: "daily" },
+    },
+  ];
+  const pi = {
+    appendEntry: (customType: string, data: unknown) => {
+      entries.push({ type: "custom", customType, data });
+    },
+  } as unknown as ExtensionAPI;
+  const ctx = {
+    hasUI: false,
+    cwd: "/tmp",
+    sessionManager: {
+      getBranch: () => [],
+      getEntries: () => entries,
+    },
+  } as unknown as ReturnType<typeof createMockHarness>["ctx"];
+  const restoreCatalog = mockPackageCatalog();
+
+  try {
+    await checkForUpdates(pi, ctx);
+    const latest = entries.at(-1)?.data as { enabled?: boolean; intervalMs?: number } | undefined;
+    assert.equal(latest?.enabled, true);
+    assert.equal(latest?.intervalMs, 24 * 60 * 60 * 1000);
+  } finally {
+    restoreCatalog();
+  }
+});
