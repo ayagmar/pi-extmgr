@@ -12,36 +12,47 @@
     "ai",
     "agent"
   ],
+  "license": "MIT",
+  "author": "ayagmar",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ayagmar/pi-extmgr.git"
+  },
+  "homepage": "https://ayagmar.github.io/pi-extmgr",
+  "bugs": {
+    "url": "https://github.com/ayagmar/pi-extmgr/issues"
+  },
   "type": "module",
   "main": "./src/index.ts",
   "files": [
     "src/",
-    "README.md"
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE"
   ],
-  "scripts": {
-    "lint": "biome lint . --error-on-warnings",
-    "lint:fix": "biome check --write .",
-    "format": "biome format --write .",
-    "format:check": "biome format .",
-    "typecheck": "tsc --noEmit -p tsconfig.json",
-    "smoke-test": "node --import=tsx ./scripts/smoke-test.mjs",
-    "test": "node --import=tsx --import=./test/helpers/hermetic-environment.mjs --test ./test/*.test.ts",
-    "check": "tsc --noEmit -p tsconfig.json && node --import=tsx ./scripts/smoke-test.mjs && pnpm test && pnpm run lint && pnpm run format:check",
-    "release": "release-it",
-    "release:patch": "release-it patch",
-    "release:minor": "release-it minor",
-    "release:major": "release-it major",
-    "release:first": "release-it --first-release",
-    "release:ci": "node --import=tsx ./scripts/release-ci.ts",
-    "prepublishOnly": "pnpm run check",
-    "prepare": "husky"
-  },
   "pi": {
     "extensions": [
       "./src/index.ts"
     ],
     "video": "https://github.com/ayagmar/pi-extmgr/releases/download/demo/demo.mp4",
     "image": "https://i.imgur.com/Ce513Br.png"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "lint": "biome lint --error-on-warnings .",
+    "lint:fix": "biome check --write .",
+    "format": "biome format --write .",
+    "format:check": "biome format .",
+    "test": "node --import=tsx --import=./test/helpers/hermetic-environment.mjs --test ./test/*.test.ts",
+    "smoke-test": "node --import=tsx ./scripts/smoke-test.mjs",
+    "check": "pnpm run typecheck && pnpm run lint && pnpm run format:check && pnpm run test && pnpm run smoke-test",
+    "release": "release-it",
+    "release:patch": "release-it patch",
+    "release:minor": "release-it minor",
+    "release:major": "release-it major",
+    "release:first": "release-it --first-release",
+    "release:ci": "node --import=tsx ./scripts/release-ci.ts",
+    "prepare": "husky"
   },
   "peerDependencies": {
     "@earendil-works/pi-coding-agent": "*",
@@ -52,24 +63,17 @@
     "@earendil-works/pi-coding-agent": "^0.80.0",
     "@earendil-works/pi-tui": "^0.80.0",
     "@release-it/conventional-changelog": "^10.0.5",
-    "@types/node": "^22.19.10",
+    "@types/node": "^24.19.1",
     "husky": "^9.1.7",
     "release-it": "^19.2.4",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3"
   },
-  "author": "ayagmar",
-  "license": "MIT",
-  "packageManager": "pnpm@10.33.0",
   "engines": {
-    "node": ">=22.20.0"
+    "node": ">=22.19.0"
   },
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/ayagmar/pi-extmgr.git"
-  },
-  "bugs": {
-    "url": "https://github.com/ayagmar/pi-extmgr/issues"
-  },
-  "homepage": "https://ayagmar.github.io/pi-extmgr"
+  "packageManager": "pnpm@12.8.1",
+  "publishConfig": {
+    "access": "public"
+  }
 }
