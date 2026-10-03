@@ -48,7 +48,7 @@
     "@earendil-works/pi-tui": "*"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.4.9",
+    "@biomejs/biome": "^2.5.15",
     "@earendil-works/pi-coding-agent": "^0.80.0",
     "@earendil-works/pi-tui": "^0.80.0",
     "@release-it/conventional-changelog": "^10.0.5",

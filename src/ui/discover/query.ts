@@ -26,7 +26,7 @@ function findExactPackageLookup(query: string): string | undefined {
   if (!query || /\s/.test(query)) return undefined;
   const parsed = parseNpmSource(normalizePackageSource(query));
   if (!parsed?.name) return undefined;
-  if (query.startsWith("npm:") || Boolean(parsed.version) || parsed.name.startsWith("@")) {
+  if (query.startsWith("npm:") || parsed.version || parsed.name.startsWith("@")) {
     return parsed.name.toLowerCase();
   }
   return undefined;
