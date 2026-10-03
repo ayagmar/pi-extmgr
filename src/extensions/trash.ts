@@ -1,4 +1,4 @@
-import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileExists } from "../utils/fs.js";
 
@@ -24,6 +24,43 @@ class TrashMetadataError extends Error {
 
 const TRASH_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
 const writeQueues = new Map<string, Promise<void>>();
+
+function isCrossDeviceError(error: unknown): boolean {
+  return error instanceof Error && "code" in error && error.code === "EXDEV";
+}
+
+/**
+ * Move a file or directory. The trash lives in the agent dir, so a project on
+ * another filesystem (separate mount, container volume, /tmp) cannot simply be
+ * renamed into it: fall back to copy-then-delete for EXDEV.
+ */
+export async function movePath(
+  source: string,
+  destination: string,
+  renamePath: (from: string, to: string) => Promise<void> = rename
+): Promise<void> {
+  try {
+    await renamePath(source, destination);
+    return;
+  } catch (error) {
+    if (!isCrossDeviceError(error)) throw error;
+  }
+
+  try {
+    await cp(source, destination, {
+      recursive: true,
+      errorOnExist: true,
+      force: false,
+      preserveTimestamps: true,
+      verbatimSymlinks: true,
+    });
+  } catch (error) {
+    await rm(destination, { recursive: true, force: true }).catch(() => undefined);
+    throw error;
+  }
+  // The complete copy stays at the destination even if removing the source fails.
+  await rm(source, { recursive: true, force: true });
+}
 
 function recordsPath(trashRoot: string): string {
   return join(trashRoot, "records.json");
@@ -169,7 +206,7 @@ export async function moveToExtensionTrash(path: string, trashRoot: string): Pro
   if (!trashPath || (await fileExists(trashPath)))
     throw new Error("Unable to allocate a unique trash destination.");
 
-  await rename(path, trashPath);
+  await movePath(path, trashPath);
   const record: TrashRecord = {
     originalPath: resolve(path),
     trashPath: resolve(trashPath),
@@ -182,7 +219,7 @@ export async function moveToExtensionTrash(path: string, trashRoot: string): Pro
     }));
   } catch (error) {
     try {
-      if (!(await fileExists(path))) await rename(trashPath, path);
+      if (!(await fileExists(path))) await movePath(trashPath, path);
     } catch (rollbackError) {
       throw new Error(
         `Trash record could not be saved and the extension could not be restored: ${rollbackError instanceof Error ? rollbackError.message : String(rollbackError)}`
@@ -223,7 +260,7 @@ export async function undoExtensionTrash(record: TrashRecord): Promise<void> {
   if (!(await fileExists(record.trashPath)))
     throw new Error("Cannot undo removal: the trash entry is missing or expired.");
   await mkdir(dirname(record.originalPath), { recursive: true });
-  await rename(record.trashPath, record.originalPath);
+  await movePath(record.trashPath, record.originalPath);
   await removeTrashRecord(record);
 }
 
