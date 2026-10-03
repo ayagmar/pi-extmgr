@@ -10,7 +10,7 @@ import {
   validateProfilePolicy,
 } from "../src/profiles/compare.js";
 import { duplicateProfile, renameProfile, saveProfile } from "../src/profiles/management.js";
-import { normalizeProfile } from "../src/profiles/schema.js";
+import { getEffectivePackageSource, normalizeProfile } from "../src/profiles/schema.js";
 import {
   deleteNamedProfile,
   readProfileStore,
@@ -323,4 +323,34 @@ void test("profile schema preserves exact package versions, refs, filters, scope
     ],
     checks: { compatibility: true, provenance: true },
   });
+});
+
+void test("profile git sources resolve to spellings pi can install", () => {
+  assert.equal(
+    getEffectivePackageSource({
+      source: "git+https://github.com/user/repo.git",
+      scope: "global",
+      ref: "v1.2.0",
+    }),
+    "git:https://github.com/user/repo.git@v1.2.0"
+  );
+  assert.equal(
+    getEffectivePackageSource({
+      source: "git:https://github.com/user/repo.git@main",
+      scope: "global",
+    }),
+    "git:https://github.com/user/repo.git@main"
+  );
+  assert.equal(
+    getEffectivePackageSource({ source: "git@github.com:user/repo.git", scope: "global" }),
+    "git:git@github.com:user/repo.git"
+  );
+  assert.equal(
+    getEffectivePackageSource({
+      source: "https://github.com/user/repo",
+      scope: "global",
+      ref: "v2",
+    }),
+    "https://github.com/user/repo@v2"
+  );
 });

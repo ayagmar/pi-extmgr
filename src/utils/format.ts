@@ -94,15 +94,35 @@ export function isPackageSource(str: string): boolean {
   return source.startsWith("npm:") || isGitLikeSource(source) || isLocalPathSource(source);
 }
 
+/**
+ * Rewrite git sources into a form pi parses. pi only treats `git:`,
+ * `http(s):` and `ssh:` prefixes as remote; `git+https://…`, `git+ssh://…`
+ * and bare `git://…` would be read as local paths, and scp-style
+ * `git@host:path` needs the `git:` prefix.
+ */
+export function toPiGitSource(source: string): string {
+  if (
+    GIT_PATTERNS.gitPlusHttpPrefix.test(source) ||
+    GIT_PATTERNS.gitPlusSshPrefix.test(source) ||
+    GIT_PATTERNS.gitPlusGitPrefix.test(source)
+  ) {
+    return `git:${source.slice("git+".length)}`;
+  }
+  if (GIT_PATTERNS.gitProtoPrefix.test(source) || GIT_PATTERNS.gitSsh.test(source)) {
+    return `git:${source}`;
+  }
+  return source;
+}
+
 export function normalizePackageSource(source: string): string {
   const trimmed = unwrapQuotedSource(source);
   if (!trimmed) return trimmed;
 
-  if (GIT_PATTERNS.gitSsh.test(trimmed)) {
-    return `git:${trimmed}`;
+  if (isGitLikeSource(trimmed)) {
+    return toPiGitSource(trimmed);
   }
 
-  if (trimmed.startsWith("npm:") || isGitLikeSource(trimmed) || isLocalPathSource(trimmed)) {
+  if (trimmed.startsWith("npm:") || isLocalPathSource(trimmed)) {
     return trimmed;
   }
 

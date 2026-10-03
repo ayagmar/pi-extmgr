@@ -1,4 +1,4 @@
-import { normalizePackageSource, parseNpmSource } from "../utils/format.js";
+import { normalizePackageSource, parseNpmSource, toPiGitSource } from "../utils/format.js";
 import {
   getPackageSourceKind,
   normalizePackageIdentity,
@@ -161,9 +161,9 @@ export function getEffectivePackageSource(pkg: ProfilePackage): string {
     const spec = stripGitSourcePrefix(source);
     const parsed = splitGitRepoAndRef(spec);
     const ref = pkg.ref ?? parsed.ref;
-    const prefix = source.startsWith("git:") ? "git:" : source.startsWith("git+") ? "git+" : "";
-    const base = parsed.repo;
-    return ref ? `${prefix}${base}@${ref}` : source;
+    if (!ref) return toPiGitSource(source);
+    const prefixed = source.startsWith("git+") || /^git:(?!\/\/)/.test(source);
+    return toPiGitSource(`${prefixed ? "git:" : ""}${parsed.repo}@${ref}`);
   }
   return source;
 }
