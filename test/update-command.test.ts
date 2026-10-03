@@ -22,3 +22,33 @@ void test("update --preview reports updates without mutating packages", async ()
     restore();
   }
 });
+
+void test("updating several sources offers one reload and never reuses the reloaded context", async () => {
+  const updated: string[] = [];
+  const restore = mockPackageCatalog({
+    packages: [
+      { source: "npm:alpha", name: "alpha", version: "1.0.0", scope: "global" },
+      { source: "npm:beta", name: "beta", version: "1.0.0", scope: "global" },
+    ],
+    updates: [
+      { source: "npm:alpha", displayName: "alpha", type: "npm", scope: "global" },
+      { source: "npm:beta", displayName: "beta", type: "npm", scope: "global" },
+    ],
+    updateImpl: (source) => {
+      if (source) updated.push(source);
+    },
+  });
+  try {
+    const { pi, ctx, confirmPrompts, reloadCount } = createMockHarness({
+      hasUI: true,
+      confirmResult: true,
+      staleAfterReload: true,
+    });
+    await handleUpdateSubcommand(["npm:alpha", "npm:beta"], ctx, pi);
+    assert.deepEqual(updated, ["npm:alpha", "npm:beta"]);
+    assert.equal(confirmPrompts.filter((title) => title === "Reload Required").length, 1);
+    assert.equal(reloadCount(), 1);
+  } finally {
+    restore();
+  }
+});

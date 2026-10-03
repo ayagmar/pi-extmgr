@@ -1,7 +1,11 @@
 import { type ExtensionAPI, type ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import { getPackageCatalog } from "../packages/catalog.js";
 import { getInstalledPackagesAllScopes } from "../packages/discovery.js";
-import { updatePackage, updatePackages } from "../packages/management.js";
+import {
+  updatePackage,
+  updatePackages,
+  updateSelectedPackagesWithOutcome,
+} from "../packages/management.js";
 import { buildUpdatePreview } from "../packages/update-preview.js";
 import { isProjectTrusted } from "../utils/mode.js";
 import { notify } from "../utils/notify.js";
@@ -41,5 +45,10 @@ export async function handleUpdateSubcommand(
     return;
   }
 
-  for (const source of sources) await updatePackage(source, ctx, pi);
+  if (sources.length === 1 && sources[0]) {
+    await updatePackage(sources[0], ctx, pi);
+    return;
+  }
+
+  await updateSelectedPackagesWithOutcome(sources, ctx, pi);
 }

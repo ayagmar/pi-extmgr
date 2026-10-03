@@ -1,15 +1,15 @@
 /** Coordinated bulk package operations for the Installed workspace. */
 import { type ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import { getPackageCatalog } from "../../packages/catalog.js";
+import { clearSearchCache } from "../../packages/discovery.js";
 import {
-  clearPackageEntrypointCache,
   applyPackageExtensionStateChanges,
+  clearPackageEntrypointCache,
 } from "../../packages/extensions.js";
 import { type State, type UnifiedItem } from "../../types/index.js";
 import { parseChoiceByLabel } from "../../utils/command.js";
 import { isProjectTrusted } from "../../utils/mode.js";
 import { normalizePackageIdentity } from "../../utils/package-source.js";
-import { clearSearchCache } from "../../packages/discovery.js";
 import { confirmReload } from "../../utils/ui-helpers.js";
 import { runTaskWithLoader } from "../async-task.js";
 import { showReport } from "../report.js";

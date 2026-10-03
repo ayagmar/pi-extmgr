@@ -8,9 +8,9 @@ import {
   type ExtensionAPI,
   type ExtensionCommandContext,
   getAgentDir,
-  VERSION,
   type PackageSource,
   SettingsManager,
+  VERSION,
 } from "@earendil-works/pi-coding-agent";
 import { inspectInstalledPackageCompatibility } from "../doctor/compatibility.js";
 import { getInstalledPackagesAllScopes } from "../packages/discovery.js";

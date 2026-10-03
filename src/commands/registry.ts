@@ -178,8 +178,12 @@ const COMMAND_DEFINITIONS: Record<CommandId, CommandDefinition> = {
   trash: {
     id: "trash",
     description: "List, restore, or purge local extension trash",
-    runInteractive: (tokens, ctx, pi) => handleTrashSubcommand(tokens, ctx, pi),
-    runNonInteractive: (tokens, ctx, pi) => handleTrashSubcommand(tokens, ctx, pi),
+    runInteractive: async (tokens, ctx, pi) => {
+      await handleTrashSubcommand(tokens, ctx, pi);
+    },
+    runNonInteractive: async (tokens, ctx, pi) => {
+      await handleTrashSubcommand(tokens, ctx, pi);
+    },
   },
   "auto-update": {
     id: "auto-update",

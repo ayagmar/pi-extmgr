@@ -1,14 +1,14 @@
 import assert from "node:assert/strict";
 import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { join } from "node:path";
 import test from "node:test";
+import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import {
   clearPackageEntrypointCache,
   discoverPackageExtensionEntrypoints,
-  getGlobalNpmRoot,
   discoverPackageExtensions,
+  getGlobalNpmRoot,
   setPackageExtensionState,
 } from "../src/packages/extensions.js";
 import { type InstalledPackage } from "../src/types/index.js";

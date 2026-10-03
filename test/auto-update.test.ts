@@ -386,3 +386,70 @@ void test("getKnownUpdates normalizes stored update identities", () => {
     "npm:demo-pkg",
   ]);
 });
+
+void test("a scheduled check still running at session shutdown leaves the retired context alone", async () => {
+  let releaseCheck: (() => void) | undefined;
+  const checkStarted = new Promise<void>((started) => {
+    setPackageCatalogFactory(() => ({
+      listInstalledPackages: () => Promise.resolve([]),
+      checkForAvailableUpdates: () =>
+        new Promise((resolve) => {
+          releaseCheck = () => resolve([]);
+          started();
+        }),
+      install: () => Promise.resolve(undefined),
+      remove: () => Promise.resolve(undefined),
+      update: () => Promise.resolve(undefined),
+    }));
+  });
+
+  let retired = false;
+  const appended: unknown[] = [];
+  const pi = {
+    appendEntry: (_type: string, data: unknown) => {
+      if (retired)
+        throw new Error("This extension ctx is stale after session replacement or reload.");
+      appended.push(data);
+    },
+  } as unknown as ExtensionAPI;
+  const entries = [
+    {
+      type: "custom" as const,
+      customType: "extmgr-auto-update",
+      data: { enabled: true, intervalMs: 60_000, displayText: "1 minute", nextCheck: 0 },
+    },
+  ];
+  const ctx = {
+    get cwd() {
+      if (retired)
+        throw new Error("This extension ctx is stale after session replacement or reload.");
+      return "/tmp";
+    },
+    get sessionManager() {
+      if (retired)
+        throw new Error("This extension ctx is stale after session replacement or reload.");
+      return { getEntries: () => entries };
+    },
+    isProjectTrusted: () => true,
+  } as unknown as ReturnType<typeof createMockHarness>["ctx"];
+
+  const warnings: unknown[] = [];
+  const originalWarn = console.warn;
+  console.warn = (...args: unknown[]) => {
+    warnings.push(args);
+  };
+  try {
+    startAutoUpdateTimer(pi, () => ctx);
+    await checkStarted;
+    stopAutoUpdateTimer();
+    retired = true;
+    releaseCheck?.();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    assert.deepEqual(warnings, []);
+    assert.deepEqual(appended, []);
+  } finally {
+    console.warn = originalWarn;
+    setPackageCatalogFactory();
+    stopAutoUpdateTimer();
+  }
+});

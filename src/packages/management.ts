@@ -41,12 +41,27 @@ const REMOVAL_SCOPE_CHOICES = {
   cancel: "Cancel",
 } as const;
 
+interface UpdateOptions {
+  selectedScope?: Scope;
+  /**
+   * Ask to reload after a successful update (default). Batches turn this off
+   * for all but the final step: pi invalidates the command context on reload,
+   * so nothing may run on it afterwards.
+   */
+  promptReload?: boolean;
+}
+
+interface UpdateOutcome extends PackageMutationOutcome {
+  updated: boolean;
+}
+
 async function updatePackageInternal(
   source: string,
   ctx: ExtensionCommandContext,
   pi: ExtensionAPI,
-  selectedScope?: Scope
-): Promise<PackageMutationOutcome> {
+  options: UpdateOptions = {}
+): Promise<UpdateOutcome> {
+  const { selectedScope } = options;
   showProgress(ctx, "Updating", source);
 
   const updateIdentity = normalizePackageIdentity(source, { cwd: ctx.cwd });
@@ -69,7 +84,7 @@ async function updatePackageInternal(
       );
       if (!confirmed) {
         notify(ctx, "Package update cancelled.", "info");
-        return { reloaded: false };
+        return { reloaded: false, updated: false };
       }
     }
 
@@ -86,7 +101,7 @@ async function updatePackageInternal(
       logPackageUpdate(pi, source, source, undefined, true);
       clearUpdatesAvailable(pi, ctx, [updateIdentity]);
       void updateExtmgrStatus(ctx, pi);
-      return { reloaded: false };
+      return { reloaded: false, updated: false };
     }
 
     await runTaskWithLoader(
@@ -113,7 +128,7 @@ async function updatePackageInternal(
     logPackageUpdate(pi, source, source, undefined, false, errorMsg);
     notifyError(ctx, errorMsg);
     void updateExtmgrStatus(ctx, pi);
-    return { reloaded: false };
+    return { reloaded: false, updated: false };
   }
 
   clearSearchCache();
@@ -127,11 +142,16 @@ async function updatePackageInternal(
   );
   clearUpdatesAvailable(pi, ctx, [updateIdentity]);
 
+  if (options.promptReload === false) {
+    void updateExtmgrStatus(ctx, pi);
+    return { reloaded: false, updated: true };
+  }
+
   const reloaded = await confirmReload(ctx, "Package updated.");
   if (!reloaded) {
     void updateExtmgrStatus(ctx, pi);
   }
-  return { reloaded };
+  return { reloaded, updated: true };
 }
 
 async function updatePackagesInternal(
@@ -207,7 +227,39 @@ export async function updatePackageWithOutcome(
   pi: ExtensionAPI,
   selectedScope?: Scope
 ): Promise<PackageMutationOutcome> {
-  return updatePackageInternal(source, ctx, pi, selectedScope);
+  const { reloaded } = await updatePackageInternal(
+    source,
+    ctx,
+    pi,
+    selectedScope ? { selectedScope } : {}
+  );
+  return { reloaded };
+}
+
+/**
+ * Update several explicit sources, then offer a single reload at the end.
+ * Reloading mid-batch would invalidate the command context for the rest.
+ */
+export async function updateSelectedPackagesWithOutcome(
+  sources: readonly string[],
+  ctx: ExtensionCommandContext,
+  pi: ExtensionAPI
+): Promise<PackageMutationOutcome> {
+  let updated = 0;
+  for (const source of sources) {
+    const outcome = await updatePackageInternal(source, ctx, pi, { promptReload: false });
+    if (outcome.updated) updated += 1;
+  }
+  if (updated === 0) return { reloaded: false };
+
+  const reloaded = await confirmReload(
+    ctx,
+    updated === 1 ? "Package updated." : "Packages updated."
+  );
+  if (!reloaded) {
+    void updateExtmgrStatus(ctx, pi);
+  }
+  return { reloaded };
 }
 
 export async function updatePackages(

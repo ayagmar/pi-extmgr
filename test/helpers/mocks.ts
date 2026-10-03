@@ -30,7 +30,15 @@ export interface MockHarnessOptions {
   confirmResult?: boolean;
   confirmImpl?: (title: string, message?: string) => boolean | Promise<boolean>;
   projectTrusted?: boolean;
+  /**
+   * Mirror pi >= 1.0: once `ctx.reload()` resolves, every access to the old
+   * context throws, so tests catch code that keeps using it.
+   */
+  staleAfterReload?: boolean;
 }
+
+export const STALE_CONTEXT_MESSAGE =
+  "This extension ctx is stale after session replacement or reload.";
 
 function getDefaultTestCwd(): string {
   const cwd = process.env.PI_EXTMGR_TEST_CWD;
@@ -193,7 +201,8 @@ export function createMockHarness(options: MockHarnessOptions = {}): {
     },
   } as unknown as ExtensionAPI;
 
-  const ctx = {
+  let stale = false;
+  const rawCtx = {
     hasUI: options.hasUI ?? false,
     mode: options.mode ?? (options.hasUI ? "tui" : "print"),
     cwd: options.cwd ?? getDefaultTestCwd(),
@@ -201,13 +210,22 @@ export function createMockHarness(options: MockHarnessOptions = {}): {
     ui,
     reload: () => {
       reloadCalls += 1;
+      if (options.staleAfterReload) stale = true;
       return Promise.resolve();
     },
     sessionManager: {
       getEntries: () => entries,
       getSessionName: () => undefined,
     },
-  } as unknown as ExtensionCommandContext;
+  };
+  const ctx = (options.staleAfterReload
+    ? new Proxy(rawCtx, {
+        get(target, property, receiver) {
+          if (stale) throw new Error(STALE_CONTEXT_MESSAGE);
+          return Reflect.get(target, property, receiver);
+        },
+      })
+    : rawCtx) as unknown as ExtensionCommandContext;
 
   return {
     pi,

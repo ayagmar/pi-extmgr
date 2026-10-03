@@ -42,16 +42,33 @@ export async function confirmReload(
     return false;
   }
 
+  return reloadNow(ctx, statePath);
+}
+
+/**
+ * Reload pi in-process. Returns true on success; the context is stale from
+ * then on (pi throws on every ctx access), so callers must return without
+ * touching it. Failures are reported and leave the reload marker in place.
+ */
+export async function reloadNow(
+  ctx: ExtensionCommandContext,
+  statePath?: string
+): Promise<boolean> {
   try {
     await ctx.reload();
-    markContextReloaded(ctx);
-    await clearReloadRequired(statePath);
-    return true;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    notifyError(ctx, `Reload failed: ${message}`);
+    try {
+      notifyError(ctx, `Reload failed: ${message}`);
+    } catch {
+      // The reload got far enough to retire this context; nothing to report to.
+    }
     return false;
   }
+
+  markContextReloaded(ctx);
+  await clearReloadRequired(statePath);
+  return true;
 }
 
 /**

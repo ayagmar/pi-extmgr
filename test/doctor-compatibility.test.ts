@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
-import test from "node:test";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import test from "node:test";
 import { VERSION } from "@earendil-works/pi-coding-agent";
 import {
   inspectInstalledPackageCompatibility,

@@ -35,6 +35,10 @@ const AUTO_UPDATE_WIZARD_CHOICES = {
 // Context provider for safe session handling
 export type ContextProvider = () => (ExtensionCommandContext | ExtensionContext) | undefined;
 
+// Bumped on every stop so checks still in flight when the session shuts down
+// (reload, /new, /resume, /fork, quit) can tell their context has been retired.
+let timerGeneration = 0;
+
 /**
  * Start auto-update background checker
  * Uses a context provider to avoid stale context issues when sessions switch
@@ -57,6 +61,8 @@ export function startAutoUpdateTimer(
   const interval = getScheduleInterval(config);
   if (!interval) return;
 
+  const generation = timerGeneration;
+
   const now = Date.now();
   const nextCheck = config.nextCheck;
   const initialDelayMs =
@@ -65,13 +71,15 @@ export function startAutoUpdateTimer(
   startTimer(
     interval,
     () => {
-      const checkCtx = getCtx();
+      const checkCtx = generation === timerGeneration ? getCtx() : undefined;
       if (!checkCtx) {
         stopAutoUpdateTimer();
         return;
       }
 
       void checkForUpdates(pi, checkCtx, onUpdateAvailable).catch((error) => {
+        // pi rejects every access to a retired context; that is expected here.
+        if (generation !== timerGeneration) return;
         console.warn("[extmgr] Auto-update check failed:", error);
       });
     },
@@ -83,6 +91,7 @@ export function startAutoUpdateTimer(
  * Stop auto-update background checker
  */
 export function stopAutoUpdateTimer(): void {
+  timerGeneration += 1;
   stopTimer();
 }
 
