@@ -988,3 +988,70 @@ void test("profile source loader bounds local JSON and converts GitHub blob orig
     await rm(root, { recursive: true, force: true });
   }
 });
+
+void test("profile application in an untrusted project writes global settings only", async () => {
+  await withProfileEnvironment(async (root) => {
+    const installs: string[] = [];
+    const restoreCatalog = mockPackageCatalog({
+      packages: [],
+      installImpl: (source) => {
+        installs.push(source);
+      },
+    });
+    try {
+      const { ctx, pi } = createMockHarness({ cwd: root, hasUI: false, projectTrusted: false });
+      const outcome = await applyProfileWithOutcome(
+        normalizeProfile({ name: "current", packages: [] }),
+        normalizeProfile({
+          name: "target",
+          packages: [{ source: "npm:demo", version: "1.0.0", scope: "global" }],
+        }),
+        ctx,
+        pi
+      );
+      assert.equal(outcome.applied, true);
+      assert.deepEqual(installs, ["npm:demo@1.0.0"]);
+      const globalSettings = JSON.parse(
+        await readFile(join(root, "agent", "settings.json"), "utf8")
+      ) as { packages?: unknown[] };
+      assert.deepEqual(globalSettings.packages, ["npm:demo@1.0.0"]);
+      await assert.rejects(readFile(join(root, ".pi", "settings.json"), "utf8"));
+    } finally {
+      restoreCatalog();
+    }
+  });
+});
+
+void test("profile review blocks project-scoped packages in an untrusted project", async () => {
+  await withProfileEnvironment(async (root) => {
+    const installs: string[] = [];
+    const restoreCatalog = mockPackageCatalog({
+      packages: [],
+      installImpl: (source) => {
+        installs.push(source);
+      },
+    });
+    try {
+      const { ctx, pi, notifications } = createMockHarness({
+        cwd: root,
+        hasUI: true,
+        mode: "rpc",
+        projectTrusted: false,
+      });
+      const outcome = await applyProfileWithOutcome(
+        normalizeProfile({ name: "current", packages: [] }),
+        normalizeProfile({
+          name: "target",
+          packages: [{ source: "npm:demo", version: "1.0.0", scope: "project" }],
+        }),
+        ctx,
+        pi
+      );
+      assert.equal(outcome.applied, false);
+      assert.deepEqual(installs, []);
+      assert.ok(notifications.some((entry) => entry.message.includes("trusted project")));
+    } finally {
+      restoreCatalog();
+    }
+  });
+});

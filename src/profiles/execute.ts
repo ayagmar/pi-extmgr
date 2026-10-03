@@ -30,7 +30,12 @@ import { markReloadRequired } from "../utils/reload-state.js";
 import { throwIfSettingsErrors } from "../utils/settings-errors.js";
 import { confirmAction, confirmReload } from "../utils/ui-helpers.js";
 import { type ProfilePlan } from "./apply.js";
-import { evaluateProfileReview, formatProfileReviewDetails, type ProfileReview } from "./review.js";
+import {
+  evaluateProfileReview,
+  formatProfileReviewDetails,
+  PROJECT_TRUST_REQUIRED,
+  type ProfileReview,
+} from "./review.js";
 import {
   calculateProfileDiagnostics,
   profileMutationSource,
@@ -139,12 +144,14 @@ async function persistProfileConfiguration(
   desired: ExtmgrProfile,
   ctx: ExtensionCommandContext
 ): Promise<void> {
-  const settings = SettingsManager.create(ctx.cwd, getAgentDir(), {
-    projectTrusted: isProjectTrusted(ctx),
-  });
+  const projectTrusted = isProjectTrusted(ctx);
+  const projectPackages = desired.packages.filter((pkg) => pkg.scope === "project");
+  if (!projectTrusted && projectPackages.length > 0) {
+    throw new Error(PROJECT_TRUST_REQUIRED);
+  }
+  const settings = SettingsManager.create(ctx.cwd, getAgentDir(), { projectTrusted });
   throwIfSettingsErrors(settings, "Profile application");
   const global = settings.getGlobalSettings();
-  const project = settings.getProjectSettings();
   settings.setPackages(
     buildScopedPackageSettings(
       global,
@@ -152,13 +159,13 @@ async function persistProfileConfiguration(
       ctx.cwd
     )
   );
-  settings.setProjectPackages(
-    buildScopedPackageSettings(
-      project,
-      desired.packages.filter((pkg) => pkg.scope === "project"),
-      ctx.cwd
-    )
-  );
+  // pi refuses project settings writes in untrusted projects; there is nothing
+  // to write there anyway, since untrusted project settings are never loaded.
+  if (projectTrusted) {
+    settings.setProjectPackages(
+      buildScopedPackageSettings(settings.getProjectSettings(), projectPackages, ctx.cwd)
+    );
+  }
   await settings.flush();
   throwIfSettingsErrors(settings, "Profile application");
 }
