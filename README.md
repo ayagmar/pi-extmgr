@@ -24,7 +24,7 @@ pi install git:github.com/ayagmar/pi-extmgr
 
 If Pi is already running, use `/reload`.
 
-Requires Node.js `>=22.19.0`.
+Requires Pi `>=1.0.1` and Node.js `>=22.19.0`. Use pi-extmgr `0.3.x` with older Pi releases.
 
 ### npm prefix permissions
 
