@@ -110,6 +110,32 @@ void test("trash command restores a persisted record by index", async () => {
   }
 });
 
+void test("trash restore reports an accepted reload so callers drop the stale context", async () => {
+  const root = await mkdtemp(join(tmpdir(), "pi-extmgr-trash-reload-"));
+  const agentDir = join(root, "agent");
+  const source = join(root, "extension.ts");
+  const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
+  process.env.PI_CODING_AGENT_DIR = agentDir;
+  try {
+    await mkdir(agentDir, { recursive: true });
+    await writeFile(source, "export default {};\n", "utf8");
+    await moveToExtensionTrash(source, join(agentDir, ".extmgr-trash"));
+    const { pi, ctx, reloadCount } = createMockHarness({
+      hasUI: true,
+      cwd: root,
+      confirmResult: true,
+      staleAfterReload: true,
+    });
+    assert.equal(await handleTrashSubcommand(["restore", "1"], ctx, pi), true);
+    assert.equal(reloadCount(), 1);
+    assert.equal(await readFile(source, "utf8"), "export default {};\n");
+  } finally {
+    if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+    else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 void test("local extension trash supports undo without losing the original path", async () => {
   const root = await mkdtemp(join(tmpdir(), "pi-extmgr-trash-"));
   const source = join(root, "extension.ts");

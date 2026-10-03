@@ -5,8 +5,8 @@ import {
   type ExtensionAPI,
   type ExtensionCommandContext,
   getAgentDir,
-  VERSION,
   type Theme,
+  VERSION,
 } from "@earendil-works/pi-coding-agent";
 import { Key, matchesKey, truncateToWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import { handleTrashSubcommand } from "../commands/trash.js";
@@ -23,12 +23,8 @@ import { isProjectTrusted, requireCustomUI, runCustomUI } from "../utils/mode.js
 import { notify } from "../utils/notify.js";
 import { normalizePackageIdentity } from "../utils/package-source.js";
 import { normalizePathIdentity } from "../utils/path-identity.js";
-import {
-  clearReloadRequired,
-  type ReloadRequiredState,
-  readReloadState,
-} from "../utils/reload-state.js";
-import { confirmReload, markContextReloaded } from "../utils/ui-helpers.js";
+import { type ReloadRequiredState, readReloadState } from "../utils/reload-state.js";
+import { confirmReload, reloadNow } from "../utils/ui-helpers.js";
 import { getStatusIcon } from "./theme.js";
 import {
   buildWorkspaceNavigation,
@@ -518,10 +514,8 @@ export async function showHealth(
         notify(ctx, "Reload pi to apply pending changes.", "warning");
         continue;
       }
-      await ctx.reload();
-      markContextReloaded(ctx);
-      await clearReloadRequired();
-      return "reloaded";
+      if (await reloadNow(ctx)) return "reloaded";
+      continue;
     }
     if (action.type === "fix-safe") {
       if (await handleFixSafeIssues(snapshot, ctx)) return "reloaded";
@@ -539,7 +533,9 @@ export async function showHealth(
         "Purge an extension",
         "Back",
       ]);
-      if (choice === "Restore an extension") await handleTrashSubcommand(["restore"], ctx, pi);
+      if (choice === "Restore an extension") {
+        if (await handleTrashSubcommand(["restore"], ctx, pi)) return "reloaded";
+      }
       if (choice === "Purge an extension") await handleTrashSubcommand(["purge"], ctx, pi);
     }
   }

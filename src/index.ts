@@ -92,6 +92,10 @@ export default function extensionsManager(pi: ExtensionAPI) {
     },
   });
 
+  // The context of the running session. pi retires it on reload and session
+  // replacement, so background work must look it up instead of capturing it.
+  let activeCtx: ExtensionContext | undefined;
+
   async function updateStatusBar(ctx: ExtensionCommandContext | ExtensionContext): Promise<void> {
     await updateExtmgrStatus(ctx, pi);
   }
@@ -113,13 +117,14 @@ export default function extensionsManager(pi: ExtensionAPI) {
 
     const config = getAutoUpdateConfig(ctx);
     if (config.enabled && config.intervalMs > 0) {
-      const getCtx: ContextProvider = () => ctx;
+      const getCtx: ContextProvider = () => (activeCtx === ctx ? ctx : undefined);
       startAutoUpdateTimer(pi, getCtx, createAutoUpdateNotificationHandler(ctx));
     } else {
       stopAutoUpdateTimer();
     }
 
     setImmediate(() => {
+      if (activeCtx !== ctx) return;
       updateStatusBar(ctx).catch((err) => {
         console.error("[extmgr] Status update failed:", err);
       });
@@ -127,6 +132,7 @@ export default function extensionsManager(pi: ExtensionAPI) {
   }
 
   pi.on("session_start", async (event, ctx) => {
+    activeCtx = ctx;
     if (event.reason === "reload") {
       await clearReloadRequired();
     }
@@ -134,6 +140,7 @@ export default function extensionsManager(pi: ExtensionAPI) {
   });
 
   pi.on("session_shutdown", () => {
+    activeCtx = undefined;
     stopAutoUpdateTimer();
   });
 }

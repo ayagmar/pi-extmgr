@@ -6,16 +6,16 @@ import test from "node:test";
 import { type ExtensionAPI, type ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import { listExtensionTrash } from "../src/extensions/trash.js";
 import {
+  clearPackageEntrypointCache,
+  discoverPackageExtensionEntrypoints,
+} from "../src/packages/extensions.js";
+import {
   installFromUrl,
   installPackage,
   installPackageLocally,
   installPackageWithOutcome,
 } from "../src/packages/install.js";
 import { removePackage, updatePackage, updatePackages } from "../src/packages/management.js";
-import {
-  clearPackageEntrypointCache,
-  discoverPackageExtensionEntrypoints,
-} from "../src/packages/extensions.js";
 import { getExtmgrTrashDir } from "../src/utils/pi-paths.js";
 import { createMockHarness } from "./helpers/mocks.js";
 import { mockPackageCatalog } from "./helpers/package-catalog.js";
