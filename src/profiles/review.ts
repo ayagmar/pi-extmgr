@@ -121,10 +121,6 @@ export async function evaluateProfileReview(
   };
 }
 
-export function formatProfileDiagnosticFailure(diagnostic: ProfilePackageDiagnostic): string {
-  return diagnosticDescription(diagnostic);
-}
-
 function sortedDiagnostics(review: ProfileReview): ProfilePackageDiagnostic[] {
   return [...review.diagnostics].sort((left, right) =>
     diagnosticDescription(left).localeCompare(diagnosticDescription(right))

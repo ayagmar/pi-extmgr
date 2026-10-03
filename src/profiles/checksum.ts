@@ -34,26 +34,3 @@ export async function readPackageManifestSnapshot(
     return undefined;
   }
 }
-
-/**
- * Fingerprint package.json only. This is useful for drift diagnostics, but is
- * explicitly not extension artifact integrity or provenance evidence.
- */
-export async function manifestFingerprint(path: string | undefined): Promise<string | undefined> {
-  return (await readPackageManifestSnapshot(path))?.fingerprint;
-}
-
-export async function verifyManifestFingerprint(
-  path: string | undefined,
-  expected: string | undefined
-): Promise<"match" | "mismatch" | "unknown"> {
-  if (!expected) return "unknown";
-  const actual = await manifestFingerprint(path);
-  if (!actual) return "unknown";
-  return actual === expected ? "match" : "mismatch";
-}
-
-/** @deprecated Use manifestFingerprint; this never represented artifact integrity. */
-export const checksumPackagePath = manifestFingerprint;
-/** @deprecated Use verifyManifestFingerprint; this never proves artifact integrity. */
-export const verifyPackageChecksum = verifyManifestFingerprint;

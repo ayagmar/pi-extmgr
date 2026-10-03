@@ -1,10 +1,8 @@
 /** Operational health screen: compatibility, conflicts, reload state, and trash. */
-import { join } from "node:path";
 import {
   DynamicBorder,
   type ExtensionAPI,
   type ExtensionCommandContext,
-  getAgentDir,
   type Theme,
   VERSION,
 } from "@earendil-works/pi-coding-agent";
@@ -21,6 +19,7 @@ import { movePackageBetweenScopes } from "../packages/scopes.js";
 import { type InstalledPackage } from "../types/index.js";
 import { isProjectTrusted, requireCustomUI, runCustomUI } from "../utils/mode.js";
 import { notify } from "../utils/notify.js";
+import { getExtmgrTrashDir } from "../utils/pi-paths.js";
 import { normalizePackageIdentity } from "../utils/package-source.js";
 import { normalizePathIdentity } from "../utils/path-identity.js";
 import { type ReloadRequiredState, readReloadState } from "../utils/reload-state.js";
@@ -32,10 +31,6 @@ import {
   type WorkspaceExit,
 } from "./workspace/navigation.js";
 import { setWorkspaceTitle } from "./workspace/title.js";
-
-function getTrashRoot(): string {
-  return join(getAgentDir(), ".extmgr-trash");
-}
 
 type HealthAction =
   | { type: "refresh" }
@@ -67,7 +62,7 @@ async function loadHealthSnapshot(
     conflicts: findRuntimeConflicts(owners),
     compatibility: await inspectInstalledPackageCompatibility(packages, { piVersion: VERSION }),
     reload: await readReloadState(),
-    trash: await listExtensionTrash(getTrashRoot()),
+    trash: await listExtensionTrash(getExtmgrTrashDir()),
   };
 }
 

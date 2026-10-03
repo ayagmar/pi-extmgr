@@ -329,14 +329,6 @@ function validateStringArray(
   });
 }
 
-/** Explicit, deterministic migration entry point for persisted/exported v1 profiles. */
-export function migrateProfileV1(input: unknown): { profile: ExtmgrProfile; notes: string[] } {
-  const parsed = parseExternalProfile(input);
-  if (!parsed.ok)
-    throw new Error(parsed.errors.map((issue) => `${issue.path}: ${issue.message}`).join("\n"));
-  return { profile: parsed.profile, notes: parsed.migration.notes };
-}
-
 /** Strict parser and explicit v1-to-canonical migration boundary for untrusted JSON. */
 export function parseExternalProfile(
   input: unknown,
@@ -669,13 +661,4 @@ export function parseExternalProfile(
     migration: { fromVersion: 1, toVersion: 1, migrated: notes.length > 0, notes },
     warnings: [...notes],
   };
-}
-
-export function assertExternalProfile(
-  input: unknown,
-  options?: { requireName?: boolean }
-): ExtmgrProfile {
-  const parsed = parseExternalProfile(input, options);
-  if (parsed.ok) return parsed.profile;
-  throw new Error(parsed.errors.map((issue) => `${issue.path}: ${issue.message}`).join("\n"));
 }

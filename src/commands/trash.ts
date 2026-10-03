@@ -1,9 +1,4 @@
-import { join } from "node:path";
-import {
-  type ExtensionAPI,
-  type ExtensionCommandContext,
-  getAgentDir,
-} from "@earendil-works/pi-coding-agent";
+import { type ExtensionAPI, type ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import {
   listExtensionTrash,
   purgeExtensionTrash,
@@ -11,13 +6,10 @@ import {
 } from "../extensions/trash.js";
 import { showListReport } from "../ui/report.js";
 import { notify } from "../utils/notify.js";
+import { getExtmgrTrashDir } from "../utils/pi-paths.js";
 import { confirmAction, confirmReload } from "../utils/ui-helpers.js";
 
 const TRASH_USAGE = "Usage: /extensions trash <list|restore [index]|purge [index|all]>";
-
-function getTrashRoot(): string {
-  return join(getAgentDir(), ".extmgr-trash");
-}
 
 async function selectRecord(
   ctx: ExtensionCommandContext,
@@ -55,7 +47,7 @@ export async function handleTrashSubcommand(
   }
 
   try {
-    const records = await listExtensionTrash(getTrashRoot());
+    const records = await listExtensionTrash(getExtmgrTrashDir());
     if (action === "list") {
       await showListReport(
         ctx,
