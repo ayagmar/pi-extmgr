@@ -16,6 +16,12 @@ Built on top of Pi's native package install, update, and config flows, so extmgr
 pi install npm:pi-extmgr
 ```
 
+Or install straight from GitHub:
+
+```bash
+pi install git:github.com/ayagmar/pi-extmgr
+```
+
 If Pi is already running, use `/reload`.
 
 Requires Node.js `>=22.19.0`.
@@ -229,6 +235,19 @@ Examples:
 - **Saved manager state**: Views, favorites, recent items, and bulk selections are stored atomically in `~/.pi/agent/.extmgr-cache/views-<project>.json`. Named profiles are stored in `profiles.json`; project policies load from `.pi/extmgr-policy.json`.
 - **Trash lifecycle**: Local removals move to `~/.pi/agent/.extmgr-trash/` with persistent records. Undo refuses to overwrite a replacement file, and expired or missing records are cleaned up.
 - **Metadata safety**: Missing compatibility, provenance, checksum, or target-version metadata is reported as `unknown`, never `safe`. Target-version previews, exact target badges, and update-policy/maintenance-window enforcement are intentionally deferred because Pi does not expose structured target metadata.
+
+## Releasing
+
+Releases are cut from GitHub Actions — never from a laptop.
+
+1. Merge Conventional Commits (`feat:`, `fix:`, `feat!:` …) into `master`.
+2. Run **Actions → Release → Run workflow** (or `gh workflow run release.yml -f increment=auto`).
+   `auto` derives the bump from the commits; pick `patch`/`minor`/`major` to override. Tick `dry_run` to preview.
+3. The workflow runs `pnpm run check`, then release-it bumps `package.json`, updates `CHANGELOG.md`,
+   tags `vX.Y.Z`, pushes and creates the GitHub release, and finally `npm publish` publishes with
+   provenance through npm trusted publishing (OIDC — no npm token stored in the repo).
+
+Preview locally with `pnpm release:dry`.
 
 ## License
 

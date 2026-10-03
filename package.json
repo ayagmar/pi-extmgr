@@ -46,13 +46,7 @@
     "test": "node --import=tsx --import=./test/helpers/hermetic-environment.mjs --test ./test/*.test.ts",
     "smoke-test": "node --import=tsx ./scripts/smoke-test.mjs",
     "check": "pnpm run typecheck && pnpm run lint && pnpm run format:check && pnpm run test && pnpm run smoke-test",
-    "release": "release-it",
-    "release:patch": "release-it patch",
-    "release:minor": "release-it minor",
-    "release:major": "release-it major",
-    "release:first": "release-it --first-release",
-    "release:ci": "node --import=tsx ./scripts/release-ci.ts",
-    "prepare": "husky"
+    "release:dry": "release-it --ci --dry-run"
   },
   "peerDependencies": {
     "@earendil-works/pi-coding-agent": "*",
@@ -62,10 +56,9 @@
     "@biomejs/biome": "^2.5.15",
     "@earendil-works/pi-coding-agent": "^0.80.0",
     "@earendil-works/pi-tui": "^0.80.0",
-    "@release-it/conventional-changelog": "^10.0.5",
+    "@release-it/conventional-changelog": "^12.0.2",
     "@types/node": "^24.19.1",
-    "husky": "^9.1.7",
-    "release-it": "^19.2.4",
+    "release-it": "^21.1.0",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3"
   },
