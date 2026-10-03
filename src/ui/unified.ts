@@ -90,7 +90,9 @@ async function showInteractiveOnce(
       message: "Loading extensions and packages...",
     },
     async ({ signal, setMessage }) => {
-      const localEntriesPromise = discoverExtensions(ctx.cwd);
+      const localEntriesPromise = discoverExtensions(ctx.cwd, {
+        projectTrusted: isProjectTrusted(ctx),
+      });
       const installedPackagesPromise = getInstalledPackages(
         ctx,
         pi,
@@ -320,7 +322,7 @@ export async function showInstalledPackagesLegacy(
 
 // List-only view for non-interactive mode
 export async function showListOnly(ctx: ExtensionCommandContext): Promise<void> {
-  const entries = await discoverExtensions(ctx.cwd);
+  const entries = await discoverExtensions(ctx.cwd, { projectTrusted: isProjectTrusted(ctx) });
   if (entries.length === 0) {
     notify(
       ctx,

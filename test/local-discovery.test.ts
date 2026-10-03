@@ -66,7 +66,7 @@ void test("discoverExtensions includes manifest-declared local entrypoints, incl
       "utf8"
     );
 
-    const entries = await discoverExtensions(cwd);
+    const entries = await discoverExtensions(cwd, { projectTrusted: true });
     const customEntry = entries.find((entry) => entry.displayName.endsWith("demo-pkg/custom.ts"));
     const disabledEntry = entries.find((entry) =>
       entry.displayName.endsWith("demo-pkg/extensions/queue.ts")
@@ -83,6 +83,22 @@ void test("discoverExtensions includes manifest-declared local entrypoints, incl
       process.env.HOME = previousHome;
     }
     await rm(tempHome, { recursive: true, force: true });
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
+
+void test("discoverExtensions skips an untrusted project's .pi/extensions, which pi does not load", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "pi-extmgr-untrusted-discovery-"));
+  try {
+    await mkdir(join(cwd, ".pi", "extensions"), { recursive: true });
+    await writeFile(join(cwd, ".pi", "extensions", "project-only.ts"), "// project\n", "utf8");
+
+    const trusted = await discoverExtensions(cwd, { projectTrusted: true });
+    assert.ok(trusted.some((entry) => entry.displayName.endsWith("project-only.ts")));
+
+    const untrusted = await discoverExtensions(cwd, { projectTrusted: false });
+    assert.ok(untrusted.every((entry) => entry.scope !== "project"));
+  } finally {
     await rm(cwd, { recursive: true, force: true });
   }
 });

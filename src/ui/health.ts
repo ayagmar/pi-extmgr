@@ -338,7 +338,7 @@ async function handleFixSafeIssues(
   snapshot: HealthSnapshot,
   ctx: ExtensionCommandContext
 ): Promise<boolean> {
-  const localEntries = await discoverExtensions(ctx.cwd);
+  const localEntries = await discoverExtensions(ctx.cwd, { projectTrusted: isProjectTrusted(ctx) });
   const fixes = planSafeConflictFixes(snapshot.conflicts, localEntries);
   if (fixes.length === 0) {
     notify(
@@ -404,7 +404,7 @@ async function handleConflictAction(
 
   const packages = await getInstalledPackagesAllScopes(ctx);
   const packageCandidates = findConflictPackageOwners(conflict, packages);
-  const localEntries = await discoverExtensions(ctx.cwd);
+  const localEntries = await discoverExtensions(ctx.cwd, { projectTrusted: isProjectTrusted(ctx) });
   const localCandidates = findConflictLocalOwners(conflict, localEntries);
 
   const actions = new Map<string, () => Promise<void>>();

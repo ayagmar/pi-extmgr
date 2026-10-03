@@ -34,30 +34,40 @@ interface RootConfig {
 /**
  * Discover all local extensions in both global and project scopes.
  *
+ * Project extensions are only listed for trusted projects: pi does not load
+ * an untrusted project's `.pi/extensions`, so extmgr must not show, toggle
+ * or delete them either.
+ *
  * @param cwd - Current working directory for resolving project scope
+ * @param options.projectTrusted - Result of `ctx.isProjectTrusted()`
  * @returns Array of extension entries, sorted alphabetically by display name
  *
  * @example
  * ```typescript
- * const extensions = await discoverExtensions(process.cwd());
+ * const extensions = await discoverExtensions(ctx.cwd, { projectTrusted: ctx.isProjectTrusted() });
  * for (const ext of extensions) {
  *   console.log(`${ext.displayName}: ${ext.state}`);
  * }
  * ```
  */
-export async function discoverExtensions(cwd: string): Promise<ExtensionEntry[]> {
+export async function discoverExtensions(
+  cwd: string,
+  options: { projectTrusted: boolean }
+): Promise<ExtensionEntry[]> {
   const roots: RootConfig[] = [
     {
       root: getGlobalExtensionsDir(),
       scope: "global",
       label: "global extensions",
     },
-    {
+  ];
+  if (options.projectTrusted) {
+    roots.push({
       root: getProjectExtensionsDir(cwd),
       scope: "project",
       label: `${CONFIG_DIR_NAME}/extensions`,
-    },
-  ];
+    });
+  }
 
   const all: ExtensionEntry[] = [];
   for (const root of roots) {
@@ -357,7 +367,7 @@ export async function setExtensionState(
  *
  * @example
  * ```typescript
- * const result = await removeLocalExtension(extension, process.cwd());
+ * const result = await removeLocalExtension(extension, ctx.cwd);
  * if (result.ok) {
  *   console.log(`Removed: ${result.removedPath}`);
  * }
