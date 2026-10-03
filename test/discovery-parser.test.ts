@@ -190,9 +190,22 @@ void test("normalizePackageSource preserves git and local path sources", () => {
     normalizePackageSource("ssh://git@github.com/user/repo.git"),
     "ssh://git@github.com/user/repo.git"
   );
+  // pi reads git+<scheme>:// and bare git:// as local paths, so they get the git: prefix.
   assert.equal(
     normalizePackageSource("git+https://github.com/user/repo.git"),
-    "git+https://github.com/user/repo.git"
+    "git:https://github.com/user/repo.git"
+  );
+  assert.equal(
+    normalizePackageSource("git+ssh://git@github.com/user/repo.git"),
+    "git:ssh://git@github.com/user/repo.git"
+  );
+  assert.equal(
+    normalizePackageSource("git://example.com/user/repo.git"),
+    "git:git://example.com/user/repo.git"
+  );
+  assert.equal(
+    normalizePackageSource("git:https://github.com/user/repo.git"),
+    "git:https://github.com/user/repo.git"
   );
   assert.equal(normalizePackageSource("~/dev/ext"), "~/dev/ext");
   assert.equal(normalizePackageSource(".\\extensions\\demo"), ".\\extensions\\demo");
@@ -355,4 +368,14 @@ void test("getInstalledPackages describes relative local files and URL git sourc
     restoreCatalog();
     await rm(root, { recursive: true, force: true });
   }
+});
+
+void test("git source spellings share one package identity", () => {
+  const identity = normalizePackageIdentity("git:git://example.com/user/repo.git");
+  assert.equal(normalizePackageIdentity("git://example.com/user/repo.git"), identity);
+  assert.equal(normalizePackageIdentity("git+git://example.com/user/repo.git"), identity);
+  assert.equal(
+    normalizePackageIdentity("git+https://github.com/user/repo.git"),
+    normalizePackageIdentity("git:https://github.com/user/repo.git")
+  );
 });

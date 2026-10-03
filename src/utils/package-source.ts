@@ -62,7 +62,10 @@ export function normalizeLocalSourceIdentity(source: string): string {
 
 export function stripGitSourcePrefix(source: string): string {
   const withoutGitPlus = source.startsWith("git+") ? source.slice(4) : source;
-  return withoutGitPlus.startsWith("git:") ? withoutGitPlus.slice(4) : withoutGitPlus;
+  // `git://` is a URL scheme, not the `git:` source prefix.
+  return withoutGitPlus.startsWith("git:") && !withoutGitPlus.startsWith("git://")
+    ? withoutGitPlus.slice(4)
+    : withoutGitPlus;
 }
 
 function resolveLocalSourceForIdentity(source: string, cwd?: string): string {
