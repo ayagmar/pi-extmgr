@@ -12,6 +12,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { parseScheduleDuration } from "./duration.js";
 import { fileExists } from "./fs.js";
+import { logWarning } from "./log.js";
 import { normalizePackageIdentity } from "./package-source.js";
 import { getExtmgrCacheDir } from "./pi-paths.js";
 
@@ -145,7 +146,7 @@ async function ensureSettingsDir(): Promise<void> {
   try {
     await mkdir(settingsDir(), { recursive: true });
   } catch (error) {
-    console.warn("[extmgr] Failed to create settings directory:", error);
+    logWarning("Failed to create settings directory:", error);
   }
 }
 
@@ -155,11 +156,11 @@ async function backupCorruptSettingsFile(): Promise<void> {
 
   try {
     await rename(settingsFile(), backupPath);
-    console.warn(
-      `[extmgr] Invalid auto-update settings JSON. Backed up to ${backupPath} and reset to defaults.`
+    logWarning(
+      `Invalid auto-update settings JSON. Backed up to ${backupPath} and reset to defaults.`
     );
   } catch (error) {
-    console.warn("[extmgr] Failed to backup invalid auto-update settings file:", error);
+    logWarning("Failed to backup invalid auto-update settings file:", error);
   }
 }
 
@@ -185,7 +186,7 @@ async function readConfigFromDisk(): Promise<AutoUpdateConfig | undefined> {
       return undefined;
     }
   } catch (error) {
-    console.warn("[extmgr] Failed to read settings:", error);
+    logWarning("Failed to read settings:", error);
     return undefined;
   }
 }
@@ -214,7 +215,7 @@ function enqueueConfigWrite(config: AutoUpdateConfig): void {
   settingsWriteQueue = settingsWriteQueue
     .then(() => writeConfigToDisk(config))
     .catch((error) => {
-      console.warn("[extmgr] Failed to write settings:", error);
+      logWarning("Failed to write settings:", error);
     });
 }
 

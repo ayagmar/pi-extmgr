@@ -12,6 +12,7 @@ import { DISABLED_SUFFIX } from "../constants.js";
 import { readPackageManifest } from "../packages/extensions.js";
 import { type ExtensionEntry, type Scope, type State } from "../types/index.js";
 import { fileExists, readSummary } from "../utils/fs.js";
+import { logWarning } from "../utils/log.js";
 import {
   CONFIG_DIR_NAME,
   getExtmgrTrashDir,
@@ -90,7 +91,7 @@ async function discoverInRoot(
       return [];
     }
     // Log other errors for debugging
-    console.error(`[extensions-manager] Error reading ${root}:`, error);
+    logWarning(`Error reading ${root}:`, error);
     return [];
   }
 

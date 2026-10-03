@@ -3,6 +3,7 @@ import { homedir } from "node:os";
 import path from "node:path";
 import { execPath, platform } from "node:process";
 import { type ExtensionAPI, getAgentDir, SettingsManager } from "@earendil-works/pi-coding-agent";
+import { logWarning } from "./log.js";
 
 interface NpmCommandResolutionOptions {
   platform?: NodeJS.Platform;
@@ -136,8 +137,8 @@ function getBunGlobalDir(cwd?: string): string | undefined {
 function warnAboutBunGlobalDirHeuristic(): void {
   if (warnedAboutBunGlobalDirHeuristic) return;
   warnedAboutBunGlobalDirHeuristic = true;
-  console.warn(
-    "[extmgr] Could not read Bun globalDir from BUN_INSTALL_GLOBAL_DIR or bunfig.toml; " +
+  logWarning(
+    "Could not read Bun globalDir from BUN_INSTALL_GLOBAL_DIR or bunfig.toml; " +
       "guessing from `bun pm bin -g`. If Bun's globalDir is customized, set BUN_INSTALL_GLOBAL_DIR."
   );
 }

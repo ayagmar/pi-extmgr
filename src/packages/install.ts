@@ -11,6 +11,7 @@ import { parseChoiceByLabel } from "../utils/command.js";
 import { normalizePackageSource } from "../utils/format.js";
 import { fileExists } from "../utils/fs.js";
 import { logPackageInstall } from "../utils/history.js";
+import { logWarning } from "../utils/log.js";
 import { isProjectTrusted, tryOperation } from "../utils/mode.js";
 import {
   downloadToFile,
@@ -139,10 +140,7 @@ async function cleanupStandaloneTempArtifacts(tempDir: string, extractDir?: stri
       try {
         await rm(path, { recursive: true, force: true });
       } catch (error) {
-        console.warn(
-          `[extmgr] Failed to remove temporary standalone install artifact at ${path}:`,
-          error
-        );
+        logWarning(`Failed to remove temporary standalone install artifact at ${path}:`, error);
       }
     })
   );
@@ -202,13 +200,11 @@ async function installPackageInternal(
         fallbackWithoutLoader: true,
       },
       async ({ setMessage }) => {
-        await getPackageCatalog(ctx.cwd, isProjectTrusted(ctx)).install(
-          normalized,
-          scope,
-          (event) => {
-            setMessage(getProgressMessage(event, `Installing ${normalized}...`));
-          }
-        );
+        await getPackageCatalog(ctx.cwd, isProjectTrusted(ctx), {
+          suppressOutput: ctx.mode === "tui",
+        }).install(normalized, scope, (event) => {
+          setMessage(getProgressMessage(event, `Installing ${normalized}...`));
+        });
         return undefined;
       }
     );

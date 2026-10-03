@@ -9,6 +9,7 @@ import {
 import { getPackageCatalog } from "../packages/catalog.js";
 import { parseChoiceByLabel } from "./command.js";
 import { logAutoUpdateConfig } from "./history.js";
+import { logWarning } from "./log.js";
 import { isProjectTrusted } from "./mode.js";
 import { notify } from "./notify.js";
 import { normalizePackageIdentity } from "./package-source.js";
@@ -20,7 +21,6 @@ import {
   parseDuration,
   saveAutoUpdateConfig,
 } from "./settings.js";
-
 import { isTimerRunning, startTimer, stopTimer } from "./timer.js";
 
 const AUTO_UPDATE_WIZARD_CHOICES = {
@@ -80,7 +80,7 @@ export function startAutoUpdateTimer(
       void checkForUpdates(pi, checkCtx, onUpdateAvailable).catch((error) => {
         // pi rejects every access to a retired context; that is expected here.
         if (generation !== timerGeneration) return;
-        console.warn("[extmgr] Auto-update check failed:", error);
+        logWarning("Auto-update check failed:", error);
       });
     },
     { initialDelayMs }

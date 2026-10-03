@@ -46,6 +46,12 @@ import {
 } from "./schema.js";
 import { markProfileRestorePointIncomplete, saveProfileRestorePoint } from "./store.js";
 
+/** Package manager output would corrupt pi's TUI, so it is captured there. */
+function mutationCatalog(ctx: ExtensionCommandContext) {
+  return getPackageCatalog(ctx.cwd, isProjectTrusted(ctx), {
+    suppressOutput: ctx.mode === "tui",
+  });
+}
 export interface ProfileApplicationOperation {
   action: "install" | "remove" | "settings" | "verify" | "rollback";
   source?: string;
@@ -215,31 +221,20 @@ async function rollbackProfile(
         scope: change.from.scope,
       },
       () =>
-        getPackageCatalog(ctx.cwd, isProjectTrusted(ctx)).install(
-          profileMutationSource(change.from, ctx.cwd),
-          change.from.scope
-        )
+        mutationCatalog(ctx).install(profileMutationSource(change.from, ctx.cwd), change.from.scope)
     );
   }
   for (const pkg of plan.remove) {
     await attempt(
       { action: "rollback", source: profileMutationSource(pkg, ctx.cwd), scope: pkg.scope },
-      () =>
-        getPackageCatalog(ctx.cwd, isProjectTrusted(ctx)).install(
-          profileMutationSource(pkg, ctx.cwd),
-          pkg.scope
-        )
+      () => mutationCatalog(ctx).install(profileMutationSource(pkg, ctx.cwd), pkg.scope)
     );
   }
   await attempt({ action: "rollback" }, () => persistProfileConfiguration(current, ctx));
   for (const pkg of plan.add) {
     await attempt(
       { action: "rollback", source: profileMutationSource(pkg, ctx.cwd), scope: pkg.scope },
-      () =>
-        getPackageCatalog(ctx.cwd, isProjectTrusted(ctx)).remove(
-          profileMutationSource(pkg, ctx.cwd),
-          pkg.scope
-        )
+      () => mutationCatalog(ctx).remove(profileMutationSource(pkg, ctx.cwd), pkg.scope)
     );
   }
   for (const change of plan.update.filter((item) => item.from.scope !== item.to.scope)) {
@@ -249,11 +244,7 @@ async function rollbackProfile(
         source: profileMutationSource(change.to, ctx.cwd),
         scope: change.to.scope,
       },
-      () =>
-        getPackageCatalog(ctx.cwd, isProjectTrusted(ctx)).remove(
-          profileMutationSource(change.to, ctx.cwd),
-          change.to.scope
-        )
+      () => mutationCatalog(ctx).remove(profileMutationSource(change.to, ctx.cwd), change.to.scope)
     );
   }
   const drift = await verifyFinalProfile(current, ctx, pi).catch((error) => [String(error)]);
@@ -323,7 +314,7 @@ export async function applyProfileWithOutcome(
           const source = profileMutationSource(pkg, ctx.cwd);
           setMessage(`Installing ${source}...`);
           pendingOperation = { action: "install", source, scope: pkg.scope };
-          await getPackageCatalog(ctx.cwd, isProjectTrusted(ctx)).install(source, pkg.scope);
+          await mutationCatalog(ctx).install(source, pkg.scope);
           operations.push({ ...pendingOperation, status: "completed" });
           pendingOperation = undefined;
         }
@@ -331,7 +322,7 @@ export async function applyProfileWithOutcome(
           const source = profileMutationSource(change.to, ctx.cwd);
           setMessage(`Installing replacement ${source}...`);
           pendingOperation = { action: "install", source, scope: change.to.scope };
-          await getPackageCatalog(ctx.cwd, isProjectTrusted(ctx)).install(source, change.to.scope);
+          await mutationCatalog(ctx).install(source, change.to.scope);
           operations.push({ ...pendingOperation, status: "completed" });
           pendingOperation = undefined;
         }
@@ -376,7 +367,7 @@ export async function applyProfileWithOutcome(
           const source = profileMutationSource(pkg, ctx.cwd);
           setMessage(`Removing obsolete ${source}...`);
           pendingOperation = { action: "remove", source, scope: pkg.scope };
-          await getPackageCatalog(ctx.cwd, isProjectTrusted(ctx)).remove(source, pkg.scope);
+          await mutationCatalog(ctx).remove(source, pkg.scope);
           operations.push({ ...pendingOperation, status: "completed" });
           pendingOperation = undefined;
         }
@@ -384,7 +375,7 @@ export async function applyProfileWithOutcome(
           const source = profileMutationSource(change.from, ctx.cwd);
           setMessage(`Removing old-scope ${source}...`);
           pendingOperation = { action: "remove", source, scope: change.from.scope };
-          await getPackageCatalog(ctx.cwd, isProjectTrusted(ctx)).remove(source, change.from.scope);
+          await mutationCatalog(ctx).remove(source, change.from.scope);
           operations.push({ ...pendingOperation, status: "completed" });
           pendingOperation = undefined;
         }
