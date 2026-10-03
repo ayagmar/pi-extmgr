@@ -61,6 +61,7 @@ export async function handleAutoUpdateSubcommand(
         "  1mo     - Check monthly",
         "  daily   - Check daily (alias)",
         "  weekly  - Check weekly (alias)",
+        "  monthly - Check monthly (alias)",
       ],
     });
     return;

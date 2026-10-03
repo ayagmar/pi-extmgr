@@ -19,3 +19,14 @@ void test("parseLookbackDuration distinguishes minutes from months", () => {
   assert.equal(parseLookbackDuration("1mo"), 30 * 24 * 60 * 60 * 1000);
   assert.equal(parseLookbackDuration("weekly"), undefined);
 });
+
+void test("parseScheduleDuration accepts the monthly alias offered by autocomplete", () => {
+  assert.deepEqual(parseScheduleDuration("monthly"), {
+    ms: 30 * 24 * 60 * 60 * 1000,
+    display: "monthly",
+  });
+  assert.deepEqual(parseScheduleDuration("1mo"), {
+    ms: 30 * 24 * 60 * 60 * 1000,
+    display: "1 month",
+  });
+});

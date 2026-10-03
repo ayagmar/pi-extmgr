@@ -116,6 +116,8 @@ const SCHEDULE_DURATION_ALIASES = {
   day: { ms: DAY_MS, display: "daily" },
   weekly: { ms: WEEK_MS, display: "weekly" },
   week: { ms: WEEK_MS, display: "weekly" },
+  monthly: { ms: MONTH_MS, display: "monthly" },
+  month: { ms: MONTH_MS, display: "monthly" },
 } satisfies Record<string, DurationAlias>;
 
 export function parseScheduleDuration(input: string): ParsedDuration | undefined {

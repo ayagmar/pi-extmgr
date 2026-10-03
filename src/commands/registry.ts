@@ -16,7 +16,7 @@ import { notify } from "../utils/notify.js";
 import { handleAutoUpdateSubcommand } from "./auto-update.js";
 import { clearMetadataCacheCommand } from "./cache.js";
 import { getLocalCompletionIndex, getProfileCompletionOptions } from "./completion.js";
-import { handleHistorySubcommand } from "./history.js";
+import { HISTORY_ACTIONS, handleHistorySubcommand } from "./history.js";
 import { handleInstallSubcommand, INSTALL_USAGE } from "./install.js";
 import { handleProfileSubcommand } from "./profile.js";
 import { handleTrashSubcommand } from "./trash.js";
@@ -268,27 +268,26 @@ export function getExtensionsAutocompleteItems(prefix: string): AutocompleteItem
       return options ? completionItems(options, activePrefix) : null;
     }
     if (command === "history") {
-      const historyActions = [
-        "extension_toggle",
-        "extension_delete",
-        "package_install",
-        "package_update",
-        "package_remove",
-        "cache_clear",
-        "auto_update_config",
-      ];
       if (completedArgs.at(-1) === "--action") {
-        return completionItems(historyActions, activePrefix);
+        return completionItems([...HISTORY_ACTIONS], activePrefix);
       }
+      // Completions only run in the interactive editor, where --global is refused.
       return completionItems(
-        ["--action", "--failed", "--success", "--global", "--limit", "--package", "--since"],
+        ["--action", "--failed", "--success", "--limit", "--package", "--since"],
         activePrefix
       );
+    }
+    if (command === "trash") {
+      if (completedArgs.length === 0) {
+        return completionItems(["list", "restore", "purge"], activePrefix);
+      }
+      return completedArgs.length === 1 && completedArgs[0]?.toLowerCase() === "purge"
+        ? completionItems(["all"], activePrefix)
+        : null;
     }
     const argumentOptions: Record<string, string[]> = {
       install: ["--global", "--project"],
       "auto-update": ["daily", "weekly", "monthly", "never"],
-      trash: ["list", "restore", "purge", "all"],
     };
     return completionItems(argumentOptions[command] ?? [], activePrefix);
   }

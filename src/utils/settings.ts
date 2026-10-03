@@ -311,7 +311,7 @@ export function clearUpdatesAvailable(
 
 /**
  * Parse schedule duration strings for auto-update settings.
- * Supports hours/days/weeks/months plus schedule aliases like `daily`, `weekly`, and `never`.
+ * Supports hours/days/weeks/months plus schedule aliases like `daily`, `weekly`, `monthly`, and `never`.
  */
 export function parseDuration(input: string): { ms: number; display: string } | undefined {
   return parseScheduleDuration(input);
