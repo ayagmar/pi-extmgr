@@ -103,12 +103,15 @@ async function resolveNpmPackageRoot(
     join(cwd, "node_modules", packageName),
   ];
 
-  const packageDir = process.env.PI_PACKAGE_DIR || getAgentDir();
-  const globalCandidates = [join(packageDir, "npm", "node_modules", packageName)];
+  // Same order as pi's package manager: user packages live in the managed
+  // <agentDir>/npm root; the global npm root only matters for installs made
+  // before pi moved them there. (PI_PACKAGE_DIR is pi's own install dir, not
+  // a package root.)
+  const globalCandidates = [join(getAgentDir(), "npm", "node_modules", packageName)];
 
   const npmGlobalRoot = await getGlobalNpmRoot(cwd);
   if (npmGlobalRoot) {
-    globalCandidates.unshift(join(npmGlobalRoot, packageName));
+    globalCandidates.push(join(npmGlobalRoot, packageName));
   }
 
   const candidates =

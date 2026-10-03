@@ -26,12 +26,15 @@ If Pi is already running, use `/reload`.
 
 Requires Pi `>=1.0.1` and Node.js `>=22.19.0`. Use pi-extmgr `0.3.x` with older Pi releases.
 
-### npm prefix permissions
+Update it with `pi update npm:pi-extmgr` or `pi update --extensions` (a bare `pi update` only updates Pi itself).
+Project-scoped installs (`pi install npm:pi-extmgr -l`) need the project to be trusted.
 
-Pi global package installs use `npm install -g`. If `npm_config_prefix` points at an
-unwritable prefix such as `/usr/local`, install or reload can fail with `EACCES`.
-Use a writable npm prefix, configure Pi's `npmCommand` setting for your Node
-version manager, or install project-local with `pi install npm:pi-extmgr -l`.
+### Where packages live
+
+Pi installs global npm packages into its own managed root, `~/.pi/agent/npm` (or `$PI_CODING_AGENT_DIR/npm`),
+and project packages into `.pi/npm`. No global npm prefix is involved, so an unwritable `npm_config_prefix`
+no longer matters. extmgr reads the same locations. If npm needs a specific Node version or you want a
+different package manager, set Pi's `npmCommand` setting.
 
 `npmCommand` examples for `~/.pi/agent/settings.json`:
 
@@ -225,7 +228,7 @@ Examples:
 - **Package extension config**: Select a package and press `c` (or Enter/A → Configure) to enable/disable individual package entrypoints.
   - After saving package extension config, run /reload to apply changes.
 - **Two install modes**:
-  - **Managed** (npm): uses explicit `pi update` updates, stored in pi's package cache, supports Pi package manifest/convention loading
+  - **Managed** (npm/git): installed by Pi's package manager into `~/.pi/agent/npm` / `~/.pi/agent/git` (project scope: `.pi/npm` / `.pi/git`), updated from extmgr or with `pi update --extensions`, supports Pi package manifest/convention loading
   - **Local** (standalone): Copies to `~/.pi/agent/extensions/{package}/`, so it only accepts runnable standalone layouts (manifest-declared/root entrypoints), requires `tar` on `PATH`, and rejects packages whose runtime `dependencies` are not already bundled with the package contents
 - **Scheduled update-check schedule is persistent**: `/extensions auto-update 1d` stays active across future Pi sessions and is restored when switching sessions.
 - **Scheduled update-check badges cover npm + git packages**: extmgr now uses pi's package manager APIs for structured update detection instead of parsing `pi list` output.

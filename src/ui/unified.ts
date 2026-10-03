@@ -21,6 +21,7 @@ import { refreshKnownUpdates } from "../utils/auto-update.js";
 import { formatEntry as formatExtEntry } from "../utils/format.js";
 import { hasCustomUI, isProjectTrusted, runCustomUI } from "../utils/mode.js";
 import { notify } from "../utils/notify.js";
+import { CONFIG_DIR_NAME, displayHomePath, getGlobalExtensionsDir } from "../utils/pi-paths.js";
 import { readReloadState } from "../utils/reload-state.js";
 import { getSavedViewsPath, readSavedViews, writeSavedViews } from "../utils/views.js";
 import { runTaskWithLoader } from "./async-task.js";
@@ -321,7 +322,11 @@ export async function showInstalledPackagesLegacy(
 export async function showListOnly(ctx: ExtensionCommandContext): Promise<void> {
   const entries = await discoverExtensions(ctx.cwd);
   if (entries.length === 0) {
-    notify(ctx, "No extensions found in ~/.pi/agent/extensions or .pi/extensions", "info");
+    notify(
+      ctx,
+      `No extensions found in ${displayHomePath(getGlobalExtensionsDir())} or ${CONFIG_DIR_NAME}/extensions`,
+      "info"
+    );
     return;
   }
 

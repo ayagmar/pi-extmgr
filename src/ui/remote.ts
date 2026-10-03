@@ -32,6 +32,7 @@ import { parseChoiceByLabel, splitCommandArgs } from "../utils/command.js";
 import { parseNpmSource, truncate } from "../utils/format.js";
 import { requireCustomUI, runCustomUI } from "../utils/mode.js";
 import { notify } from "../utils/notify.js";
+import { getGlobalSettingsLabel, getProjectSettingsLabel } from "../utils/pi-paths.js";
 import { runTaskWithLoader } from "./async-task.js";
 import { RemotePackageBrowser } from "./discover/browser.js";
 import { buildPackageInfoText, packageInfoCache } from "./discover/metadata.js";
@@ -445,17 +446,14 @@ async function confirmMarketplaceInstall(
   pi: ExtensionAPI,
   mode: "managed" | "standalone"
 ): Promise<"global" | "project" | undefined> {
+  const scopeChoices = {
+    global: `Global (${getGlobalSettingsLabel()})`,
+    project: getProjectSettingsLabel(),
+    cancel: "Cancel",
+  };
   const scopeChoice = parseChoiceByLabel(
-    {
-      global: "Global (~/.pi/agent/settings.json)",
-      project: ".pi/settings.json",
-      cancel: "Cancel",
-    },
-    await ctx.ui.select("Install scope", [
-      "Global (~/.pi/agent/settings.json)",
-      ".pi/settings.json",
-      "Cancel",
-    ])
+    scopeChoices,
+    await ctx.ui.select("Install scope", Object.values(scopeChoices))
   );
   if (!scopeChoice || scopeChoice === "cancel") return undefined;
 
