@@ -38,6 +38,28 @@ void test("installPackage installs the normalized npm source", async () => {
   }
 });
 
+void test("installPackage keeps package-manager output out of the TUI", async () => {
+  const catalogOptions: ({ suppressOutput?: boolean } | undefined)[] = [];
+  const restoreCatalog = mockPackageCatalog({
+    catalogOptionsImpl: (options) => {
+      catalogOptions.push(options);
+    },
+  });
+
+  try {
+    const { pi, ctx } = createMockHarness({ hasUI: true, mode: "tui", confirmResult: true });
+    const outcome = await installPackageWithOutcome("pi-extmgr", ctx, pi, {
+      scope: "global",
+      skipConfirmation: true,
+    });
+
+    assert.equal(outcome.installed, true);
+    assert.ok(catalogOptions.some((options) => options?.suppressOutput === true));
+  } finally {
+    restoreCatalog();
+  }
+});
+
 void test("installPackage normalizes git@ sources to git: prefix", async () => {
   const installs: { source: string; scope: "global" | "project" }[] = [];
   const restoreCatalog = mockPackageCatalog({

@@ -27,6 +27,7 @@ import {
 } from "./utils/auto-update.js";
 import { tokenizeArgs } from "./utils/command.js";
 import { isPackageSource } from "./utils/format.js";
+import { logWarning, setConsoleDiagnosticsEnabled } from "./utils/log.js";
 import { clearReloadRequired } from "./utils/reload-state.js";
 import { getAutoUpdateConfig, hydrateAutoUpdateConfig } from "./utils/settings.js";
 import { updateExtmgrStatus } from "./utils/status.js";
@@ -78,7 +79,7 @@ export default function extensionsManager(pi: ExtensionAPI) {
         ctx.cwd,
         typeof ctx.isProjectTrusted === "function" && ctx.isProjectTrusted()
       ).catch((error) => {
-        console.warn("[extmgr] Failed to refresh local completions:", error);
+        logWarning("Failed to refresh local completions:", error);
       });
     },
   });
@@ -107,7 +108,7 @@ export default function extensionsManager(pi: ExtensionAPI) {
       ctx.cwd,
       typeof ctx.isProjectTrusted === "function" && ctx.isProjectTrusted()
     ).catch((error) => {
-      console.warn("[extmgr] Failed to load local completions:", error);
+      logWarning("Failed to load local completions:", error);
     });
 
     if (!ctx.hasUI) {
@@ -126,13 +127,14 @@ export default function extensionsManager(pi: ExtensionAPI) {
     setImmediate(() => {
       if (activeCtx !== ctx) return;
       updateStatusBar(ctx).catch((err) => {
-        console.error("[extmgr] Status update failed:", err);
+        logWarning("Status update failed:", err);
       });
     });
   }
 
   pi.on("session_start", async (event, ctx) => {
     activeCtx = ctx;
+    setConsoleDiagnosticsEnabled(ctx.mode !== "tui");
     if (event.reason === "reload") {
       await clearReloadRequired();
     }

@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { CACHE_LIMITS } from "../constants.js";
 import { type InstalledPackage, type SearchCache } from "../types/index.js";
 import { parseNpmSource } from "./format.js";
-
+import { logWarning } from "./log.js";
 import { getExtmgrCacheDir } from "./pi-paths.js";
 
 function cacheDir(): string {
@@ -216,9 +216,9 @@ async function backupCorruptCacheFile(): Promise<void> {
 
   try {
     await rename(cacheFile(), backupPath);
-    console.warn(`[extmgr] Invalid metadata cache JSON. Backed up to ${backupPath}.`);
+    logWarning(`Invalid metadata cache JSON. Backed up to ${backupPath}.`);
   } catch (error) {
-    console.warn("[extmgr] Failed to backup invalid cache file:", error);
+    logWarning("Failed to backup invalid cache file:", error);
   }
 }
 
@@ -254,7 +254,7 @@ async function loadCache(): Promise<CacheData> {
   } catch (error) {
     // Cache doesn't exist or is unreadable, start fresh
     if (error instanceof Error && "code" in error && error.code !== "ENOENT") {
-      console.warn("[extmgr] Cache load failed, resetting:", error.message);
+      logWarning(`Cache load failed, resetting: ${error.message}`);
     }
     memoryCache = {
       version: 1,
@@ -328,7 +328,7 @@ async function enqueueCacheSave(): Promise<void> {
     .catch(() => undefined)
     .then(() => saveCache())
     .catch((error) => {
-      console.warn("[extmgr] Cache save failed:", error instanceof Error ? error.message : error);
+      logWarning("Cache save failed:", error instanceof Error ? error.message : error);
     });
 
   return cacheWriteQueue;
