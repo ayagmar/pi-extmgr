@@ -10,10 +10,33 @@ export interface RuntimeOwner {
   path: string;
 }
 
+const DUPLICATE_SUFFIX = /^(.+):(\d+)$/;
+
+/**
+ * pi lists extension commands by invocation name. When several extensions
+ * register the same name it suffixes every copy (`deploy:1`, `deploy:2`), so
+ * the registered name has to be recovered to see the clash.
+ */
+function registeredCommandNames(commands: ReturnType<ExtensionAPI["getCommands"]>): string[] {
+  const suffixedBases = new Map<string, number>();
+  for (const command of commands) {
+    const base =
+      command.source === "extension" ? DUPLICATE_SUFFIX.exec(command.name)?.[1] : undefined;
+    if (base) suffixedBases.set(base, (suffixedBases.get(base) ?? 0) + 1);
+  }
+  return commands.map((command) => {
+    if (command.source !== "extension") return command.name;
+    const base = DUPLICATE_SUFFIX.exec(command.name)?.[1];
+    return base && (suffixedBases.get(base) ?? 0) > 1 ? base : command.name;
+  });
+}
+
 export function getRuntimeOwners(pi: ExtensionAPI): RuntimeOwner[] {
-  const commands = pi.getCommands().map((command) => ({
+  const registeredCommands = pi.getCommands();
+  const names = registeredCommandNames(registeredCommands);
+  const commands = registeredCommands.map((command, index) => ({
     kind: "command" as const,
-    name: command.name,
+    name: names[index] ?? command.name,
     ...(command.description ? { description: command.description } : {}),
     source: command.sourceInfo.source,
     scope: command.sourceInfo.scope,
