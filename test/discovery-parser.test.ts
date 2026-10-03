@@ -325,3 +325,34 @@ void test("getInstalledPackages aborts instead of returning partial metadata", a
     restoreCatalog();
   }
 });
+
+void test("getInstalledPackages describes relative local files and URL git sources correctly", async () => {
+  const root = await mkdtemp(join(tmpdir(), "pi-extmgr-describe-"));
+  const extensionFile = join(root, ".pi", "extensions-src", "demo.ts");
+  await mkdir(join(root, ".pi", "extensions-src"), { recursive: true });
+  await writeFile(extensionFile, "// Demo extension from the settings directory\n", "utf8");
+  const restoreCatalog = mockPackageCatalog({
+    packages: [
+      {
+        source: "./extensions-src/demo.ts",
+        name: "demo.ts",
+        scope: "project",
+        resolvedPath: extensionFile,
+      },
+      { source: "https://github.com/user/tool", name: "tool", scope: "global" },
+    ],
+  });
+
+  try {
+    const { pi, ctx } = createMockHarness({ cwd: root });
+    const result = await getInstalledPackages(ctx, pi);
+    assert.equal(
+      result.find((pkg) => pkg.name === "demo.ts")?.description,
+      "Demo extension from the settings directory"
+    );
+    assert.equal(result.find((pkg) => pkg.name === "tool")?.description, "git repository");
+  } finally {
+    restoreCatalog();
+    await rm(root, { recursive: true, force: true });
+  }
+});
