@@ -7,6 +7,7 @@ import { handleTrashSubcommand } from "../src/commands/trash.js";
 import { removeLocalExtension } from "../src/extensions/discovery.js";
 import {
   listExtensionTrash,
+  movePath,
   moveToExtensionTrash,
   purgeExtensionTrash,
   undoExtensionTrash,
@@ -143,6 +144,55 @@ void test("local extension trash supports undo without losing the original path"
     await writeFile(source, "export default {};\n", "utf8");
     const record = await moveToExtensionTrash(source, join(root, "trash"));
     await undoExtensionTrash(record);
+    assert.equal(await readFile(source, "utf8"), "export default {};\n");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+void test("movePath copies across filesystems when rename reports EXDEV", async () => {
+  const root = await mkdtemp(join(tmpdir(), "pi-extmgr-trash-exdev-"));
+  const source = join(root, "project", ".pi", "extensions", "demo");
+  const destination = join(root, "trash", "demo");
+  const crossDevice = async (): Promise<void> => {
+    throw Object.assign(new Error("EXDEV: cross-device link not permitted"), { code: "EXDEV" });
+  };
+  try {
+    await mkdir(join(source, "lib"), { recursive: true });
+    await mkdir(join(root, "trash"), { recursive: true });
+    await writeFile(join(source, "index.ts"), "export default {};\n", "utf8");
+    await writeFile(join(source, "lib", "helper.ts"), "export const x = 1;\n", "utf8");
+
+    await movePath(source, destination, crossDevice);
+
+    assert.equal(await readFile(join(destination, "index.ts"), "utf8"), "export default {};\n");
+    assert.equal(
+      await readFile(join(destination, "lib", "helper.ts"), "utf8"),
+      "export const x = 1;\n"
+    );
+    await assert.rejects(readFile(join(source, "index.ts"), "utf8"), { code: "ENOENT" });
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+void test("movePath keeps the source when the cross-device copy fails", async () => {
+  const root = await mkdtemp(join(tmpdir(), "pi-extmgr-trash-exdev-fail-"));
+  const source = join(root, "demo.ts");
+  const destination = join(root, "missing-parent", "demo.ts");
+  const crossDevice = async (): Promise<void> => {
+    throw Object.assign(new Error("EXDEV"), { code: "EXDEV" });
+  };
+  const otherFailure = async (): Promise<void> => {
+    throw Object.assign(new Error("EACCES"), { code: "EACCES" });
+  };
+  try {
+    await writeFile(source, "export default {};\n", "utf8");
+    await writeFile(join(root, "missing-parent"), "not a directory", "utf8");
+
+    await assert.rejects(movePath(source, destination, crossDevice));
+    assert.equal(await readFile(source, "utf8"), "export default {};\n");
+    await assert.rejects(movePath(source, join(root, "other.ts"), otherFailure), /EACCES/);
     assert.equal(await readFile(source, "utf8"), "export default {};\n");
   } finally {
     await rm(root, { recursive: true, force: true });
