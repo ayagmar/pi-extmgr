@@ -26,7 +26,6 @@ interface NpmExecOptions {
   signal?: AbortSignal;
 }
 
-const settingsManagersByPath = new Map<string, SettingsManager>();
 let warnedAboutBunGlobalDirHeuristic = false;
 
 function getNpmCliPath(nodeExecPath: string, runtimePlatform: NodeJS.Platform): string {
@@ -49,17 +48,24 @@ function getConfiguredNpmBase(
   return { command, args: [...args] };
 }
 
+/**
+ * Global `npmCommand` for code paths without the extension API. Read fresh so
+ * edits to settings.json apply without restarting pi.
+ */
 function getSettingsNpmCommand(cwd: string): string[] | undefined {
-  const agentDir = getAgentDir();
-  const cacheKey = `${agentDir}\0${cwd}`;
-  const cached = settingsManagersByPath.get(cacheKey);
-  if (cached) {
-    return cached.getNpmCommand();
-  }
+  return SettingsManager.create(cwd, getAgentDir(), { projectTrusted: false }).getNpmCommand();
+}
 
-  const settingsManager = SettingsManager.create(cwd, agentDir, { projectTrusted: false });
-  settingsManagersByPath.set(cacheKey, settingsManager);
-  return settingsManager.getNpmCommand();
+/**
+ * pi's effective settings (global merged with a trusted project's), so npm
+ * metadata calls use the same `npmCommand` as pi's own package manager.
+ */
+function getEffectiveNpmCommand(pi: ExtensionAPI, cwd: string): string[] | undefined {
+  if (typeof pi.getSettings === "function") {
+    const npmCommand = pi.getSettings().npmCommand;
+    return npmCommand ? [...npmCommand] : undefined;
+  }
+  return getSettingsNpmCommand(cwd);
 }
 
 function getCommandName(command: string): string {
@@ -181,10 +187,6 @@ export function resolveNpmCommand(
   return { command: "npm", args: npmArgs };
 }
 
-export function resolveConfiguredNpmCommand(npmArgs: string[], cwd: string): ResolvedNpmCommand {
-  return resolveNpmCommand(npmArgs, { npmCommand: getSettingsNpmCommand(cwd) });
-}
-
 export function resolveNpmRootCommand(
   options?: NpmCommandResolutionOptions
 ): ResolvedNpmRootCommand {
@@ -218,7 +220,7 @@ export async function execNpm(
   ctx: { cwd: string },
   options: NpmExecOptions
 ): Promise<{ code: number; stdout: string; stderr: string; killed: boolean }> {
-  const resolved = resolveConfiguredNpmCommand(npmArgs, ctx.cwd);
+  const resolved = resolveNpmCommand(npmArgs, { npmCommand: getEffectiveNpmCommand(pi, ctx.cwd) });
   return pi.exec(resolved.command, resolved.args, {
     timeout: options.timeout,
     cwd: ctx.cwd,

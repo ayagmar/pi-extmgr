@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { resolveNpmCommand, resolveNpmRootCommand } from "../src/utils/npm-exec.js";
+import { type ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { execNpm, resolveNpmCommand, resolveNpmRootCommand } from "../src/utils/npm-exec.js";
 
 void test("resolveNpmCommand uses npm directly on non-windows", () => {
   const resolved = resolveNpmCommand(["view", "pi-extmgr", "version", "--json"], {
@@ -80,4 +81,21 @@ void test("resolveNpmRootCommand detects bun.cmd commands", () => {
       process.env.BUN_INSTALL_GLOBAL_DIR = oldGlobalDir;
     }
   }
+});
+
+void test("execNpm uses pi's effective npmCommand setting", async () => {
+  const calls: { command: string; args: string[] }[] = [];
+  const pi = {
+    getSettings: () => ({ npmCommand: ["mise", "exec", "node@22", "--", "npm"] }),
+    exec: (command: string, args: string[]) => {
+      calls.push({ command, args });
+      return Promise.resolve({ code: 0, stdout: "", stderr: "", killed: false });
+    },
+  } as unknown as ExtensionAPI;
+
+  await execNpm(pi, ["view", "demo", "--json"], { cwd: "/tmp" }, { timeout: 1000 });
+
+  assert.deepEqual(calls, [
+    { command: "mise", args: ["exec", "node@22", "--", "npm", "view", "demo", "--json"] },
+  ]);
 });
