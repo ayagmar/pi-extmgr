@@ -142,6 +142,11 @@ Or press `Ctrl+Alt+E` from anywhere in the pi TUI.
 | `?` / `H`     | Help                                                  |
 | `Esc`         | Clear search or exit                                  |
 
+In Pi's default fullscreen TUI, `PageUp`/`PageDown`/`Home`/`End` scroll the transcript before the manager
+sees them. Use `↑↓`, start Pi with `--tui-mode regular`, or rebind `tui.altScreen.pageUp`,
+`tui.altScreen.pageDown`, `tui.altScreen.top` and `tui.altScreen.bottom` in `keybindings.json`.
+Report panels (help, details, doctor, history) are overlays and keep these keys.
+
 ### Commands
 
 ```bash
