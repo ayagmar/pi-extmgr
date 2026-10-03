@@ -171,3 +171,83 @@ void test("getPackageScopeLabel explains persisted package scope", () => {
   assert.match(getPackageScopeLabel("project"), /\.pi\/settings\.json/);
   assert.match(getPackageScopeLabel("global"), /\.pi\/agent\/settings\.json/);
 });
+
+void test("package catalog lists project packages first with pi's installed paths", async () => {
+  const root = await mkdtemp(join(tmpdir(), "pi-extmgr-catalog-list-"));
+  const agentDir = join(root, "agent");
+  const cwd = join(root, "project");
+  const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
+  process.env.PI_CODING_AGENT_DIR = agentDir;
+  try {
+    await mkdir(agentDir, { recursive: true });
+    await mkdir(join(cwd, ".pi", "local-pkg"), { recursive: true });
+    await writeFile(
+      join(agentDir, "settings.json"),
+      JSON.stringify({ packages: ["npm:demo"] }),
+      "utf8"
+    );
+    await writeFile(
+      join(cwd, ".pi", "settings.json"),
+      JSON.stringify({ packages: [{ source: "npm:demo", extensions: [] }, "./local-pkg"] }),
+      "utf8"
+    );
+
+    const catalog = getPackageCatalog(cwd, true);
+    const all = await catalog.listInstalledPackages({ dedupe: false });
+    assert.deepEqual(
+      all.map((pkg) => `${pkg.scope}:${pkg.source}`),
+      ["project:npm:demo", "project:./local-pkg", "global:npm:demo"]
+    );
+    assert.equal(
+      all.find((pkg) => pkg.source === "./local-pkg")?.resolvedPath,
+      join(cwd, ".pi", "local-pkg")
+    );
+
+    const effective = await catalog.listInstalledPackages();
+    assert.deepEqual(
+      effective.map((pkg) => `${pkg.scope}:${pkg.source}`),
+      ["project:npm:demo", "project:./local-pkg"]
+    );
+  } finally {
+    if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+    else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+void test("package catalog install and remove persist the settings entry", async () => {
+  const root = await mkdtemp(join(tmpdir(), "pi-extmgr-catalog-persist-"));
+  const agentDir = join(root, "agent");
+  const cwd = join(root, "project");
+  const localPackage = join(root, "local-package");
+  const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
+  process.env.PI_CODING_AGENT_DIR = agentDir;
+  try {
+    await mkdir(agentDir, { recursive: true });
+    await mkdir(localPackage, { recursive: true });
+    await writeFile(join(localPackage, "index.ts"), "export default () => {};\n", "utf8");
+    await writeFile(
+      join(agentDir, "settings.json"),
+      JSON.stringify({ packages: ["npm:keep"], quietStartup: true }),
+      "utf8"
+    );
+    const readSettings = async () =>
+      JSON.parse(await readFile(join(agentDir, "settings.json"), "utf8")) as {
+        packages?: unknown[];
+        quietStartup?: boolean;
+      };
+
+    await getPackageCatalog(cwd).install(localPackage, "global");
+    // pi stores local sources relative to the settings directory.
+    assert.deepEqual((await readSettings()).packages, ["npm:keep", "../local-package"]);
+
+    await getPackageCatalog(cwd).remove(localPackage, "global");
+    const settings = await readSettings();
+    assert.deepEqual(settings.packages, ["npm:keep"]);
+    assert.equal(settings.quietStartup, true);
+  } finally {
+    if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+    else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
+    await rm(root, { recursive: true, force: true });
+  }
+});

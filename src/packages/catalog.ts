@@ -5,15 +5,12 @@ import {
   SettingsManager,
 } from "@earendil-works/pi-coding-agent";
 import { type InstalledPackage, type Scope } from "../types/index.js";
-import {
-  normalizePackageIdentity,
-  packageSourceString,
-  parsePackageNameAndVersion,
-} from "../utils/package-source.js";
+import { normalizePackageIdentity, parsePackageNameAndVersion } from "../utils/package-source.js";
 import { getProjectConfigDir } from "../utils/pi-paths.js";
 import { throwIfSettingsErrors } from "../utils/settings-errors.js";
 
 type PiScope = "user" | "project";
+type ConfiguredPackage = ReturnType<DefaultPackageManager["listConfiguredPackages"]>[number];
 type PiPackageUpdate = Awaited<
   ReturnType<DefaultPackageManager["checkForAvailableUpdates"]>
 >[number];
@@ -50,12 +47,11 @@ function toScope(scope: PiScope): Scope {
   return scope === "project" ? "project" : "global";
 }
 
-function createPackageRecord(
-  source: string,
-  scope: PiScope,
-  packageManager: DefaultPackageManager
-): InstalledPackage {
-  const resolvedPath = packageManager.getInstalledPath(source, scope);
+function createPackageRecord({
+  source,
+  scope,
+  installedPath,
+}: ConfiguredPackage): InstalledPackage {
   const { name, version } = parsePackageNameAndVersion(source);
 
   return {
@@ -63,7 +59,7 @@ function createPackageRecord(
     name,
     scope: toScope(scope),
     ...(version ? { version } : {}),
-    ...(resolvedPath ? { resolvedPath } : {}),
+    ...(installedPath ? { resolvedPath: installedPath } : {}),
   };
 }
 
@@ -145,14 +141,13 @@ function createDefaultPackageCatalog(
 
   return {
     listInstalledPackages(options) {
-      const projectPackages = (settingsManager.getProjectSettings().packages ?? []).map((pkg) =>
-        createPackageRecord(packageSourceString(pkg), "project", packageManager)
-      );
-      const globalPackages = (settingsManager.getGlobalSettings().packages ?? []).map((pkg) =>
-        createPackageRecord(packageSourceString(pkg), "user", packageManager)
-      );
-
-      const installed = [...projectPackages, ...globalPackages];
+      // pi lists global entries first; project entries go first here so that
+      // dedupe keeps the project copy, the one pi actually loads.
+      const configured = packageManager.listConfiguredPackages();
+      const installed = [
+        ...configured.filter((pkg) => pkg.scope === "project"),
+        ...configured.filter((pkg) => pkg.scope === "user"),
+      ].map(createPackageRecord);
       return Promise.resolve(
         options?.dedupe === false ? installed : dedupeInstalledPackages(installed, cwd)
       );
@@ -173,8 +168,7 @@ function createDefaultPackageCatalog(
 
       try {
         throwIfSettingsErrors(settingsManager, "Package installation");
-        await packageManager.install(source, { local: scope === "project" });
-        packageManager.addSourceToSettings(source, { local: scope === "project" });
+        await packageManager.installAndPersist(source, { local: scope === "project" });
         await settingsManager.flush();
         throwIfSettingsErrors(settingsManager, "Package installation");
       } finally {
@@ -187,14 +181,12 @@ function createDefaultPackageCatalog(
 
       try {
         throwIfSettingsErrors(settingsManager, "Package removal");
-        await packageManager.remove(source, { local: scope === "project" });
         // Settings may already have been persisted by a reviewed profile
         // application. The package manager removal remains authoritative; a
-        // missing settings entry is not a reason to report a false mutation
-        // failure or undo a completed physical removal.
-        packageManager.removeSourceFromSettings(source, {
-          local: scope === "project",
-        });
+        // missing settings entry (removeAndPersist resolving false) is not a
+        // reason to report a false mutation failure or undo a completed
+        // physical removal.
+        await packageManager.removeAndPersist(source, { local: scope === "project" });
         await settingsManager.flush();
         throwIfSettingsErrors(settingsManager, "Package removal");
       } finally {
