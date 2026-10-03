@@ -54,7 +54,7 @@ different package manager, set Pi's `npmCommand` setting.
 ## Features
 
 - **Unified manager UI**
-  - Local extensions (`~/.pi/agent/extensions`, `.pi/extensions`) and installed packages in one list
+  - Local extensions (`~/.pi/agent/extensions`, plus `.pi/extensions` in trusted projects) and installed packages in one list
   - Grouped sections for local extensions vs installed packages
   - Responsive master/detail layout on wide terminals, with a compact stacked fallback on narrow terminals
   - Focused primary filters and contextual one-line controls; secondary actions remain available through the command palette and help

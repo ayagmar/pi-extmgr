@@ -60,6 +60,31 @@ void test("installPackage keeps package-manager output out of the TUI", async ()
   }
 });
 
+void test("project-scoped installs are refused in an untrusted project", async () => {
+  const installs: string[] = [];
+  const restoreCatalog = mockPackageCatalog({
+    installImpl: (source) => {
+      installs.push(source);
+    },
+  });
+
+  try {
+    const { pi, ctx, notifications } = createMockHarness({
+      hasUI: true,
+      mode: "rpc",
+      confirmResult: true,
+      projectTrusted: false,
+    });
+    const outcome = await installPackageWithOutcome("pi-extmgr", ctx, pi, { scope: "project" });
+
+    assert.equal(outcome.installed, false);
+    assert.deepEqual(installs, []);
+    assert.ok(notifications.some((entry) => entry.message.includes("not trusted")));
+  } finally {
+    restoreCatalog();
+  }
+});
+
 void test("installPackage normalizes git@ sources to git: prefix", async () => {
   const installs: { source: string; scope: "global" | "project" }[] = [];
   const restoreCatalog = mockPackageCatalog({

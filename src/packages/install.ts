@@ -60,21 +60,40 @@ function installScopeChoices() {
   };
 }
 
+/**
+ * Resolve the install scope, prompting when needed. Returns undefined, after
+ * telling the user why, when the install should not go ahead.
+ */
 async function resolveInstallScope(
   ctx: ExtensionCommandContext,
   explicitScope?: InstallScope
 ): Promise<InstallScope | undefined> {
-  if (explicitScope) return explicitScope;
+  let scope: InstallScope | undefined = explicitScope;
+  if (!scope && !ctx.hasUI) scope = "global";
+  if (!scope) {
+    const choices = installScopeChoices();
+    const choice = parseChoiceByLabel(
+      choices,
+      await ctx.ui.select("Install scope", Object.values(choices))
+    );
+    scope = choice === "cancel" ? undefined : choice;
+  }
 
-  if (!ctx.hasUI) return "global";
+  if (!scope) {
+    notify(ctx, "Installation cancelled.", "info");
+    return undefined;
+  }
 
-  const choices = installScopeChoices();
-  const choice = parseChoiceByLabel(
-    choices,
-    await ctx.ui.select("Install scope", Object.values(choices))
-  );
+  // pi ignores project-local resources until the project is trusted.
+  if (scope === "project" && !isProjectTrusted(ctx)) {
+    notifyError(
+      ctx,
+      "This project is not trusted, so pi would not load project-scoped extensions. Trust the project in pi first, or install globally."
+    );
+    return undefined;
+  }
 
-  return choice === "cancel" ? undefined : choice;
+  return scope;
 }
 
 function getExtensionInstallDir(ctx: ExtensionCommandContext, scope: InstallScope): string {
@@ -162,10 +181,7 @@ async function installPackageInternal(
   options?: InstallOptions
 ): Promise<InstallOutcome> {
   const scope = await resolveInstallScope(ctx, options?.scope);
-  if (!scope) {
-    notify(ctx, "Installation cancelled.", "info");
-    return { installed: false, reloaded: false };
-  }
+  if (!scope) return { installed: false, reloaded: false };
 
   // Check if it's a GitHub URL to a .ts file - handle as direct download
   const githubTsMatch = source.match(
@@ -266,10 +282,7 @@ export async function installFromUrl(
   options?: InstallOptions
 ): Promise<InstallOutcome> {
   const scope = await resolveInstallScope(ctx, options?.scope);
-  if (!scope) {
-    notify(ctx, "Installation cancelled.", "info");
-    return { installed: false, reloaded: false };
-  }
+  if (!scope) return { installed: false, reloaded: false };
 
   const extensionDir = getExtensionInstallDir(ctx, scope);
   const safeFileName = basename(fileName);
@@ -386,10 +399,7 @@ async function installPackageLocallyInternal(
   options?: InstallOptions
 ): Promise<InstallOutcome> {
   const scope = await resolveInstallScope(ctx, options?.scope);
-  if (!scope) {
-    notify(ctx, "Installation cancelled.", "info");
-    return { installed: false, reloaded: false };
-  }
+  if (!scope) return { installed: false, reloaded: false };
 
   const extensionDir = getExtensionInstallDir(ctx, scope);
 
