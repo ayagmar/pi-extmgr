@@ -83,6 +83,7 @@ async function showInteractiveOnce(
   ctx: ExtensionCommandContext,
   pi: ExtensionAPI
 ): Promise<boolean> {
+  let loadSignal: AbortSignal | undefined;
   const initialData = await runTaskWithLoader(
     ctx,
     {
@@ -90,6 +91,7 @@ async function showInteractiveOnce(
       message: "Loading extensions and packages...",
     },
     async ({ signal, setMessage }) => {
+      loadSignal = signal;
       const localEntriesPromise = discoverExtensions(ctx.cwd, {
         projectTrusted: isProjectTrusted(ctx),
       });
@@ -123,6 +125,8 @@ async function showInteractiveOnce(
   );
 
   if (!initialData) {
+    // Escape on the loading screen means "close", not "no custom UI".
+    if (loadSignal?.aborted) return true;
     notify(
       ctx,
       "The unified extensions manager requires the full interactive TUI. Showing read-only local and installed package lists instead.",

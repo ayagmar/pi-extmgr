@@ -713,3 +713,30 @@ void test("manager hints use the active public selection bindings", async () => 
   assert.match(hints, /Alt\+left back/);
   assert.match(hints, /B act on 2/);
 });
+
+void test("/extensions closes quietly when the initial load is cancelled", async () => {
+  const { pi, ctx, notifications, selectPrompts } = createMockHarness({ hasUI: true });
+  const restoreCatalog = mockPackageCatalog({ packages: [] });
+  let customCalls = 0;
+
+  (ctx.ui as { custom: (factory: unknown) => Promise<unknown> }).custom = async (factory) => {
+    customCalls += 1;
+    return captureCustomComponent(factory, ctx.ui.theme, (component, _lines, completion) => {
+      component.handleInput?.("\u001b");
+      return completion;
+    });
+  };
+
+  try {
+    await showInteractive(ctx, pi);
+  } finally {
+    restoreCatalog();
+  }
+
+  assert.equal(customCalls, 1, "only the loader should have been shown");
+  assert.equal(
+    notifications.some((entry) => entry.message.includes("requires the full interactive TUI")),
+    false
+  );
+  assert.deepEqual(selectPrompts, []);
+});
