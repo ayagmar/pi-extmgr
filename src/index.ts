@@ -28,6 +28,7 @@ import {
 import { tokenizeArgs } from "./utils/command.js";
 import { isPackageSource } from "./utils/format.js";
 import { logWarning, setConsoleDiagnosticsEnabled } from "./utils/log.js";
+import { isProjectTrusted } from "./utils/mode.js";
 import { clearReloadRequired } from "./utils/reload-state.js";
 import { getAutoUpdateConfig, hydrateAutoUpdateConfig } from "./utils/settings.js";
 import { updateExtmgrStatus } from "./utils/status.js";
@@ -75,10 +76,7 @@ export default function extensionsManager(pi: ExtensionAPI) {
     handler: async (args, ctx) => {
       await executeExtensionsCommand(args, ctx, pi);
       if (wasContextReloaded(ctx)) return;
-      await refreshLocalCompletionIndex(
-        ctx.cwd,
-        typeof ctx.isProjectTrusted === "function" && ctx.isProjectTrusted()
-      ).catch((error) => {
+      await refreshLocalCompletionIndex(ctx.cwd, isProjectTrusted(ctx)).catch((error) => {
         logWarning("Failed to refresh local completions:", error);
       });
     },
@@ -104,10 +102,7 @@ export default function extensionsManager(pi: ExtensionAPI) {
   async function bootstrapSession(ctx: ExtensionCommandContext | ExtensionContext): Promise<void> {
     // Restore persisted auto-update config into session entries so sync lookups are valid.
     await hydrateAutoUpdateConfig(pi, ctx);
-    await refreshLocalCompletionIndex(
-      ctx.cwd,
-      typeof ctx.isProjectTrusted === "function" && ctx.isProjectTrusted()
-    ).catch((error) => {
+    await refreshLocalCompletionIndex(ctx.cwd, isProjectTrusted(ctx)).catch((error) => {
       logWarning("Failed to load local completions:", error);
     });
 
