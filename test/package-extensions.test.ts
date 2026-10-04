@@ -1,74 +1,60 @@
 import assert from "node:assert/strict";
 import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import test from "node:test";
-import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import {
   clearPackageEntrypointCache,
   discoverPackageExtensionEntrypoints,
   discoverPackageExtensions,
-  getGlobalNpmRoot,
   setPackageExtensionState,
 } from "../src/packages/extensions.js";
 import { type InstalledPackage } from "../src/types/index.js";
 
-void test("Bun global root cache is scoped by project cwd and bunfig", async () => {
-  const agentDir = await mkdtemp(join(tmpdir(), "pi-extmgr-bun-agent-"));
-  const cwdA = await mkdtemp(join(tmpdir(), "pi-extmgr-bun-a-"));
-  const cwdB = await mkdtemp(join(tmpdir(), "pi-extmgr-bun-b-"));
-  const bun = join(agentDir, "bun");
+void test("packages without a resolved path are found where pi's package manager finds them", async () => {
+  const agentDir = await mkdtemp(join(tmpdir(), "pi-extmgr-legacy-root-agent-"));
+  const cwd = await mkdtemp(join(tmpdir(), "pi-extmgr-legacy-root-cwd-"));
+  const legacyRoot = join(agentDir, "legacy-global", "node_modules");
+  const npm = join(agentDir, "bin", "npm");
   const oldAgentDir = process.env.PI_CODING_AGENT_DIR;
-  const oldBunGlobalDir = process.env.BUN_INSTALL_GLOBAL_DIR;
   process.env.PI_CODING_AGENT_DIR = agentDir;
-  delete process.env.BUN_INSTALL_GLOBAL_DIR;
   try {
-    await writeFile(bun, "#!/bin/sh\necho /tmp/fake-bun-bin\n", "utf8");
-    await chmod(bun, 0o755);
-    await writeFile(join(agentDir, "settings.json"), JSON.stringify({ npmCommand: [bun] }), "utf8");
-    const rootA = join(cwdA, "bun-global");
-    const rootB = join(cwdB, "bun-global");
-    await mkdir(join(cwdA, ".pi"), { recursive: true });
-    await mkdir(join(cwdB, ".pi"), { recursive: true });
-    await writeFile(join(cwdA, "bunfig.toml"), `[install]\nglobalDir = "${rootA}"\n`, "utf8");
-    await writeFile(join(cwdB, "bunfig.toml"), `[install]\nglobalDir = "${rootB}"\n`, "utf8");
-    for (const [root, entry] of [
-      [rootA, "a.ts"],
-      [rootB, "b.ts"],
-    ] as const) {
-      const packageRoot = join(root, "node_modules", "demo");
-      await mkdir(packageRoot, { recursive: true });
-      await writeFile(
-        join(packageRoot, "package.json"),
-        JSON.stringify({ pi: { extensions: [entry] } }),
-        "utf8"
-      );
-      await writeFile(join(packageRoot, entry), "// extension\n", "utf8");
-    }
+    // A user package installed before pi managed <agentDir>/npm lives in the
+    // global npm root, which pi asks the configured npm command for.
+    await mkdir(dirname(npm), { recursive: true });
+    await writeFile(npm, `#!/bin/sh\necho "${legacyRoot}"\n`, "utf8");
+    await chmod(npm, 0o755);
+    await writeFile(join(agentDir, "settings.json"), JSON.stringify({ npmCommand: [npm] }), "utf8");
+    const packageRoot = join(legacyRoot, "demo");
+    await mkdir(packageRoot, { recursive: true });
+    await writeFile(
+      join(packageRoot, "package.json"),
+      JSON.stringify({ pi: { extensions: ["legacy.ts"] } }),
+      "utf8"
+    );
+    await writeFile(join(packageRoot, "legacy.ts"), "// extension\n", "utf8");
 
-    const packageRecord = () => [{ source: "npm:demo", name: "demo", scope: "global" as const }];
-    assert.equal(await getGlobalNpmRoot(cwdA), join(rootA, "node_modules"));
-    assert.equal(await getGlobalNpmRoot(cwdB), join(rootB, "node_modules"));
-    assert.equal(
-      (await discoverPackageExtensions(packageRecord(), cwdA))[0]?.extensionPath,
-      "a.ts"
+    const discovered = await discoverPackageExtensions(
+      [{ source: "npm:demo", name: "demo", scope: "global" }],
+      cwd
     );
-    assert.equal(
-      (await discoverPackageExtensions(packageRecord(), cwdB))[0]?.extensionPath,
-      "b.ts"
+    assert.equal(discovered[0]?.extensionPath, "legacy.ts");
+    assert.equal(discovered[0]?.absolutePath, join(packageRoot, "legacy.ts"));
+
+    // pi would not load an npm package it cannot find, so neither does extmgr.
+    assert.deepEqual(
+      await discoverPackageExtensions(
+        [{ source: "npm:missing", name: "missing", scope: "global" }],
+        cwd
+      ),
+      []
     );
-    assert.equal(getAgentDir(), agentDir);
   } finally {
     if (oldAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
     else process.env.PI_CODING_AGENT_DIR = oldAgentDir;
-    if (oldBunGlobalDir === undefined) delete process.env.BUN_INSTALL_GLOBAL_DIR;
-    else process.env.BUN_INSTALL_GLOBAL_DIR = oldBunGlobalDir;
     clearPackageEntrypointCache();
-    await Promise.all([
-      rm(cwdA, { recursive: true, force: true }),
-      rm(cwdB, { recursive: true, force: true }),
-      rm(agentDir, { recursive: true, force: true }),
-    ]);
+    await rm(cwd, { recursive: true, force: true });
+    await rm(agentDir, { recursive: true, force: true });
   }
 });
 
@@ -640,14 +626,14 @@ void test("discoverPackageExtensions resolves project local sources from .pi set
     );
     await writeFile(join(pkgRoot, "index.ts"), "// local package\n", "utf8");
 
-    const entries = await discoverPackageExtensions(
-      [{ source: "../vendor/localpkg", name: "localpkg", scope: "project" }],
-      cwd
-    );
+    const record = [{ source: "../vendor/localpkg", name: "localpkg", scope: "project" as const }];
+    const entries = await discoverPackageExtensions(record, cwd, { projectTrusted: true });
     assert.deepEqual(
       entries.map((entry) => entry.extensionPath),
       ["index.ts"]
     );
+    // pi does not touch an untrusted project's package storage.
+    assert.deepEqual(await discoverPackageExtensions(record, cwd), []);
   } finally {
     await rm(cwd, { recursive: true, force: true });
   }

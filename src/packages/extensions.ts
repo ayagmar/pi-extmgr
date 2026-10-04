@@ -1,22 +1,19 @@
-import { execFile } from "node:child_process";
 import { type Dirent } from "node:fs";
 import { readdir, readFile } from "node:fs/promises";
-import { homedir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
-import { promisify } from "node:util";
-import { getAgentDir, SettingsManager } from "@earendil-works/pi-coding-agent";
+import {
+  DefaultPackageManager,
+  getAgentDir,
+  SettingsManager,
+} from "@earendil-works/pi-coding-agent";
 import {
   type InstalledPackage,
   type PackageExtensionEntry,
   type Scope,
   type State,
 } from "../types/index.js";
-import { parseNpmSource } from "../utils/format.js";
 import { fileExists, readSummary } from "../utils/fs.js";
-import { resolveConfiguredNpmRootCommand } from "../utils/npm-exec.js";
 import { normalizeConfiguredPackageSource } from "../utils/package-source.js";
-import { getProjectConfigDir } from "../utils/pi-paths.js";
 import {
   matchesFilterPattern,
   normalizeRelativePath,
@@ -39,8 +36,6 @@ export interface PackageManifest {
   };
 }
 
-const execFileAsync = promisify(execFile);
-let globalNpmRootCache: { key: string; root: string | null } | undefined;
 const packageEntrypointCache = new Map<string, Promise<string[]>>();
 
 function normalizePackageRootCandidate(candidate: string): string {
@@ -53,119 +48,37 @@ function normalizePackageRootCandidate(candidate: string): string {
   return resolved;
 }
 
-export async function getGlobalNpmRoot(cwd: string): Promise<string | undefined> {
-  let npmCommand: ReturnType<typeof resolveConfiguredNpmRootCommand>;
-  try {
-    npmCommand = resolveConfiguredNpmRootCommand(cwd);
-  } catch {
-    return undefined;
-  }
-
-  // Bun's global root can vary by project bunfig.toml and by the configured
-  // environment, even when the executable and arguments are identical.
-  const cacheKey = [
-    npmCommand.command,
-    ...npmCommand.args,
-    resolve(cwd),
-    process.env.BUN_INSTALL_GLOBAL_DIR ?? "",
-  ].join("\0");
-
-  if (globalNpmRootCache?.key === cacheKey) {
-    return globalNpmRootCache.root ?? undefined;
-  }
-
-  try {
-    const { stdout } = await execFileAsync(npmCommand.command, npmCommand.args, {
-      timeout: 2_000,
-      windowsHide: true,
-    });
-    const root = npmCommand.getRoot(stdout);
-    globalNpmRootCache = { key: cacheKey, root: root || null };
-  } catch {
-    globalNpmRootCache = { key: cacheKey, root: null };
-  }
-
-  return globalNpmRootCache.root ?? undefined;
-}
-
-async function resolveNpmPackageRoot(
+/**
+ * Where pi loads the package from. Catalog records already carry pi's
+ * installed path; for records without one, ask pi's package manager, which
+ * knows the managed npm/git roots, the legacy global npm root and how
+ * local sources resolve against their settings scope.
+ */
+function toPackageRoot(
   pkg: InstalledPackage,
-  cwd: string
-): Promise<string | undefined> {
-  const parsed = parseNpmSource(pkg.source);
-  if (!parsed?.name) {
-    return undefined;
-  }
-
-  const packageName = parsed.name;
-  const projectCandidates = [
-    join(getProjectConfigDir(cwd), "npm", "node_modules", packageName),
-    join(cwd, "node_modules", packageName),
-  ];
-
-  // Same order as pi's package manager: user packages live in the managed
-  // <agentDir>/npm root; the global npm root only matters for installs made
-  // before pi moved them there. (PI_PACKAGE_DIR is pi's own install dir, not
-  // a package root.)
-  const globalCandidates = [join(getAgentDir(), "npm", "node_modules", packageName)];
-
-  const npmGlobalRoot = await getGlobalNpmRoot(cwd);
-  if (npmGlobalRoot) {
-    globalCandidates.push(join(npmGlobalRoot, packageName));
-  }
-
-  const candidates =
-    pkg.scope === "project" ? projectCandidates : [...globalCandidates, ...projectCandidates];
-
-  for (const candidate of candidates) {
-    if (await fileExists(join(candidate, "package.json"))) {
-      return candidate;
-    }
-  }
-
-  return undefined;
-}
-
-async function toPackageRoot(pkg: InstalledPackage, cwd: string): Promise<string | undefined> {
+  cwd: string,
+  projectTrusted: boolean
+): string | undefined {
   if (pkg.resolvedPath) {
     return normalizePackageRootCandidate(pkg.resolvedPath);
   }
 
-  if (pkg.source.startsWith("npm:")) {
-    return resolveNpmPackageRoot(pkg, cwd);
+  try {
+    const agentDir = getAgentDir();
+    const packageManager = new DefaultPackageManager({
+      cwd,
+      agentDir,
+      settingsManager: createSettingsManager(cwd, projectTrusted),
+    });
+    const installedPath = packageManager.getInstalledPath(
+      pkg.source,
+      pkg.scope === "project" ? "project" : "user"
+    );
+    return installedPath ? normalizePackageRootCandidate(installedPath) : undefined;
+  } catch {
+    // Untrusted project storage or an unusable npm command: nothing pi would load.
+    return undefined;
   }
-
-  if (pkg.source.startsWith("file://")) {
-    try {
-      return normalizePackageRootCandidate(fileURLToPath(pkg.source));
-    } catch {
-      return undefined;
-    }
-  }
-
-  if (
-    pkg.source.startsWith("/") ||
-    /^[a-zA-Z]:[\\/]/.test(pkg.source) ||
-    pkg.source.startsWith("\\\\")
-  ) {
-    return normalizePackageRootCandidate(pkg.source);
-  }
-
-  if (
-    pkg.source.startsWith("./") ||
-    pkg.source.startsWith("../") ||
-    pkg.source.startsWith(".\\") ||
-    pkg.source.startsWith("..\\")
-  ) {
-    const sourceRoot = pkg.scope === "project" ? getProjectConfigDir(cwd) : getAgentDir();
-    return normalizePackageRootCandidate(resolve(sourceRoot, pkg.source));
-  }
-
-  if (pkg.source.startsWith("~/")) {
-    return normalizePackageRootCandidate(join(homedir(), pkg.source.slice(2)));
-  }
-
-  return undefined;
 }
 
 function createSettingsManager(cwd: string, projectTrusted: boolean): SettingsManager {
@@ -613,7 +526,7 @@ export async function discoverPackageExtensions(
     // Characterization callers may provide detached package records, and standalone
     // installs permit a root index fallback that Pi package conventions do not expose.
     // Keep this bounded scanner for those cases only; never descend into dependencies.
-    const packageRoot = await toPackageRoot(pkg, cwd);
+    const packageRoot = toPackageRoot(pkg, cwd, projectTrusted);
     if (!packageRoot) continue;
 
     const packageFilters =
