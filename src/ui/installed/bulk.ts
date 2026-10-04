@@ -1,5 +1,5 @@
 /** Coordinated bulk package operations for the Installed workspace. */
-import { type ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
+import { type ExtensionAPI, type ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import { getPackageCatalog } from "../../packages/catalog.js";
 import { clearSearchCache } from "../../packages/discovery.js";
 import {
@@ -8,8 +8,10 @@ import {
 } from "../../packages/extensions.js";
 import { type State, type UnifiedItem } from "../../types/index.js";
 import { parseChoiceByLabel } from "../../utils/command.js";
+import { logPackageRemove, logPackageUpdate } from "../../utils/history.js";
 import { isProjectTrusted } from "../../utils/mode.js";
 import { normalizePackageIdentity } from "../../utils/package-source.js";
+import { clearUpdatesAvailable } from "../../utils/settings.js";
 import { confirmReload } from "../../utils/ui-helpers.js";
 import { runTaskWithLoader } from "../async-task.js";
 import { showReport } from "../report.js";
@@ -34,7 +36,8 @@ interface BulkResults {
 async function runBulkOperation(
   action: Exclude<BulkActionKey, "cancel">,
   selectedPackages: PackageUnifiedItem[],
-  ctx: ExtensionCommandContext
+  ctx: ExtensionCommandContext,
+  pi: ExtensionAPI
 ): Promise<BulkResults | undefined> {
   return runTaskWithLoader(
     ctx,
@@ -61,6 +64,8 @@ async function runBulkOperation(
             )
           : undefined;
       const updatedIdentities = new Set<string>();
+      // Identities whose cached "update available" badge is now stale.
+      const settledIdentities: string[] = [];
       for (const item of selectedPackages) {
         const identity = normalizePackageIdentity(item.source);
         setMessage(`${BULK_ACTION_OPTIONS[action]}: ${item.displayName}...`);
@@ -78,10 +83,14 @@ async function runBulkOperation(
             await catalog.update(item.source, (event) => {
               if (event.message) setMessage(event.message);
             });
+            logPackageUpdate(pi, item.source, item.displayName, undefined, true);
+            settledIdentities.push(normalizePackageIdentity(item.source, { cwd: ctx.cwd }));
           } else if (action === "remove") {
             await catalog.remove(item.source, item.scope, (event) => {
               if (event.message) setMessage(event.message);
             });
+            logPackageRemove(pi, item.source, item.displayName, true);
+            settledIdentities.push(normalizePackageIdentity(item.source, { cwd: ctx.cwd }));
           } else {
             if (!item.extensionPaths?.length) {
               throw new Error("no package extension entrypoints were discovered");
@@ -98,15 +107,21 @@ async function runBulkOperation(
           }
           completed.push(item.displayName);
         } catch (error) {
-          failed.push(
-            `${item.displayName}: ${error instanceof Error ? error.message : String(error)}`
-          );
+          const message = error instanceof Error ? error.message : String(error);
+          // Bulk mutations belong in /extensions history like single-item ones.
+          if (action === "update") {
+            logPackageUpdate(pi, item.source, item.displayName, undefined, false, message);
+          } else if (action === "remove") {
+            logPackageRemove(pi, item.source, item.displayName, false, message);
+          }
+          failed.push(`${item.displayName}: ${message}`);
         }
       }
       if (completed.length > 0 && (action === "update" || action === "remove")) {
         clearSearchCache();
         clearPackageEntrypointCache();
       }
+      if (settledIdentities.length > 0) clearUpdatesAvailable(pi, ctx, settledIdentities);
       return { completed, failed, skipped };
     }
   );
@@ -120,7 +135,8 @@ export async function handleBulkAction(
   itemIds: string[],
   requestedAction: "menu" | Exclude<BulkActionKey, "cancel">,
   byId: Map<string, UnifiedItem>,
-  ctx: ExtensionCommandContext
+  ctx: ExtensionCommandContext,
+  pi: ExtensionAPI
 ): Promise<boolean | "resume"> {
   const selectedPackages = itemIds
     .map((id) => byId.get(id))
@@ -147,7 +163,7 @@ export async function handleBulkAction(
   );
   if (!confirmed) return "resume";
 
-  const results = await runBulkOperation(action, selectedPackages, ctx);
+  const results = await runBulkOperation(action, selectedPackages, ctx, pi);
   if (!results) return "resume";
 
   await showReport(ctx, {

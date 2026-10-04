@@ -597,7 +597,7 @@ void test("/extensions bulk updates use one flow and summarize partial failures"
     },
   });
   try {
-    const { pi, ctx, confirmPrompts, reloadCount } = createMockHarness({
+    const { pi, ctx, confirmPrompts, reloadCount, entries } = createMockHarness({
       cwd,
       hasUI: true,
       selectResult: "Update selected packages",
@@ -641,6 +641,16 @@ void test("/extensions bulk updates use one flow and summarize partial failures"
     assert.ok(summaryText.includes("1 succeeded"), "expected the summary to count successes");
     assert.ok(summaryText.includes("1 failed"), "expected the summary to count failures");
     assert.ok(summaryText.includes("Reload required"), "expected the summary to mention reload");
+    const history = entries
+      .filter((entry) => entry.customType === "extmgr-change")
+      .map((entry) => entry.data as { action: string; packageSource?: string; success: boolean });
+    assert.deepEqual(
+      history.map(({ action, packageSource, success }) => ({ action, packageSource, success })),
+      [
+        { action: "package_update", packageSource: "npm:alpha", success: true },
+        { action: "package_update", packageSource: "npm:beta", success: false },
+      ]
+    );
   } finally {
     restoreCatalog();
     await rm(cwd, { recursive: true, force: true });
