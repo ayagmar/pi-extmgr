@@ -272,12 +272,12 @@ void test("health fix-all-safe disables shadowing local extensions but never rem
   });
 });
 
-void test("health reload action ends the screen and clears the reload marker", async () => {
+void test("health reload action ends the screen once pi retires the context", async () => {
   await withEnv(async ({ cacheDir }) => {
     await markReloadRequired("test reload", join(cacheDir, "reload-required.json"));
     const restoreCatalog = mockPackageCatalog({ packages: [] });
     try {
-      const { pi, ctx, reloadCount } = createMockHarness({ hasUI: true });
+      const { pi, ctx, reloadCount } = createMockHarness({ hasUI: true, staleAfterReload: true });
       stubRuntime(pi, []);
 
       let healthCalls = 0;
@@ -296,7 +296,8 @@ void test("health reload action ends the screen and clears the reload marker", a
       assert.equal(reloadCount(), 1);
       assert.equal(healthCalls, 1, "reload must end the health loop, not reopen it");
       assert.equal(exit, "reloaded", "callers must learn the context was reloaded");
-      assert.equal((await readReloadState(join(cacheDir, "reload-required.json"))).required, false);
+      // The new session's session_start(reload) clears the marker, not the old context.
+      assert.equal((await readReloadState(join(cacheDir, "reload-required.json"))).required, true);
     } finally {
       restoreCatalog();
     }

@@ -69,27 +69,29 @@ void test("declining an interactive reload keeps the successful mutation pending
   }
 });
 
-void test("a successful interactive reload clears the pending marker", async () => {
+void test("an interactive reload leaves the marker for the new session to clear", async () => {
   const dir = await mkdtemp(join(tmpdir(), "pi-extmgr-reload-success-"));
   const path = join(dir, "reload.json");
   try {
+    let retired = false;
     const reloaded = await confirmReload(
       {
-        hasUI: true,
+        get hasUI() {
+          if (retired) throw new Error("This extension ctx is stale after reload.");
+          return true;
+        },
         ui: { confirm: async () => true },
-        reload: async () => undefined,
+        reload: async () => {
+          retired = true;
+        },
       } as never,
       "Extension changed.",
       path
     );
 
     assert.equal(reloaded, true);
-    assert.deepEqual(await readReloadState(path), {
-      version: 1,
-      required: false,
-      changes: 0,
-      reasons: [],
-    });
+    // session_start(reason: "reload") clears it once pi really reloaded.
+    assert.equal((await readReloadState(path)).required, true);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

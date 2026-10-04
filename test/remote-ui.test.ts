@@ -26,6 +26,7 @@ void test("remote install reports reloads so parent workspaces stop using stale 
       hasUI: true,
       confirmResult: true,
       selectResult: "Global (~/.pi/agent/settings.json)",
+      staleAfterReload: true,
     });
     const reloaded = await showRemote("install npm:demo", ctx, pi);
     assert.equal(reloaded, true);

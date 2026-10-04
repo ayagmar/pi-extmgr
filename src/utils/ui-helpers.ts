@@ -4,7 +4,7 @@
 import { type ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import { UI } from "../constants.js";
 import { notify, error as notifyError } from "./notify.js";
-import { clearReloadRequired, markReloadRequired } from "./reload-state.js";
+import { markReloadRequired } from "./reload-state.js";
 
 const reloadedContexts = new WeakSet<object>();
 
@@ -42,18 +42,36 @@ export async function confirmReload(
     return false;
   }
 
-  return reloadNow(ctx, statePath);
+  return reloadNow(ctx);
+}
+
+/** pi retires a command context once it really reloads; every access then throws. */
+function isContextRetired(ctx: ExtensionCommandContext): boolean {
+  try {
+    void ctx.hasUI;
+    return false;
+  } catch {
+    return true;
+  }
 }
 
 /**
- * Reload pi in-process. Returns true on success; the context is stale from
- * then on (pi throws on every ctx access), so callers must return without
- * touching it. Failures are reported and leave the reload marker in place.
+ * Reload pi in-process. Returns true once pi has retired this context (pi
+ * throws on every ctx access from then on), so callers must return without
+ * touching it.
+ *
+ * In the TUI ctx.reload() never rejects: pi declines while a response or
+ * compaction is running and reports its own failures, resolving either way.
+ * A context that is still live afterwards therefore means nothing reloaded.
+ * The reload-required marker is left alone here; the session_start handler
+ * clears it when a reload actually happens.
  */
-export async function reloadNow(
-  ctx: ExtensionCommandContext,
-  statePath?: string
-): Promise<boolean> {
+export async function reloadNow(ctx: ExtensionCommandContext): Promise<boolean> {
+  if (typeof ctx.isIdle === "function" && !ctx.isIdle()) {
+    notify(ctx, "Reload after the current response finishes (run /reload).", "warning");
+    return false;
+  }
+
   try {
     await ctx.reload();
   } catch (error) {
@@ -66,8 +84,9 @@ export async function reloadNow(
     return false;
   }
 
+  if (!isContextRetired(ctx)) return false;
+
   markContextReloaded(ctx);
-  await clearReloadRequired(statePath);
   return true;
 }
 

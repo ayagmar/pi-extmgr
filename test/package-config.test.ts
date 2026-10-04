@@ -406,6 +406,7 @@ void test("configurePackageExtensions reloads after saving changes", async () =>
       hasUI: true,
       hasCustomUI: true,
       confirmResult: true,
+      staleAfterReload: true,
     });
 
     (ctx.ui as { custom: (factory: unknown) => Promise<unknown> }).custom = async (factory) =>
