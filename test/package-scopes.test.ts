@@ -273,6 +273,45 @@ void test("package catalog lists project packages first with pi's installed path
   }
 });
 
+void test("package catalog update reports whether pi's update changed an install", async () => {
+  const root = await mkdtemp(join(tmpdir(), "pi-extmgr-catalog-update-"));
+  const agentDir = join(root, "agent");
+  const cwd = join(root, "project");
+  const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
+  const originalUpdate = DefaultPackageManager.prototype.update;
+  process.env.PI_CODING_AGENT_DIR = agentDir;
+  try {
+    await mkdir(agentDir, { recursive: true });
+    await writeFile(
+      join(agentDir, "settings.json"),
+      JSON.stringify({ packages: ["npm:demo-pkg"] }),
+      "utf8"
+    );
+    const installDir = join(agentDir, "npm", "node_modules", "demo-pkg");
+    const writeVersion = async (version: string) => {
+      await mkdir(installDir, { recursive: true });
+      await writeFile(join(installDir, "package.json"), JSON.stringify({ version }), "utf8");
+    };
+
+    // The install dir is missing; pi's update() reinstalls it.
+    DefaultPackageManager.prototype.update = () => writeVersion("1.0.0");
+    assert.equal(await getPackageCatalog(cwd).update("npm:demo-pkg"), true);
+
+    // Nothing newer: pi's update() leaves the install alone.
+    DefaultPackageManager.prototype.update = () => Promise.resolve();
+    assert.equal(await getPackageCatalog(cwd).update("npm:demo-pkg"), false);
+
+    // A newer version gets installed.
+    DefaultPackageManager.prototype.update = () => writeVersion("1.1.0");
+    assert.equal(await getPackageCatalog(cwd).update(), true);
+  } finally {
+    DefaultPackageManager.prototype.update = originalUpdate;
+    if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+    else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 void test("package catalog install and remove persist the settings entry", async () => {
   const root = await mkdtemp(join(tmpdir(), "pi-extmgr-catalog-persist-"));
   const agentDir = join(root, "agent");

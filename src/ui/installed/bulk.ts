@@ -55,14 +55,6 @@ async function runBulkOperation(
       const completed: string[] = [];
       const failed: string[] = [];
       const skipped: string[] = [];
-      const availableUpdates =
-        action === "update"
-          ? new Set(
-              (await catalog.checkForAvailableUpdates()).map((update) =>
-                normalizePackageIdentity(update.source)
-              )
-            )
-          : undefined;
       const updatedIdentities = new Set<string>();
       // Identities whose cached "update available" badge is now stale.
       const settledIdentities: string[] = [];
@@ -76,15 +68,17 @@ async function runBulkOperation(
               continue;
             }
             updatedIdentities.add(identity);
-            if (!availableUpdates?.has(identity)) {
-              skipped.push(`${item.displayName}: already current or pinned`);
-              continue;
-            }
-            await catalog.update(item.source, (event) => {
+            // Like `pi update <source>`: no availability pre-check, which would
+            // skip changed pinned git refs and missing installs.
+            const changed = await catalog.update(item.source, (event) => {
               if (event.message) setMessage(event.message);
             });
             logPackageUpdate(pi, item.source, item.displayName, undefined, true);
             settledIdentities.push(normalizePackageIdentity(item.source, { cwd: ctx.cwd }));
+            if (!changed) {
+              skipped.push(`${item.displayName}: already current or pinned`);
+              continue;
+            }
           } else if (action === "remove") {
             await catalog.remove(item.source, item.scope, (event) => {
               if (event.message) setMessage(event.message);

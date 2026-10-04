@@ -24,10 +24,11 @@ export function mockPackageCatalog(options?: {
     scope: Scope,
     onProgress?: (event: ProgressEvent) => void
   ) => Promise<void> | void;
+  /** Return a boolean to override whether the update changed anything. */
   updateImpl?: (
     source: string | undefined,
     onProgress?: (event: ProgressEvent) => void
-  ) => Promise<void> | void;
+  ) => Promise<boolean | undefined> | boolean | undefined | Promise<void> | void;
   catalogOptionsImpl?: (options: { suppressOutput?: boolean } | undefined) => void;
 }): () => void {
   let packages = [...(options?.packages ?? [])];
@@ -87,11 +88,12 @@ export function mockPackageCatalog(options?: {
         );
       },
       async update(source, onProgress) {
-        await options?.updateImpl?.(source, onProgress);
+        const implChanged = await options?.updateImpl?.(source, onProgress);
 
         if (!source) {
+          const hadUpdates = updates.length > 0;
           updates = [];
-          return;
+          return typeof implChanged === "boolean" ? implChanged : hadUpdates;
         }
 
         const identity = normalizePackageIdentity(source);
@@ -116,6 +118,7 @@ export function mockPackageCatalog(options?: {
         }
 
         updates = updates.filter((update) => normalizePackageIdentity(update.source) !== identity);
+        return typeof implChanged === "boolean" ? implChanged : matchingUpdate !== undefined;
       },
     } satisfies PackageCatalog;
   });
