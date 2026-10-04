@@ -19,6 +19,12 @@ export interface ExtensionEntry {
   disabledPath: string;
   displayName: string;
   summary: string;
+  /**
+   * Set when the entry is reached through a symlinked directory: its real
+   * location. Renaming files there would edit the link target (often a
+   * source checkout), so extmgr does not toggle such entries.
+   */
+  linkTarget?: string;
 }
 
 export interface NpmPackage {
@@ -67,6 +73,7 @@ export interface LocalUnifiedItem {
   activePath: string;
   disabledPath: string;
   originalState: State;
+  linkTarget?: string;
 }
 
 export interface PackageUnifiedItem {

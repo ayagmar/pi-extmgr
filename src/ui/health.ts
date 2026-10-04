@@ -139,7 +139,7 @@ export function planSafeConflictFixes(
     if (!hasPackageOwner) continue;
 
     for (const entry of findConflictLocalOwners(conflict, localEntries)) {
-      if (entry.state !== "enabled") continue;
+      if (entry.state !== "enabled" || entry.linkTarget) continue;
       const key = normalizePathIdentity(entry.activePath);
       if (seenPaths.has(key)) continue;
       seenPaths.add(key);
@@ -371,10 +371,7 @@ async function handleFixSafeIssues(
   const errors: string[] = [];
   let changed = 0;
   for (const fix of fixes) {
-    const result = await setExtensionState(
-      { activePath: fix.extension.activePath, disabledPath: fix.extension.disabledPath },
-      "disabled"
-    );
+    const result = await setExtensionState(fix.extension, "disabled");
     if (result.ok) changed += 1;
     else errors.push(`${fix.extension.displayName}: ${result.error}`);
   }
@@ -471,10 +468,7 @@ async function handleConflictAction(
           `Disable ${entry.displayName}? This changes its local extension state.`
         )
       ) {
-        const result = await setExtensionState(
-          { activePath: entry.activePath, disabledPath: entry.disabledPath },
-          "disabled"
-        );
+        const result = await setExtensionState(entry, "disabled");
         if (!result.ok) notify(ctx, result.error, "error");
         else reloaded = await confirmReload(ctx, "Conflicting local extension disabled.");
       }

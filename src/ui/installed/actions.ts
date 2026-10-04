@@ -50,10 +50,7 @@ async function applyStagedChanges(
     if (target === item.originalState) continue;
 
     const fromState = item.originalState;
-    const result = await setExtensionState(
-      { activePath: item.activePath, disabledPath: item.disabledPath },
-      target
-    );
+    const result = await setExtensionState(item, target);
 
     if (result.ok) {
       changed++;

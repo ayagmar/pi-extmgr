@@ -6,7 +6,7 @@
  */
 
 import { type Dirent } from "node:fs";
-import { readdir, rename, stat } from "node:fs/promises";
+import { readdir, realpath, rename, stat } from "node:fs/promises";
 import { basename, dirname, join, relative } from "node:path";
 import { DISABLED_SUFFIX } from "../constants.js";
 import { readPackageManifest } from "../packages/extensions.js";
@@ -122,7 +122,10 @@ async function discoverInRoot(
     }
 
     if (kind === "directory") {
-      found.push(...(await parseDirectoryExtensions(root, label, scope, name)));
+      const linkTarget = item.isSymbolicLink()
+        ? await realpath(join(root, name)).catch(() => undefined)
+        : undefined;
+      found.push(...(await parseDirectoryExtensions(root, label, scope, name, linkTarget)));
     }
   }
 
@@ -255,7 +258,8 @@ async function toDirectoryExtensionEntry(
   label: string,
   scope: Scope,
   dir: string,
-  extensionPath: string
+  extensionPath: string,
+  linkTarget?: string
 ): Promise<ExtensionEntry | undefined> {
   const normalizedPath = normalizeRelativePath(extensionPath);
   const activePath = join(dir, normalizedPath);
@@ -281,6 +285,7 @@ async function toDirectoryExtensionEntry(
     disabledPath,
     displayName: `${label}/${normalizeRelativePath(relative(root, activePath))}`,
     summary: await readSummary(summaryPath),
+    ...(linkTarget ? { linkTarget } : {}),
   };
 }
 
@@ -292,7 +297,8 @@ async function parseDirectoryExtensions(
   root: string,
   label: string,
   scope: Scope,
-  dirName: string
+  dirName: string,
+  linkTarget?: string
 ): Promise<ExtensionEntry[]> {
   const dir = join(root, dirName);
   const manifestEntrypoints = await resolveManifestLocalEntrypoints(dir);
@@ -300,7 +306,7 @@ async function parseDirectoryExtensions(
   if (manifestEntrypoints !== undefined) {
     const entries = await Promise.all(
       manifestEntrypoints.map((extensionPath) =>
-        toDirectoryExtensionEntry(root, label, scope, dir, extensionPath)
+        toDirectoryExtensionEntry(root, label, scope, dir, extensionPath, linkTarget)
       )
     );
     return entries.filter((entry): entry is ExtensionEntry => Boolean(entry));
@@ -308,7 +314,7 @@ async function parseDirectoryExtensions(
 
   const fallbackEntries = await Promise.all(
     ["index.ts", "index.js"].map((extensionPath) =>
-      toDirectoryExtensionEntry(root, label, scope, dir, extensionPath)
+      toDirectoryExtensionEntry(root, label, scope, dir, extensionPath, linkTarget)
     )
   );
 
@@ -348,12 +354,21 @@ function dedupeExtensions(entries: ExtensionEntry[]): ExtensionEntry[] {
  * ```
  */
 export async function setExtensionState(
-  entry: Pick<ExtensionEntry, "activePath" | "disabledPath">,
+  entry: Pick<ExtensionEntry, "activePath" | "disabledPath" | "linkTarget">,
   target: State
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
     if (!entry.activePath || !entry.disabledPath) {
       return { ok: false, error: "Missing paths" };
+    }
+
+    if (entry.linkTarget) {
+      // pi loads every entry of a linked directory whatever the link is
+      // called, and renaming a file inside it would edit the link target.
+      return {
+        ok: false,
+        error: `Cannot ${target === "enabled" ? "enable" : "disable"} ${entry.activePath}: it is in a symlinked extension directory (-> ${entry.linkTarget}). Remove the link to stop loading it.`,
+      };
     }
 
     const source = target === "enabled" ? entry.disabledPath : entry.activePath;
