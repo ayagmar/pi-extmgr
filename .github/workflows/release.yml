@@ -3,7 +3,7 @@ name: Release
 # Single release path for this package:
 #   release-it bumps the version, writes CHANGELOG.md, commits, tags, pushes and
 #   creates the GitHub release; then `npm publish` runs via npm trusted publishing
-#   (OIDC, provenance included). No long-lived npm token is needed.
+#   (OIDC; provenance is added automatically for public repos). No long-lived npm token is needed.
 #
 # One-time setup per package (npmjs.com → package → Settings → Trusted publishing):
 #   GitHub Actions · user: ayagmar · repo: <this repo> · workflow: release.yml · allow `npm publish`.
@@ -55,6 +55,15 @@ jobs:
         uses: actions/checkout@v7
         with:
           fetch-depth: 0
+
+      # Fail before release-it can tag or create a GitHub release for an unpublishable package
+      # (e.g. pi-extension-template, which stays private until `pnpm run setup-template`).
+      - name: Refuse to release a private package
+        run: |
+          if [ "$(node -p 'require("./package.json").private === true')" = "true" ]; then
+            echo "::error::package.json is private — remove \"private\" (template: run 'pnpm run setup-template') before releasing"
+            exit 1
+          fi
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v6
