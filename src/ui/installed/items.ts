@@ -73,7 +73,8 @@ export function buildUnifiedItems(
 
   // Add local extensions
   for (const entry of localEntries) {
-    const currentPath = entry.state === "disabled" ? entry.disabledPath : entry.activePath;
+    const currentPath =
+      entry.state === "disabled" && !entry.settingsDisabled ? entry.disabledPath : entry.activePath;
     localPaths.add(normalizePathIdentity(currentPath));
     items.push({
       type: "local",
@@ -86,6 +87,7 @@ export function buildUnifiedItems(
       disabledPath: entry.disabledPath,
       originalState: entry.state,
       ...(entry.linkTarget ? { linkTarget: entry.linkTarget } : {}),
+      ...(entry.settingsDisabled ? { settingsDisabled: true } : {}),
     });
   }
 
@@ -152,7 +154,10 @@ export function getCurrentUnifiedItemState(
 }
 
 export function getLocalItemCurrentPath(item: LocalUnifiedItem, state?: State): string {
-  return (state ?? item.state) === "enabled" ? item.activePath : item.disabledPath;
+  // A settings override disables a file without renaming it.
+  return (state ?? item.state) === "enabled" || item.settingsDisabled
+    ? item.activePath
+    : item.disabledPath;
 }
 
 export function getToggleItemsForApply(items: UnifiedItem[]): LocalUnifiedItem[] {
