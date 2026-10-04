@@ -1,6 +1,15 @@
 import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
-import { mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
+import {
+  chmod,
+  mkdir,
+  mkdtemp,
+  readFile,
+  realpath,
+  rm,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import test from "node:test";
@@ -383,5 +392,36 @@ void test("enabling an extension blocked by both `-path` and a `!glob` fails wit
     assert.match(result.ok ? "" : result.error, /pattern in the "extensions" setting/);
     assert.equal(existsSync(fooPath), true);
     assert.deepEqual((await readGlobalSettings(agentDir)).extensions, extensions);
+  });
+});
+
+void test("a failed settings write while enabling undoes the rename so a retry works", async (t) => {
+  if (process.getuid?.() === 0) {
+    t.skip("root ignores file permissions");
+    return;
+  }
+  await withAgentDir(async (agentDir, cwd) => {
+    const fooPath = join(agentDir, "extensions", "foo.ts");
+    const settingsPath = join(agentDir, "settings.json");
+    await writeFile(`${fooPath}.disabled`, "// foo\n", "utf8");
+    await writeFile(settingsPath, JSON.stringify({ extensions: ["-extensions/foo.ts"] }), "utf8");
+    await chmod(settingsPath, 0o444);
+
+    const foo = (await discoverExtensions(cwd, { projectTrusted: false })).find(
+      (entry) => entry.activePath === fooPath
+    );
+    assert.ok(foo);
+    const failed = await setExtensionState(foo, "enabled", { cwd, projectTrusted: false });
+    assert.equal(failed.ok, false);
+    assert.match(failed.ok ? "" : failed.error, /Could not update Pi settings/);
+    assert.equal(existsSync(fooPath), false);
+    assert.equal(existsSync(`${fooPath}.disabled`), true);
+
+    await chmod(settingsPath, 0o644);
+    assert.deepEqual(await setExtensionState(foo, "enabled", { cwd, projectTrusted: false }), {
+      ok: true,
+    });
+    assert.equal(existsSync(fooPath), true);
+    assert.deepEqual((await readGlobalSettings(agentDir)).extensions, []);
   });
 });
