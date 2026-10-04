@@ -6,7 +6,7 @@
  */
 
 import { type Dirent } from "node:fs";
-import { readdir, rename } from "node:fs/promises";
+import { readdir, rename, stat } from "node:fs/promises";
 import { basename, dirname, join, relative } from "node:path";
 import { DISABLED_SUFFIX } from "../constants.js";
 import { readPackageManifest } from "../packages/extensions.js";
@@ -110,21 +110,43 @@ async function discoverInRoot(
   for (const item of dirEntries) {
     const name = item.name;
 
-    // Skip hidden files and directories (e.g., .temp, .git, etc.)
-    if (name.startsWith(".")) continue;
+    // Skip hidden entries (.temp, .git, …) and node_modules, as pi does.
+    if (name.startsWith(".") || name === "node_modules") continue;
 
-    if (item.isFile()) {
+    const kind = await resolveEntryKind(root, item);
+
+    if (kind === "file") {
       const entry = await parseTopLevelFile(root, label, scope, name);
       if (entry) found.push(entry);
       continue;
     }
 
-    if (item.isDirectory()) {
+    if (kind === "directory") {
       found.push(...(await parseDirectoryExtensions(root, label, scope, name)));
     }
   }
 
   return found;
+}
+
+/**
+ * pi follows symlinks in extension directories (a common way to load an
+ * extension under development), so resolve them to what they point at.
+ * Broken links are skipped.
+ */
+async function resolveEntryKind(
+  root: string,
+  item: Dirent
+): Promise<"file" | "directory" | undefined> {
+  if (item.isFile()) return "file";
+  if (item.isDirectory()) return "directory";
+  if (!item.isSymbolicLink()) return undefined;
+  try {
+    const target = await stat(join(root, item.name));
+    return target.isFile() ? "file" : target.isDirectory() ? "directory" : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 /**
