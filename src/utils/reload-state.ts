@@ -27,6 +27,17 @@ function stateFile(): string {
 
 let writeQueue: Promise<void> = Promise.resolve();
 
+/**
+ * Serialize writes. Each caller still sees its own failure, but a failed
+ * write must not reject the shared queue, or every later write and read in
+ * this session would fail with it.
+ */
+function enqueueWrite(write: () => Promise<void>): Promise<void> {
+  const next = writeQueue.then(write);
+  writeQueue = next.catch(() => undefined);
+  return next;
+}
+
 function cloneDefault(): ReloadRequiredState {
   return { ...DEFAULT_STATE, reasons: [] };
 }
@@ -77,7 +88,7 @@ export async function readReloadState(path = stateFile()): Promise<ReloadRequire
 
 export async function markReloadRequired(reason: string, path = stateFile()): Promise<void> {
   const normalizedReason = reason.trim() || "Extension configuration changed";
-  writeQueue = writeQueue.then(async () => {
+  await enqueueWrite(async () => {
     const current = await readStateFromDisk(path);
     const reasons = [
       ...current.reasons.filter((item) => item !== normalizedReason),
@@ -91,12 +102,10 @@ export async function markReloadRequired(reason: string, path = stateFile()): Pr
       reasons: reasons.slice(-8),
     });
   });
-  await writeQueue;
 }
 
 export async function clearReloadRequired(path = stateFile()): Promise<void> {
-  writeQueue = writeQueue.then(() => writeStateToDisk(path, cloneDefault()));
-  await writeQueue;
+  await enqueueWrite(() => writeStateToDisk(path, cloneDefault()));
 }
 
 export function getReloadRequiredStatePath(): string {
