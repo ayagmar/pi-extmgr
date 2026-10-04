@@ -12,7 +12,7 @@ import { getPackageSourceKind } from "../../utils/package-source.js";
 import { getStatusIcon } from "../theme.js";
 import { getLocalItemCurrentPath } from "./items.js";
 
-export function getPackageExtensionStatusIcon(
+function getPackageExtensionStatusIcon(
   theme: Theme,
   summary?: PackageExtensionStateSummary
 ): string {

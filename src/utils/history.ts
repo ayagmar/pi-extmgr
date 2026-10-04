@@ -54,7 +54,7 @@ const EXT_CHANGE_CUSTOM_TYPE = "extmgr-change";
 /**
  * Log an extension change to the session
  */
-export function logChange(pi: ExtensionAPI, change: Omit<ExtensionChangeEntry, "timestamp">): void {
+function logChange(pi: ExtensionAPI, change: Omit<ExtensionChangeEntry, "timestamp">): void {
   const entry: ExtensionChangeEntry = {
     ...change,
     timestamp: Date.now(),

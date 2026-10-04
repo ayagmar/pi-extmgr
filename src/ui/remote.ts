@@ -49,8 +49,6 @@ import { showReport } from "./report.js";
 import { runAuxWorkspaceScreens } from "./workspace/router.js";
 import { setWorkspaceTitle } from "./workspace/title.js";
 
-export { clearRemotePackageInfoCache } from "./discover/metadata.js";
-
 const REMOTE_MENU_CHOICES = {
   browse: "Browse community packages",
   search: "Search npm packages",

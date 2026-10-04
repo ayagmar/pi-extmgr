@@ -12,11 +12,11 @@ import { normalizePackageIdentity } from "../../utils/package-source.js";
 import { normalizePathIdentity } from "../../utils/path-identity.js";
 import { CONFIG_DIR_NAME } from "../../utils/pi-paths.js";
 
-export function getPackageExtensionSummaryKey(scope: string, source: string): string {
+function getPackageExtensionSummaryKey(scope: string, source: string): string {
   return `${scope}\0${source}`;
 }
 
-export function buildPackageExtensionSummaries(
+function buildPackageExtensionSummaries(
   entries: PackageExtensionEntry[]
 ): Map<string, PackageExtensionStateSummary> {
   const summaries = new Map<string, PackageExtensionStateSummary>();

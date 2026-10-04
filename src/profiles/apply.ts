@@ -34,7 +34,7 @@ function comparablePackage(pkg: ProfilePackage): unknown {
   };
 }
 
-export function profilePackagesEqual(left: ProfilePackage, right: ProfilePackage): boolean {
+function profilePackagesEqual(left: ProfilePackage, right: ProfilePackage): boolean {
   if (JSON.stringify(comparablePackage(left)) !== JSON.stringify(comparablePackage(right))) {
     return false;
   }

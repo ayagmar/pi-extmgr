@@ -16,7 +16,7 @@ export function isProjectTrusted(ctx: AnyContext): boolean {
   return typeof ctx.isProjectTrusted === "function" && ctx.isProjectTrusted();
 }
 
-export function getUICapability(ctx: AnyContext): UICapability {
+function getUICapability(ctx: AnyContext): UICapability {
   if (!ctx.hasUI) {
     return "none";
   }

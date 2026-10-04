@@ -36,8 +36,6 @@ import { showListReport } from "./report.js";
 import { buildWorkspaceNavigation } from "./workspace/navigation.js";
 import { setWorkspaceTitle } from "./workspace/title.js";
 
-export { buildUnifiedItems };
-
 let lastReloadNoticeAt: number | undefined;
 
 async function showInteractiveFallback(

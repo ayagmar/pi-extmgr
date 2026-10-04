@@ -14,7 +14,7 @@ import { confirmReload } from "../../utils/ui-helpers.js";
 import { runTaskWithLoader } from "../async-task.js";
 import { showReport } from "../report.js";
 
-export const BULK_ACTION_OPTIONS = {
+const BULK_ACTION_OPTIONS = {
   update: "Update selected packages",
   remove: "Remove selected packages",
   enable: "Enable selected package extensions",

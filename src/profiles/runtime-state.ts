@@ -298,7 +298,7 @@ export async function verifyInstalledTargets(
   return missing;
 }
 
-export function profileSourcesMatch(
+function profileSourcesMatch(
   left: ProfilePackage,
   right: ProfilePackage,
   ctx: ExtensionCommandContext

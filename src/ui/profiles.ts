@@ -31,11 +31,6 @@ import {
 } from "./workspace/navigation.js";
 import { setWorkspaceTitle } from "./workspace/title.js";
 
-export {
-  describeProfilePackageChanges,
-  renderProfileDiffLines,
-} from "./profile-review.js";
-
 const SAVE_PROFILE = "__save_current__";
 const IMPORT_PROFILE = "__import_profile__";
 const BACK = "__back__";

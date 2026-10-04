@@ -3,7 +3,7 @@ import test from "node:test";
 import { initTheme } from "@earendil-works/pi-coding-agent";
 import { visibleWidth } from "@earendil-works/pi-tui";
 import { normalizeProfile } from "../src/profiles/schema.js";
-import { describeProfilePackageChanges, renderProfileDiffLines } from "../src/ui/profiles.js";
+import { describeProfilePackageChanges, renderProfileDiffLines } from "../src/ui/profile-review.js";
 
 initTheme();
 

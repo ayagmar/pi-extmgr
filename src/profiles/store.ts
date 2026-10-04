@@ -211,7 +211,7 @@ export function getProfileStorePath(): string {
   return join(getExtmgrCacheDir(), "profiles.json");
 }
 
-export function getProfileRestorePointPath(): string {
+function getProfileRestorePointPath(): string {
   return join(getExtmgrCacheDir(), "profile-restore-points.json");
 }
 

@@ -7,7 +7,7 @@ export interface LocalCompletionIndex {
   savedProfiles: string[];
 }
 
-export const PROFILE_ACTIONS = [
+const PROFILE_ACTIONS = [
   "export",
   "save",
   "list",

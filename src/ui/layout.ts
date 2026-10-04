@@ -1,7 +1,7 @@
 /** Shared responsive layout primitives for the workspace screens. */
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 
-export const DETAIL_PANE_MIN_WIDTH = 34;
+const DETAIL_PANE_MIN_WIDTH = 34;
 export const TWO_PANE_MIN_WIDTH = 96;
 
 function padToWidth(value: string, width: number): string {
@@ -10,7 +10,7 @@ function padToWidth(value: string, width: number): string {
 }
 
 /** Single source of truth for master/detail pane widths. */
-export function computeTwoPaneWidths(
+function computeTwoPaneWidths(
   width: number,
   dividerWidth: number
 ): { leftWidth: number; rightWidth: number } {

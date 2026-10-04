@@ -36,7 +36,7 @@ import { showListReport, showReport } from "../ui/report.js";
 import { notify } from "../utils/notify.js";
 import { confirmAction } from "../utils/ui-helpers.js";
 
-export const PROFILE_USAGE =
+const PROFILE_USAGE =
   "Usage: /extensions profile <export|save|list|delete|rename|duplicate|dry-run|apply|compare|import|check|recover> [name|source] [destination] [--json|--strict|--force|--name <name>]";
 
 interface ResolvedProfile {

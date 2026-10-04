@@ -37,9 +37,7 @@ import { getToggleItemsForApply } from "./items.js";
 import { type UnifiedManagerViewState } from "./state.js";
 import { handleViewsAction } from "./views.js";
 
-export { buildUnifiedItemDetailLines } from "./item-actions.js";
-
-export async function applyStagedChanges(
+async function applyStagedChanges(
   items: LocalUnifiedItem[],
   staged: Map<string, State>,
   pi: ExtensionAPI
@@ -72,7 +70,7 @@ export async function applyStagedChanges(
   return { changed, errors };
 }
 
-export async function applyToggleChangesFromManager(
+async function applyToggleChangesFromManager(
   items: UnifiedItem[],
   staged: Map<string, State>,
   ctx: ExtensionCommandContext,
@@ -110,7 +108,7 @@ export async function applyToggleChangesFromManager(
   return { changed: apply.changed, reloaded: false, hasErrors: apply.errors.length > 0 };
 }
 
-export async function resolvePendingChangesBeforeLeave(
+async function resolvePendingChangesBeforeLeave(
   items: UnifiedItem[],
   staged: Map<string, State>,
   byId: Map<string, UnifiedItem>,

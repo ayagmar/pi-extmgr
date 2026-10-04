@@ -9,7 +9,7 @@ import { clearReloadRequired, markReloadRequired } from "./reload-state.js";
 const reloadedContexts = new WeakSet<object>();
 
 /** Mark a command context unusable after a successful in-process reload. */
-export function markContextReloaded(ctx: ExtensionCommandContext): void {
+function markContextReloaded(ctx: ExtensionCommandContext): void {
   reloadedContexts.add(ctx);
 }
 
