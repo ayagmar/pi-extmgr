@@ -447,7 +447,10 @@ export async function setExtensionState(
         return { ok: false as const, error };
       } catch (undoError) {
         const reason = undoError instanceof Error ? undoError.message : String(undoError);
-        return { ok: false as const, error: `${error} (the rename could not be undone: ${reason})` };
+        return {
+          ok: false as const,
+          error: `${error} (the rename could not be undone: ${reason})`,
+        };
       }
     };
     // pi applies `!glob` entries too, which no exact-entry cleanup removes.
