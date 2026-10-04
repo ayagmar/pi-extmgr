@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { type ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { execNpm, resolveNpmCommand, resolveNpmRootCommand } from "../src/utils/npm-exec.js";
+import { execNpm, resolveNpmCommand } from "../src/utils/npm-exec.js";
 
 void test("resolveNpmCommand uses npm directly on non-windows", () => {
   const resolved = resolveNpmCommand(["view", "pi-extmgr", "version", "--json"], {
@@ -43,44 +43,6 @@ void test("resolveNpmCommand honors Pi npmCommand settings", () => {
     "version",
     "--json",
   ]);
-});
-
-void test("resolveNpmRootCommand detects path-qualified bun commands", () => {
-  const oldGlobalDir = process.env.BUN_INSTALL_GLOBAL_DIR;
-  process.env.BUN_INSTALL_GLOBAL_DIR = "/opt/bun/global";
-
-  try {
-    const resolved = resolveNpmRootCommand({ npmCommand: ["/usr/local/bin/bun"] });
-
-    assert.equal(resolved.command, "/usr/local/bin/bun");
-    assert.deepEqual(resolved.args, ["pm", "bin", "-g"]);
-    assert.equal(resolved.getRoot("/home/alice/.bun/bin\n"), "/opt/bun/global/node_modules");
-  } finally {
-    if (oldGlobalDir === undefined) {
-      delete process.env.BUN_INSTALL_GLOBAL_DIR;
-    } else {
-      process.env.BUN_INSTALL_GLOBAL_DIR = oldGlobalDir;
-    }
-  }
-});
-
-void test("resolveNpmRootCommand detects bun.cmd commands", () => {
-  const oldGlobalDir = process.env.BUN_INSTALL_GLOBAL_DIR;
-  process.env.BUN_INSTALL_GLOBAL_DIR = "/opt/bun/global";
-
-  try {
-    const resolved = resolveNpmRootCommand({ npmCommand: ["bun.cmd"] });
-
-    assert.equal(resolved.command, "bun.cmd");
-    assert.deepEqual(resolved.args, ["pm", "bin", "-g"]);
-    assert.equal(resolved.getRoot("/home/alice/.bun/bin\n"), "/opt/bun/global/node_modules");
-  } finally {
-    if (oldGlobalDir === undefined) {
-      delete process.env.BUN_INSTALL_GLOBAL_DIR;
-    } else {
-      process.env.BUN_INSTALL_GLOBAL_DIR = oldGlobalDir;
-    }
-  }
 });
 
 void test("execNpm uses pi's effective npmCommand setting", async () => {
