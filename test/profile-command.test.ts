@@ -203,6 +203,45 @@ void test("noninteractive profile replacement requires --force", async () => {
   }
 });
 
+void test("profile options are accepted before the profile name", async () => {
+  const cache = await mkdtemp(join(tmpdir(), "pi-extmgr-profile-option-order-"));
+  const previousCache = process.env.PI_EXTMGR_CACHE_DIR;
+  process.env.PI_EXTMGR_CACHE_DIR = cache;
+  const restoreCatalog = mockPackageCatalog({ packages: [] });
+  try {
+    await saveNamedProfile(
+      getProfileStorePath(),
+      normalizeProfile({
+        name: "team",
+        packages: [{ source: "npm:keep", scope: "global" }],
+      })
+    );
+    const { ctx, pi, notifications } = createMockHarness({ hasUI: true });
+
+    await handleProfileSubcommand(["save", "--force", "team"], ctx, pi);
+    let profiles = (await readProfileStore(getProfileStorePath())).profiles;
+    assert.equal(Object.hasOwn(profiles, "--force"), false);
+    assert.deepEqual(profiles.team?.packages, []);
+
+    await handleProfileSubcommand(["duplicate", "--force", "team", "copy"], ctx, pi);
+    profiles = (await readProfileStore(getProfileStorePath())).profiles;
+    assert.equal(profiles.copy?.name, "copy");
+
+    await handleProfileSubcommand(["save", "--bogus", "team"], ctx, pi);
+    assert.ok(
+      notifications.some(
+        (notification) =>
+          notification.level === "error" && /Unknown option: --bogus/.test(notification.message)
+      )
+    );
+  } finally {
+    restoreCatalog();
+    if (previousCache === undefined) delete process.env.PI_EXTMGR_CACHE_DIR;
+    else process.env.PI_EXTMGR_CACHE_DIR = previousCache;
+    await rm(cache, { recursive: true, force: true });
+  }
+});
+
 void test("profile rename and duplicate commands report collisions and missing sources safely", async () => {
   const cache = await mkdtemp(join(tmpdir(), "pi-extmgr-profile-command-lifecycle-"));
   const previousCache = process.env.PI_EXTMGR_CACHE_DIR;
