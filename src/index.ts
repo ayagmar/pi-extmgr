@@ -131,7 +131,11 @@ export default function extensionsManager(pi: ExtensionAPI) {
     activeCtx = ctx;
     setConsoleDiagnosticsEnabled(ctx.mode !== "tui");
     if (event.reason === "reload") {
-      await clearReloadRequired();
+      // A stale marker is harmless; an unwritable cache dir must not stop
+      // the session from starting up (status, completions, update checks).
+      await clearReloadRequired().catch((error) => {
+        logWarning("Failed to clear the reload-required marker:", error);
+      });
     }
     await bootstrapSession(ctx);
   });

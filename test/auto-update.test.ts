@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 import { type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import extensionsManager from "../src/index.js";
@@ -179,6 +182,61 @@ void test("session start for a replacement session stops existing timer when aut
   } finally {
     restoreCatalog();
     stopAutoUpdateTimer();
+  }
+});
+
+void test("session start after a reload still boots when the reload marker cannot be cleared", async () => {
+  const handlers: Record<string, ((event: unknown, ctx: unknown) => Promise<void>) | undefined> =
+    {};
+  const pi = {
+    registerCommand: () => undefined,
+    registerShortcut: () => undefined,
+    on: (event: string, handler: (event: unknown, ctx: unknown) => Promise<void>) => {
+      handlers[event] = handler;
+    },
+    appendEntry: () => undefined,
+  };
+  const ctx = {
+    hasUI: true,
+    mode: "rpc",
+    cwd: "/tmp",
+    ui: {
+      notify: () => undefined,
+      setStatus: () => undefined,
+      setWidget: () => undefined,
+      theme: { fg: (_name: string, text: string) => text },
+    },
+    sessionManager: {
+      getEntries: () => [
+        {
+          type: "custom",
+          customType: "extmgr-auto-update",
+          data: { enabled: true, intervalMs: 60 * 60 * 1000, displayText: "1 hour" },
+        },
+      ],
+    },
+  };
+  const dir = await mkdtemp(join(tmpdir(), "pi-extmgr-unwritable-cache-"));
+  const previousCacheDir = process.env.PI_EXTMGR_CACHE_DIR;
+  const originalWarn = console.warn;
+  const restoreCatalog = mockPackageCatalog();
+  try {
+    // The cache "dir" sits under a regular file, so every write to it fails.
+    await writeFile(join(dir, "file"), "", "utf8");
+    process.env.PI_EXTMGR_CACHE_DIR = join(dir, "file", "cache");
+    console.warn = () => undefined;
+    extensionsManager(pi as unknown as ExtensionAPI);
+
+    await handlers.session_start?.({ reason: "reload" }, ctx);
+    assert.equal(isAutoUpdateRunning(), true);
+  } finally {
+    console.warn = originalWarn;
+    restoreCatalog();
+    stopAutoUpdateTimer();
+    await handlers.session_shutdown?.({}, ctx);
+    if (previousCacheDir === undefined) delete process.env.PI_EXTMGR_CACHE_DIR;
+    else process.env.PI_EXTMGR_CACHE_DIR = previousCacheDir;
+    await rm(dir, { recursive: true, force: true });
   }
 });
 
