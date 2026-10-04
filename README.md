@@ -257,6 +257,12 @@ Releases are cut from GitHub Actions — never from a laptop.
 
 Preview locally with `pnpm release:dry`.
 
+Before the first release from this workflow, configure trusted publishing on npmjs.com for
+`pi-extmgr` (GitHub Actions · `ayagmar/pi-extmgr` · workflow `release.yml`); the package already
+exists on npm, so no `bootstrap` run is needed. If a run already tagged and created the GitHub
+release but failed at `npm publish`, re-run it with `publish_only: true` instead of cutting a new
+version.
+
 ## License
 
 MIT
