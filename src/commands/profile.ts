@@ -410,8 +410,11 @@ export async function handleProfileSubcommand(
     if (action === "import") return await handleImport(tokens.slice(1), ctx, pi);
     if (action === "check") return await handleCheck(tokens.slice(1), ctx, pi);
     if (action === "recover") return await handleRecover(tokens.slice(1), ctx, pi);
-    const requested = tokens[1];
-    const force = tokens.includes("--force");
+    // Options may appear anywhere (`save --force team`), so names come from
+    // the positionals rather than fixed token indexes.
+    const options = parseOptions(tokens.slice(1));
+    const [requested, destination] = options.positionals;
+    const force = options.force;
     if (action === "list") {
       const names = (await listProfiles()).map((profile) => profile.name);
       notify(
@@ -452,7 +455,6 @@ export async function handleProfileSubcommand(
       return;
     }
     if (action === "rename" || action === "duplicate") {
-      const destination = tokens[2];
       if (!requested?.trim() || !destination?.trim()) {
         notify(ctx, `Usage: /extensions profile ${action} <from> <to> [--force]`, "info");
         return;
