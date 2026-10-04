@@ -11,7 +11,7 @@ import { type InstalledPackage, type Scope } from "../types/index.js";
 import { runTaskWithLoader } from "../ui/async-task.js";
 import { showListReport } from "../ui/report.js";
 import { parseChoiceByLabel } from "../utils/command.js";
-import { formatInstalledPackageLabel } from "../utils/format.js";
+import { formatInstalledPackageLabel, normalizePackageSource } from "../utils/format.js";
 import { logPackageRemove, logPackageUpdate } from "../utils/history.js";
 import { isProjectTrusted, requireUI } from "../utils/mode.js";
 import { notify, error as notifyError, success } from "../utils/notify.js";
@@ -55,13 +55,32 @@ interface UpdateOutcome extends PackageMutationOutcome {
   updated: boolean;
 }
 
-async function updatePackageInternal(
+/**
+ * `/extensions install foo` installs npm:foo, so `update foo` and
+ * `remove foo` must mean npm:foo too. A source that is configured exactly
+ * as typed (for example a bare local path) keeps its literal meaning.
+ */
+async function resolveRequestedSource(
   source: string,
+  ctx: ExtensionCommandContext
+): Promise<string> {
+  const normalized = normalizePackageSource(source);
+  if (!normalized || normalized === source) return source;
+  const installed = await getInstalledPackagesAllScopes(ctx);
+  const identities = packageSourceIdentities(source, ctx);
+  return installed.some((pkg) => installedPackageMatchesSource(pkg, identities, ctx))
+    ? source
+    : normalized;
+}
+
+async function updatePackageInternal(
+  requestedSource: string,
   ctx: ExtensionCommandContext,
   pi: ExtensionAPI,
   options: UpdateOptions = {}
 ): Promise<UpdateOutcome> {
   const { selectedScope } = options;
+  const source = await resolveRequestedSource(requestedSource, ctx);
   showProgress(ctx, "Updating", source);
 
   const updateIdentity = normalizePackageIdentity(source, { cwd: ctx.cwd });
@@ -439,10 +458,11 @@ function notifyRemovalSummary(
 }
 
 async function removePackageInternal(
-  source: string,
+  requestedSource: string,
   ctx: ExtensionCommandContext,
   pi: ExtensionAPI
 ): Promise<PackageMutationOutcome> {
+  const source = await resolveRequestedSource(requestedSource, ctx);
   const installed = await getInstalledPackagesAllScopesForRemoval(ctx);
   const identities = packageSourceIdentities(source, ctx);
   const matching = installed.filter((pkg) => installedPackageMatchesSource(pkg, identities, ctx));
