@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -71,9 +71,10 @@ void test("metadata cache prunes expired entries and bounds package metadata", a
       await cache.setCachedPackage(`pkg-${index}`, { name: `pkg-${index}`, description: "cached" });
     }
 
-    const stats = await cache.getCacheStats();
-    assert.equal(stats.totalPackages, CACHE_LIMITS.packageInfoMaxSize);
-    assert.equal(stats.validEntries, CACHE_LIMITS.packageInfoMaxSize);
+    const persisted = JSON.parse(await readFile(join(cacheDir, "metadata.json"), "utf8")) as {
+      packages: Record<string, unknown>;
+    };
+    assert.equal(Object.keys(persisted.packages).length, CACHE_LIMITS.packageInfoMaxSize);
   } finally {
     if (previousCacheDir === undefined) {
       delete process.env.PI_EXTMGR_CACHE_DIR;

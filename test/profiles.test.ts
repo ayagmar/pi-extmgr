@@ -3,22 +3,13 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { applyProfile, planProfileApplication } from "../src/profiles/apply.js";
-import {
-  compareProfiles,
-  loadProjectProfilePolicy,
-  validateProfilePolicy,
-} from "../src/profiles/compare.js";
+import { planProfileApplication } from "../src/profiles/apply.js";
+import { loadProjectProfilePolicy, validateProfilePolicy } from "../src/profiles/compare.js";
 import { duplicateProfile, renameProfile, saveProfile } from "../src/profiles/management.js";
 import { getEffectivePackageSource, normalizeProfile } from "../src/profiles/schema.js";
-import {
-  deleteNamedProfile,
-  readProfileStore,
-  saveNamedProfile,
-  writeProfileStore,
-} from "../src/profiles/store.js";
+import { deleteNamedProfile, readProfileStore, saveNamedProfile } from "../src/profiles/store.js";
 
-void test("profile application produces a dry-run plan without mutating state", async () => {
+void test("profile planning reports additions and removals across scopes", () => {
   const current = normalizeProfile({
     name: "current",
     packages: [{ source: "npm:old", scope: "global" }],
@@ -27,16 +18,9 @@ void test("profile application produces a dry-run plan without mutating state", 
     name: "desired",
     packages: [{ source: "npm:new", scope: "project" }],
   });
-  let applied = false;
-  const plan = await applyProfile(current, desired, {
-    dryRun: true,
-    apply: async () => {
-      applied = true;
-    },
-  });
+  const plan = planProfileApplication(current, desired);
   assert.equal(plan.add[0]?.source, "npm:new");
   assert.equal(plan.remove[0]?.source, "npm:old");
-  assert.equal(applied, false);
 });
 
 void test("profile plans treat equivalent embedded and declared targets as equal", () => {
@@ -96,7 +80,7 @@ void test("profile plans distinguish default filters from explicitly disabling e
 void test("profile comparison and policy validation expose actionable differences", () => {
   const left = normalizeProfile({ packages: [{ source: "npm:demo", scope: "global" }] });
   const right = normalizeProfile({ packages: [{ source: "npm:demo", scope: "project" }] });
-  const scopePlan = compareProfiles(left, right);
+  const scopePlan = planProfileApplication(left, right);
   assert.equal(scopePlan.update.length, 1);
   assert.equal(scopePlan.update[0]?.from.scope, "global");
   assert.equal(scopePlan.update[0]?.to.scope, "project");
@@ -255,8 +239,7 @@ void test("profile writes refuse malformed or unknown-version stores", async () 
     const unsupported = { version: 99, profiles: {} };
     await writeFile(path, JSON.stringify(unsupported), "utf8");
     await assert.rejects(
-      () =>
-        writeProfileStore(path, unsupported as unknown as Parameters<typeof writeProfileStore>[1]),
+      () => saveNamedProfile(path, normalizeProfile({ name: "team", packages: [] })),
       /Unsupported or malformed profile store/
     );
     await assert.rejects(

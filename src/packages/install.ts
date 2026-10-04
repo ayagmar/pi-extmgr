@@ -633,15 +633,6 @@ async function installPackageLocallyInternal(
   return { installed: true, reloaded };
 }
 
-export async function installPackageLocally(
-  packageName: string,
-  ctx: ExtensionCommandContext,
-  pi: ExtensionAPI,
-  options?: InstallOptions
-): Promise<void> {
-  await installPackageLocallyInternal(packageName, ctx, pi, options);
-}
-
 export async function installPackageLocallyWithOutcome(
   packageName: string,
   ctx: ExtensionCommandContext,

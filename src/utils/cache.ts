@@ -557,33 +557,6 @@ export async function clearCache(): Promise<void> {
 }
 
 /**
- * Get cache statistics
- */
-export async function getCacheStats(): Promise<{
-  totalPackages: number;
-  validEntries: number;
-  expiredEntries: number;
-}> {
-  const cache = await loadCache();
-  let valid = 0;
-  let expired = 0;
-
-  for (const [, data] of cache.packages) {
-    if (hasFreshCachedField(data)) {
-      valid++;
-    } else {
-      expired++;
-    }
-  }
-
-  return {
-    totalPackages: cache.packages.size,
-    validEntries: valid,
-    expiredEntries: expired,
-  };
-}
-
-/**
  * Batch get descriptions for installed packages (uses cache first)
  */
 export async function getPackageDescriptions(

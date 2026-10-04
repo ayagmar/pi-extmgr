@@ -4,12 +4,30 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
 import {
+  applyPackageExtensionStateChanges,
   clearPackageEntrypointCache,
   discoverPackageExtensionEntrypoints,
   discoverPackageExtensions,
-  setPackageExtensionState,
 } from "../src/packages/extensions.js";
 import { type InstalledPackage } from "../src/types/index.js";
+
+/** Toggle one package extension entrypoint the way the configure panel does. */
+function setPackageExtensionState(
+  packageSource: string,
+  extensionPath: string,
+  scope: "global" | "project",
+  target: "enabled" | "disabled",
+  cwd: string,
+  projectTrusted = false
+) {
+  return applyPackageExtensionStateChanges(
+    packageSource,
+    scope,
+    [{ extensionPath, target }],
+    cwd,
+    projectTrusted
+  );
+}
 
 void test("packages without a resolved path are found where pi's package manager finds them", async () => {
   const agentDir = await mkdtemp(join(tmpdir(), "pi-extmgr-legacy-root-agent-"));

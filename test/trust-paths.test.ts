@@ -4,7 +4,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { CONFIG_DIR_NAME } from "@earendil-works/pi-coding-agent";
-import { discoverPackageExtensions, setPackageExtensionState } from "../src/packages/extensions.js";
+import {
+  applyPackageExtensionStateChanges,
+  discoverPackageExtensions,
+} from "../src/packages/extensions.js";
 import { getProfileStorePath } from "../src/profiles/store.js";
 import { getExtmgrTrashDir, getProjectConfigDir } from "../src/utils/pi-paths.js";
 import { getReloadRequiredStatePath } from "../src/utils/reload-state.js";
@@ -35,11 +38,10 @@ void test("untrusted project package filters are ignored and writes are rejected
 
     const untrusted = await discoverPackageExtensions([pkg], cwd, { projectTrusted: false });
     assert.equal(untrusted[0]?.state, "enabled");
-    const rejected = await setPackageExtensionState(
+    const rejected = await applyPackageExtensionStateChanges(
       pkg.source,
-      "index.ts",
       "project",
-      "disabled",
+      [{ extensionPath: "index.ts", target: "disabled" }],
       cwd,
       false
     );

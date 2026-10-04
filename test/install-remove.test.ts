@@ -12,7 +12,7 @@ import {
 import {
   installFromUrl,
   installPackage,
-  installPackageLocally,
+  installPackageLocallyWithOutcome,
   installPackageWithOutcome,
 } from "../src/packages/install.js";
 import { removePackage, updatePackage, updatePackages } from "../src/packages/management.js";
@@ -712,7 +712,7 @@ void test("updatePackages logs failure in history", async () => {
   }
 });
 
-void test("installPackageLocally removes temporary extraction artifacts after success", async () => {
+void test("standalone install removes temporary extraction artifacts after success", async () => {
   const cwd = await mkdtemp(join(tmpdir(), "pi-extmgr-standalone-success-"));
   const originalFetch = globalThis.fetch;
 
@@ -764,7 +764,7 @@ void test("installPackageLocally removes temporary extraction artifacts after su
       },
     });
 
-    await installPackageLocally("demo-pkg", ctx, pi, { scope: "project" });
+    await installPackageLocallyWithOutcome("demo-pkg", ctx, pi, { scope: "project" });
 
     await access(join(cwd, ".pi", "extensions", "demo-pkg", "index.ts"));
     await assert.rejects(access(join(cwd, ".pi", "extensions", ".temp")));
@@ -828,7 +828,7 @@ void test("standalone replacement keeps the previous installation in extmgr tras
       },
     });
 
-    await installPackageLocally("demo-pkg", ctx, pi, {
+    await installPackageLocallyWithOutcome("demo-pkg", ctx, pi, {
       scope: "project",
       skipConfirmation: true,
     });
@@ -844,7 +844,7 @@ void test("standalone replacement keeps the previous installation in extmgr tras
   }
 });
 
-void test("installPackageLocally rejects standalone packages with unresolved runtime dependencies", async () => {
+void test("standalone install rejects standalone packages with unresolved runtime dependencies", async () => {
   const cwd = await mkdtemp(join(tmpdir(), "pi-extmgr-standalone-"));
   const originalFetch = globalThis.fetch;
 
@@ -903,7 +903,7 @@ void test("installPackageLocally rejects standalone packages with unresolved run
       },
     });
 
-    await installPackageLocally("demo-pkg", ctx, pi, { scope: "project" });
+    await installPackageLocallyWithOutcome("demo-pkg", ctx, pi, { scope: "project" });
 
     await assert.rejects(access(join(cwd, ".pi", "extensions", "demo-pkg")));
 
@@ -922,7 +922,7 @@ void test("installPackageLocally rejects standalone packages with unresolved run
   }
 });
 
-void test("installPackageLocally fails fast with an actionable error when tar is unavailable", async () => {
+void test("standalone install fails fast with an actionable error when tar is unavailable", async () => {
   const cwd = await mkdtemp(join(tmpdir(), "pi-extmgr-standalone-"));
   const output: string[] = [];
   const originalLog = console.log;
@@ -954,7 +954,7 @@ void test("installPackageLocally fails fast with an actionable error when tar is
       },
     });
 
-    await installPackageLocally("demo-pkg", ctx, pi, { scope: "project" });
+    await installPackageLocallyWithOutcome("demo-pkg", ctx, pi, { scope: "project" });
 
     assert.ok(output.some((line) => /tar/.test(line) && /standalone/i.test(line)));
     await assert.rejects(access(join(cwd, ".pi", "extensions", "demo-pkg")));

@@ -100,13 +100,3 @@ export function planProfileApplication(
     update,
   };
 }
-
-export async function applyProfile(
-  current: ExtmgrProfile,
-  desired: ExtmgrProfile,
-  options: { dryRun?: boolean; apply: (plan: ProfilePlan) => Promise<void> }
-): Promise<ProfilePlan> {
-  const plan = planProfileApplication(current, desired);
-  if (!options.dryRun) await options.apply(plan);
-  return plan;
-}
