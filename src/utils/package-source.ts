@@ -4,7 +4,7 @@
 import { homedir } from "node:os";
 import { join, resolve as resolvePath } from "node:path";
 import { fileURLToPath } from "node:url";
-import { parseNpmSource } from "./format.js";
+import { isGitLikeSource, isLocalPathSource, parseNpmSource } from "./format.js";
 import { normalizePathIdentity } from "./path-identity.js";
 
 export type PackageSourceKind = "npm" | "git" | "local" | "unknown";
@@ -22,37 +22,9 @@ export function normalizeConfiguredPackageSource(source: string): string {
 
 export function getPackageSourceKind(source: string): PackageSourceKind {
   const normalized = normalizeConfiguredPackageSource(source);
-
   if (normalized.startsWith("npm:")) return "npm";
-
-  if (
-    normalized.startsWith("git:") ||
-    normalized.startsWith("git+http://") ||
-    normalized.startsWith("git+https://") ||
-    normalized.startsWith("git+ssh://") ||
-    normalized.startsWith("git+git://") ||
-    normalized.startsWith("http://") ||
-    normalized.startsWith("https://") ||
-    normalized.startsWith("ssh://") ||
-    /^git@[^\s:]+:.+/.test(normalized)
-  ) {
-    return "git";
-  }
-
-  if (
-    normalized.startsWith("/") ||
-    normalized.startsWith("./") ||
-    normalized.startsWith("../") ||
-    normalized.startsWith(".\\") ||
-    normalized.startsWith("..\\") ||
-    normalized.startsWith("~/") ||
-    normalized.startsWith("file://") ||
-    /^[a-zA-Z]:[\\/]/.test(normalized) ||
-    normalized.startsWith("\\\\")
-  ) {
-    return "local";
-  }
-
+  if (isGitLikeSource(normalized)) return "git";
+  if (isLocalPathSource(normalized)) return "local";
   return "unknown";
 }
 

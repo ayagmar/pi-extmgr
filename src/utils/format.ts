@@ -48,7 +48,7 @@ const LOCAL_PATH_PATTERNS = {
   uncPath: /^\\\\/,
 } as const;
 
-function isGitLikeSource(source: string): boolean {
+export function isGitLikeSource(source: string): boolean {
   return (
     GIT_PATTERNS.gitPrefix.test(source) ||
     GIT_PATTERNS.gitPlusHttpPrefix.test(source) ||
@@ -61,7 +61,7 @@ function isGitLikeSource(source: string): boolean {
   );
 }
 
-function isLocalPathSource(source: string): boolean {
+export function isLocalPathSource(source: string): boolean {
   return (
     LOCAL_PATH_PATTERNS.unixAbsolute.test(source) ||
     LOCAL_PATH_PATTERNS.unixRelative.test(source) ||
