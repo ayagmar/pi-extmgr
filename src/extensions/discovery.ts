@@ -356,10 +356,10 @@ function dedupeExtensions(entries: ExtensionEntry[]): ExtensionEntry[] {
  * Set the state (enabled/disabled) of a local extension.
  * This works by renaming the file with a .disabled suffix.
  *
- * With `settings`, `+`/`-`/`!` entries naming this file in the user and
- * (trusted) project `extensions` setting are removed too, so a stale
- * override (for example one `pi config` wrote) cannot keep overruling the
- * rename. An entry disabled only by such an override is enabled by removing
+ * With `settings`, enabling also removes the exact `-`/`!` entries naming
+ * this file in the user and (trusted) project `extensions` setting, so a
+ * stale override (for example one `pi config` wrote) cannot keep overruling
+ * the rename. `+` entries are kept, and disabling never writes settings. An entry disabled only by such an override is enabled by removing
  * it, without a rename.
  *
  * @param entry - Extension with activePath and disabledPath defined
@@ -398,9 +398,12 @@ export async function setExtensionState(
       };
     }
 
-    const cleanup = settings
-      ? planExtensionOverrideCleanup(entry.activePath, settings.cwd, settings.projectTrusted)
-      : undefined;
+    // Disabling never writes settings: the rename alone stops pi loading the
+    // file, and a `+path` entry must survive so a later enable works.
+    const cleanup =
+      settings && target === "enabled"
+        ? planExtensionOverrideCleanup(entry.activePath, settings.cwd, settings.projectTrusted)
+        : undefined;
     if (target === "enabled" && entry.settingsDisabled) {
       if (cleanup?.readError) {
         return {

@@ -2,8 +2,10 @@
  * pi applies the `extensions` setting to auto-discovered local extensions:
  * `-path` and `!pattern` stop one from loading, `+path` forces it back on.
  * `pi config` writes exactly these entries. This module reads the effective
- * state from pi and clears the entries for one extension, so the `.disabled`
- * rename extmgr uses is not silently overruled by a stale override.
+ * state from pi and, when enabling, clears the exact `-`/`!` entries that
+ * block one extension, so the `.disabled` rename extmgr uses is not silently
+ * overruled by a stale override. `+` entries are never removed: they are
+ * what lets a file through a `!glob`.
  */
 import { join, relative, resolve, sep } from "node:path";
 import {
@@ -38,7 +40,8 @@ export async function resolveTopLevelExtensionStates(
   return states;
 }
 
-const OVERRIDE_PREFIX = /^[+\-!]/;
+/** Entries that stop a file from loading; `+` entries are never removed. */
+const BLOCKING_PREFIX = /^[-!]/;
 
 function toPosixPath(path: string): string {
   return path.split(sep).join("/");
@@ -51,7 +54,7 @@ function normalizeExactPattern(pattern: string): string {
   return toPosixPath(trimmed);
 }
 
-/** Drop `+`/`-`/`!` entries that name exactly this file (relative or absolute). */
+/** Drop `-`/`!` entries that name exactly this file (relative or absolute). */
 function withoutOverridesFor(
   entries: readonly string[] | undefined,
   filePath: string,
@@ -60,7 +63,7 @@ function withoutOverridesFor(
   if (!entries || entries.length === 0) return undefined;
   const targets = new Set([toPosixPath(relative(baseDir, filePath)), toPosixPath(filePath)]);
   const kept = entries.filter(
-    (entry) => !(OVERRIDE_PREFIX.test(entry) && targets.has(normalizeExactPattern(entry.slice(1))))
+    (entry) => !(BLOCKING_PREFIX.test(entry) && targets.has(normalizeExactPattern(entry.slice(1))))
   );
   return kept.length === entries.length ? undefined : kept;
 }
@@ -74,7 +77,7 @@ export interface ExtensionOverrideCleanup {
 }
 
 /**
- * Plan removing the `+`/`-`/`!` entries for one extension file from the user
+ * Plan removing the exact `-`/`!` entries for one extension file from the user
  * and (when trusted) project `extensions` settings. Other entries, such as
  * `-builtin:*` or glob patterns, are kept. Writes go through pi's settings
  * setters, so unrelated settings are preserved.

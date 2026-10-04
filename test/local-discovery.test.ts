@@ -308,3 +308,35 @@ void test("project overrides are read and cleared in the project settings", asyn
     assert.deepEqual(settings.extensions, ["-builtin:y"]);
   });
 });
+
+void test("disable then enable keeps a `+path` that lets the file through a `!glob`", async () => {
+  await withAgentDir(async (agentDir, cwd) => {
+    const fooPath = join(agentDir, "extensions", "foo.ts");
+    await writeFile(fooPath, "// foo\n", "utf8");
+    const extensions = ["!extensions/*.ts", "+extensions/foo.ts"];
+    await writeFile(join(agentDir, "settings.json"), JSON.stringify({ extensions }), "utf8");
+    const find = async () =>
+      (await discoverExtensions(cwd, { projectTrusted: false })).find(
+        (entry) => entry.activePath === fooPath
+      );
+
+    const before = await find();
+    assert.equal(before?.state, "enabled");
+    assert.ok(before);
+    assert.deepEqual(await setExtensionState(before, "disabled", { cwd, projectTrusted: false }), {
+      ok: true,
+    });
+    assert.deepEqual((await readGlobalSettings(agentDir)).extensions, extensions);
+
+    const disabled = await find();
+    assert.equal(disabled?.state, "disabled");
+    assert.ok(disabled);
+    assert.deepEqual(await setExtensionState(disabled, "enabled", { cwd, projectTrusted: false }), {
+      ok: true,
+    });
+    assert.deepEqual((await readGlobalSettings(agentDir)).extensions, extensions);
+    const after = await find();
+    assert.equal(after?.state, "enabled");
+    assert.equal(after?.settingsDisabled, undefined);
+  });
+});
