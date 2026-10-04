@@ -4,11 +4,6 @@ import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 const DETAIL_PANE_MIN_WIDTH = 34;
 export const TWO_PANE_MIN_WIDTH = 96;
 
-function padToWidth(value: string, width: number): string {
-  const truncated = truncateToWidth(value, Math.max(0, width), "");
-  return truncated + " ".repeat(Math.max(0, width - visibleWidth(truncated)));
-}
-
 /** Single source of truth for master/detail pane widths. */
 function computeTwoPaneWidths(
   width: number,
@@ -33,7 +28,7 @@ export function composeColumns(
   const lines: string[] = [];
 
   for (let index = 0; index < rowCount; index += 1) {
-    const leftLine = padToWidth(left[index] ?? "", leftWidth);
+    const leftLine = truncateToWidth(left[index] ?? "", leftWidth, "", true);
     const rightLine = truncateToWidth(right[index] ?? "", rightWidth, "");
     lines.push(truncateToWidth(`${leftLine}${divider}${rightLine}`, safeWidth, ""));
   }
