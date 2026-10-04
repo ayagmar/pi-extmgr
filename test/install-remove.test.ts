@@ -962,7 +962,12 @@ void test("standalone replacement keeps the previous installation in extmgr tras
   }
 });
 
-void test("standalone install rejects standalone packages with unresolved runtime dependencies", async () => {
+async function installStandaloneWithDependencies(dependencies: Record<string, string>): Promise<{
+  installed: boolean;
+  extracted: boolean;
+  history: { action?: string; success?: boolean } | undefined;
+  messages: string;
+}> {
   const cwd = await mkdtemp(join(tmpdir(), "pi-extmgr-standalone-"));
   const originalFetch = globalThis.fetch;
 
@@ -1002,14 +1007,7 @@ void test("standalone install rejects standalone packages with unresolved runtim
           await mkdir(extractDir, { recursive: true });
           await writeFile(
             join(extractDir, "package.json"),
-            JSON.stringify(
-              {
-                name: "demo-pkg",
-                dependencies: { "left-pad": "1.3.0" },
-              },
-              null,
-              2
-            ),
+            JSON.stringify({ name: "demo-pkg", dependencies }, null, 2),
             "utf8"
           );
           await writeFile(join(extractDir, "index.ts"), "// demo\n", "utf8");
@@ -1021,23 +1019,62 @@ void test("standalone install rejects standalone packages with unresolved runtim
       },
     });
 
-    await installPackageLocallyWithOutcome("demo-pkg", ctx, pi, { scope: "project" });
-
-    await assert.rejects(access(join(cwd, ".pi", "extensions", "demo-pkg")));
+    // Without a UI, extmgr prints its messages to the console.
+    const printed: string[] = [];
+    const originalLog = console.log;
+    console.log = (...args: unknown[]) => {
+      printed.push(args.map(String).join(" "));
+    };
+    let outcome: { installed: boolean };
+    try {
+      outcome = await installPackageLocallyWithOutcome("demo-pkg", ctx, pi, {
+        scope: "project",
+      });
+    } finally {
+      console.log = originalLog;
+    }
+    const extracted = await access(join(cwd, ".pi", "extensions", "demo-pkg")).then(
+      () => true,
+      () => false
+    );
 
     const historyEntries = entries
       .filter((entry) => entry.customType === "extmgr-change")
       .map((entry) => entry.data);
-    const latestHistory = historyEntries[historyEntries.length - 1] as
+    const history = historyEntries[historyEntries.length - 1] as
       | { action?: string; success?: boolean }
       | undefined;
-
-    assert.equal(latestHistory?.action, "package_install");
-    assert.equal(latestHistory?.success, false);
+    const messages = printed.join("\n");
+    return { installed: outcome.installed, extracted, history, messages };
   } finally {
     globalThis.fetch = originalFetch;
     await rm(cwd, { recursive: true, force: true });
   }
+}
+
+void test("standalone install rejects standalone packages with unresolved runtime dependencies", async () => {
+  const result = await installStandaloneWithDependencies({
+    "left-pad": "1.3.0",
+    "@sinclair/typebox": "^0.34.0",
+  });
+
+  assert.equal(result.installed, false);
+  assert.equal(result.extracted, false);
+  assert.equal(result.history?.action, "package_install");
+  assert.equal(result.history?.success, false);
+  assert.match(result.messages, /not bundled for standalone install: left-pad\./);
+});
+
+void test("standalone install accepts dependencies pi provides at load time", async () => {
+  const result = await installStandaloneWithDependencies({
+    "@sinclair/typebox": "^0.34.0",
+    "@earendil-works/pi-tui": "^1.0.0",
+    "@mariozechner/pi-coding-agent": "*",
+  });
+
+  assert.equal(result.installed, true);
+  assert.equal(result.extracted, true);
+  assert.equal(result.history?.success, true);
 });
 
 void test("standalone install fails fast with an actionable error when tar is unavailable", async () => {
