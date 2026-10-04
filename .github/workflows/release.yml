@@ -127,5 +127,5 @@ jobs:
         run: |
           {
             echo "### ${{ steps.version.outputs.name }}@${{ steps.version.outputs.version }}"
-            [ "$DRY_RUN" = "true" ] && echo "Dry run — nothing was pushed or published."
+            if [ "$DRY_RUN" = "true" ]; then echo "Dry run — nothing was pushed or published."; fi
           } >> "$GITHUB_STEP_SUMMARY"
