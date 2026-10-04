@@ -110,3 +110,24 @@ void test("reload-required state ignores malformed persisted data", async () => 
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+void test("a failed reload-state write does not wedge later writes and reads", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "pi-extmgr-reload-failed-write-"));
+  const blocker = join(dir, "not-a-directory");
+  const path = join(dir, "reload.json");
+  try {
+    // The parent of this path is a regular file, so the write must fail.
+    await writeFile(blocker, "", "utf8");
+    await assert.rejects(markReloadRequired("Unwritable", join(blocker, "reload.json")));
+
+    await markReloadRequired("Package installed", path);
+    const state = await readReloadState(path);
+    assert.equal(state.required, true);
+    assert.deepEqual(state.reasons, ["Package installed"]);
+
+    await clearReloadRequired(path);
+    assert.equal((await readReloadState(path)).required, false);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
