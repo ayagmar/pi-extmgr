@@ -39,13 +39,20 @@ jobs:
           npm ci
           npm run build
 
+      # Publish only the built site, not docs/node_modules or build sources.
+      - name: Stage site
+        run: |
+          mkdir -p _site
+          cp docs/index.html _site/
+          cp -r docs/assets _site/
+
       - name: Setup Pages
         uses: actions/configure-pages@v6
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v5
         with:
-          path: "./docs"
+          path: "./_site"
 
       - name: Deploy to GitHub Pages
         id: deployment
