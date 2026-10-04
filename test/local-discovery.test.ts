@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import test from "node:test";
 import { discoverExtensions, setExtensionState } from "../src/extensions/discovery.js";
 
@@ -159,4 +159,152 @@ void test("toggling an extension in a symlinked directory leaves the link target
     await rm(cwd, { recursive: true, force: true });
     await rm(outside, { recursive: true, force: true });
   }
+});
+
+async function withAgentDir<T>(run: (agentDir: string, cwd: string) => Promise<T>): Promise<T> {
+  const root = await mkdtemp(join(tmpdir(), "pi-extmgr-local-overrides-"));
+  const agentDir = join(root, "agent");
+  const cwd = join(root, "project");
+  const previous = process.env.PI_CODING_AGENT_DIR;
+  process.env.PI_CODING_AGENT_DIR = agentDir;
+  try {
+    await mkdir(join(agentDir, "extensions"), { recursive: true });
+    await mkdir(cwd, { recursive: true });
+    return await run(agentDir, cwd);
+  } finally {
+    if (previous === undefined) delete process.env.PI_CODING_AGENT_DIR;
+    else process.env.PI_CODING_AGENT_DIR = previous;
+    await rm(root, { recursive: true, force: true });
+  }
+}
+
+async function readGlobalSettings(agentDir: string): Promise<Record<string, unknown>> {
+  return JSON.parse(await readFile(join(agentDir, "settings.json"), "utf8")) as Record<
+    string,
+    unknown
+  >;
+}
+
+void test("an extension disabled in settings, as pi config does, is reported disabled", async () => {
+  await withAgentDir(async (agentDir, cwd) => {
+    await writeFile(join(agentDir, "extensions", "foo.ts"), "// foo\n", "utf8");
+    await writeFile(join(agentDir, "extensions", "bar.ts"), "// bar\n", "utf8");
+    await writeFile(
+      join(agentDir, "settings.json"),
+      JSON.stringify({ extensions: ["-extensions/foo.ts", "-builtin:x"] }),
+      "utf8"
+    );
+
+    const entries = await discoverExtensions(cwd, { projectTrusted: false });
+    const byName = new Map(entries.map((entry) => [basename(entry.activePath), entry]));
+    assert.equal(byName.get("foo.ts")?.state, "disabled");
+    assert.equal(byName.get("foo.ts")?.settingsDisabled, true);
+    assert.equal(byName.get("bar.ts")?.state, "enabled");
+  });
+});
+
+void test("enabling a settings-disabled extension removes only its override", async () => {
+  await withAgentDir(async (agentDir, cwd) => {
+    const fooPath = join(agentDir, "extensions", "foo.ts");
+    await writeFile(fooPath, "// foo\n", "utf8");
+    await writeFile(
+      join(agentDir, "settings.json"),
+      JSON.stringify({
+        extensions: ["-extensions/foo.ts", "-builtin:x", "+extensions/other.ts"],
+        packages: [{ source: "npm:demo", extensions: ["-a.ts"] }],
+        quietStartup: true,
+      }),
+      "utf8"
+    );
+
+    const foo = (await discoverExtensions(cwd, { projectTrusted: false })).find(
+      (entry) => entry.activePath === fooPath
+    );
+    assert.ok(foo);
+    const result = await setExtensionState(foo, "enabled", { cwd, projectTrusted: false });
+    assert.deepEqual(result, { ok: true });
+
+    const settings = await readGlobalSettings(agentDir);
+    assert.deepEqual(settings.extensions, ["-builtin:x", "+extensions/other.ts"]);
+    assert.deepEqual(settings.packages, [{ source: "npm:demo", extensions: ["-a.ts"] }]);
+    assert.equal(settings.quietStartup, true);
+    assert.equal(existsSync(fooPath), true);
+    assert.equal(existsSync(`${fooPath}.disabled`), false);
+
+    const after = (await discoverExtensions(cwd, { projectTrusted: false })).find(
+      (entry) => entry.activePath === fooPath
+    );
+    assert.equal(after?.state, "enabled");
+  });
+});
+
+void test("enabling a renamed extension also clears a stale settings override", async () => {
+  await withAgentDir(async (agentDir, cwd) => {
+    const fooPath = join(agentDir, "extensions", "foo.ts");
+    await writeFile(`${fooPath}.disabled`, "// foo\n", "utf8");
+    await writeFile(
+      join(agentDir, "settings.json"),
+      JSON.stringify({ extensions: [`-${fooPath}`, "-builtin:x"] }),
+      "utf8"
+    );
+
+    const foo = (await discoverExtensions(cwd, { projectTrusted: false })).find(
+      (entry) => entry.activePath === fooPath
+    );
+    assert.equal(foo?.state, "disabled");
+    assert.ok(foo);
+    assert.deepEqual(await setExtensionState(foo, "enabled", { cwd, projectTrusted: false }), {
+      ok: true,
+    });
+    assert.equal(existsSync(fooPath), true);
+    assert.deepEqual((await readGlobalSettings(agentDir)).extensions, ["-builtin:x"]);
+  });
+});
+
+void test("an extension disabled by a settings glob is not silently reported enabled", async () => {
+  await withAgentDir(async (agentDir, cwd) => {
+    const fooPath = join(agentDir, "extensions", "foo.ts");
+    await writeFile(fooPath, "// foo\n", "utf8");
+    await writeFile(
+      join(agentDir, "settings.json"),
+      JSON.stringify({ extensions: ["!extensions/*.ts"] }),
+      "utf8"
+    );
+
+    const foo = (await discoverExtensions(cwd, { projectTrusted: false })).find(
+      (entry) => entry.activePath === fooPath
+    );
+    assert.equal(foo?.state, "disabled");
+    assert.ok(foo);
+    const result = await setExtensionState(foo, "enabled", { cwd, projectTrusted: false });
+    assert.equal(result.ok, false);
+    assert.match(result.ok ? "" : result.error, /pattern in the "extensions" setting/);
+    assert.deepEqual((await readGlobalSettings(agentDir)).extensions, ["!extensions/*.ts"]);
+  });
+});
+
+void test("project overrides are read and cleared in the project settings", async () => {
+  await withAgentDir(async (_agentDir, cwd) => {
+    const localPath = join(cwd, ".pi", "extensions", "local.ts");
+    await mkdir(dirname(localPath), { recursive: true });
+    await writeFile(localPath, "// local\n", "utf8");
+    await writeFile(
+      join(cwd, ".pi", "settings.json"),
+      JSON.stringify({ extensions: ["-./extensions/local.ts", "-builtin:y"] }),
+      "utf8"
+    );
+
+    const local = (await discoverExtensions(cwd, { projectTrusted: true })).find(
+      (entry) => entry.activePath === localPath
+    );
+    assert.equal(local?.state, "disabled");
+    assert.ok(local);
+    assert.deepEqual(await setExtensionState(local, "enabled", { cwd, projectTrusted: true }), {
+      ok: true,
+    });
+    const settings = JSON.parse(await readFile(join(cwd, ".pi", "settings.json"), "utf8")) as {
+      extensions?: string[];
+    };
+    assert.deepEqual(settings.extensions, ["-builtin:y"]);
+  });
 });

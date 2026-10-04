@@ -371,7 +371,10 @@ async function handleFixSafeIssues(
   const errors: string[] = [];
   let changed = 0;
   for (const fix of fixes) {
-    const result = await setExtensionState(fix.extension, "disabled");
+    const result = await setExtensionState(fix.extension, "disabled", {
+      cwd: ctx.cwd,
+      projectTrusted: isProjectTrusted(ctx),
+    });
     if (result.ok) changed += 1;
     else errors.push(`${fix.extension.displayName}: ${result.error}`);
   }
@@ -468,7 +471,10 @@ async function handleConflictAction(
           `Disable ${entry.displayName}? This changes its local extension state.`
         )
       ) {
-        const result = await setExtensionState(entry, "disabled");
+        const result = await setExtensionState(entry, "disabled", {
+          cwd: ctx.cwd,
+          projectTrusted: isProjectTrusted(ctx),
+        });
         if (!result.ok) notify(ctx, result.error, "error");
         else reloaded = await confirmReload(ctx, "Conflicting local extension disabled.");
       }

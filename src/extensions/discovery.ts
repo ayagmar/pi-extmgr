@@ -7,7 +7,7 @@
 
 import { type Dirent } from "node:fs";
 import { readdir, realpath, rename, stat } from "node:fs/promises";
-import { basename, dirname, join, relative } from "node:path";
+import { basename, dirname, join, relative, resolve } from "node:path";
 import { DISABLED_SUFFIX } from "../constants.js";
 import { readPackageManifest } from "../packages/extensions.js";
 import { type ExtensionEntry, type Scope, type State } from "../types/index.js";
@@ -23,6 +23,10 @@ import {
   normalizeRelativePath,
   resolveRelativePathSelection,
 } from "../utils/relative-path-selection.js";
+import {
+  planExtensionOverrideCleanup,
+  resolveTopLevelExtensionStates,
+} from "./settings-overrides.js";
 import { moveToExtensionTrash, type TrashRecord } from "./trash.js";
 
 interface RootConfig {
@@ -37,6 +41,9 @@ interface RootConfig {
  * Project extensions are only listed for trusted projects: pi does not load
  * an untrusted project's `.pi/extensions`, so extmgr must not show, toggle
  * or delete them either.
+ *
+ * An entry is disabled when its file carries the `.disabled` suffix or when
+ * pi does not load it because of an override in the `extensions` setting.
  *
  * @param cwd - Current working directory for resolving project scope
  * @param options.projectTrusted - Result of `ctx.isProjectTrusted()`
@@ -72,6 +79,14 @@ export async function discoverExtensions(
   const all: ExtensionEntry[] = [];
   for (const root of roots) {
     all.push(...(await discoverInRoot(root.root, root.scope, root.label)));
+  }
+
+  const piStates = await resolveTopLevelExtensionStates(cwd, options.projectTrusted);
+  for (const entry of all) {
+    if (entry.state === "enabled" && piStates.get(resolve(entry.activePath)) === false) {
+      entry.state = "disabled";
+      entry.settingsDisabled = true;
+    }
   }
 
   all.sort((a, b) => a.displayName.localeCompare(b.displayName));
@@ -341,51 +356,85 @@ function dedupeExtensions(entries: ExtensionEntry[]): ExtensionEntry[] {
  * Set the state (enabled/disabled) of a local extension.
  * This works by renaming the file with a .disabled suffix.
  *
+ * With `settings`, `+`/`-`/`!` entries naming this file in the user and
+ * (trusted) project `extensions` setting are removed too, so a stale
+ * override (for example one `pi config` wrote) cannot keep overruling the
+ * rename. An entry disabled only by such an override is enabled by removing
+ * it, without a rename.
+ *
  * @param entry - Extension with activePath and disabledPath defined
  * @param target - Target state ("enabled" or "disabled")
+ * @param settings - Where pi's settings live; omit to only rename
  * @returns Result object indicating success or failure with error message
  *
  * @example
  * ```typescript
- * const result = await setExtensionState(extension, "disabled");
+ * const result = await setExtensionState(extension, "disabled", { cwd, projectTrusted });
  * if (!result.ok) {
  *   console.error("Failed:", result.error);
  * }
  * ```
  */
 export async function setExtensionState(
-  entry: Pick<ExtensionEntry, "activePath" | "disabledPath" | "linkTarget">,
-  target: State
+  entry: Pick<ExtensionEntry, "activePath" | "disabledPath" | "linkTarget" | "settingsDisabled">,
+  target: State,
+  settings?: { cwd: string; projectTrusted: boolean }
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
     if (!entry.activePath || !entry.disabledPath) {
       return { ok: false, error: "Missing paths" };
     }
 
-    if (entry.linkTarget) {
+    const verb = target === "enabled" ? "enable" : "disable";
+    // Enabling an entry that only a settings override disabled needs no rename.
+    const needsRename = !(target === "enabled" && entry.settingsDisabled);
+
+    if (needsRename && entry.linkTarget) {
       // pi loads every entry of a linked directory whatever the link is
       // called, and renaming a file inside it would edit the link target.
       return {
         ok: false,
-        error: `Cannot ${target === "enabled" ? "enable" : "disable"} ${entry.activePath}: it is in a symlinked extension directory (-> ${entry.linkTarget}). Remove the link to stop loading it.`,
+        error: `Cannot ${verb} ${entry.activePath}: it is in a symlinked extension directory (-> ${entry.linkTarget}). Remove the link to stop loading it.`,
       };
     }
 
-    const source = target === "enabled" ? entry.disabledPath : entry.activePath;
-    const destination = target === "enabled" ? entry.activePath : entry.disabledPath;
-    if (source === destination) return { ok: true };
-
-    // Check before rename so an active/disabled pair is never silently
-    // overwritten. This is intentionally a preflight: filesystem races can
-    // still only be mitigated, not made transactional, by this API.
-    if (await fileExists(destination)) {
-      return {
-        ok: false,
-        error: `Cannot ${target === "enabled" ? "enable" : "disable"} extension: destination already exists (${destination})`,
-      };
+    const cleanup = settings
+      ? planExtensionOverrideCleanup(entry.activePath, settings.cwd, settings.projectTrusted)
+      : undefined;
+    if (target === "enabled" && entry.settingsDisabled) {
+      if (cleanup?.readError) {
+        return {
+          ok: false,
+          error: `Cannot enable ${entry.activePath}: Pi settings could not be read (${cleanup.readError})`,
+        };
+      }
+      if (!cleanup || cleanup.removed === 0) {
+        return {
+          ok: false,
+          error: `Cannot enable ${entry.activePath}: a pattern in the "extensions" setting disables it. Edit the setting or use pi config.`,
+        };
+      }
     }
 
-    await rename(source, destination);
+    if (needsRename) {
+      const source = target === "enabled" ? entry.disabledPath : entry.activePath;
+      const destination = target === "enabled" ? entry.activePath : entry.disabledPath;
+      if (source !== destination) {
+        // Check before rename so an active/disabled pair is never silently
+        // overwritten. This is intentionally a preflight: filesystem races can
+        // still only be mitigated, not made transactional, by this API.
+        if (await fileExists(destination)) {
+          return {
+            ok: false,
+            error: `Cannot ${verb} extension: destination already exists (${destination})`,
+          };
+        }
+
+        await rename(source, destination);
+      }
+    }
+
+    await cleanup?.apply();
     return { ok: true };
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : String(error) };

@@ -25,6 +25,11 @@ export interface ExtensionEntry {
    * source checkout), so extmgr does not toggle such entries.
    */
   linkTarget?: string;
+  /**
+   * The file is in place but pi does not load it because of an override in
+   * the `extensions` setting (as `pi config` writes), not a `.disabled` rename.
+   */
+  settingsDisabled?: boolean;
 }
 
 export interface NpmPackage {
@@ -74,6 +79,7 @@ export interface LocalUnifiedItem {
   disabledPath: string;
   originalState: State;
   linkTarget?: string;
+  settingsDisabled?: boolean;
 }
 
 export interface PackageUnifiedItem {

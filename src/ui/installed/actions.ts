@@ -18,6 +18,7 @@ import {
 import { promptAutoUpdateWizard } from "../../utils/auto-update.js";
 import { parseChoiceByLabel } from "../../utils/command.js";
 import { logExtensionToggle } from "../../utils/history.js";
+import { isProjectTrusted } from "../../utils/mode.js";
 import { markReloadRequired } from "../../utils/reload-state.js";
 import { updateExtmgrStatus } from "../../utils/status.js";
 import { confirmReload } from "../../utils/ui-helpers.js";
@@ -40,6 +41,7 @@ import { handleViewsAction } from "./views.js";
 async function applyStagedChanges(
   items: LocalUnifiedItem[],
   staged: Map<string, State>,
+  ctx: ExtensionCommandContext,
   pi: ExtensionAPI
 ): Promise<{ changed: number; errors: string[] }> {
   let changed = 0;
@@ -50,12 +52,17 @@ async function applyStagedChanges(
     if (target === item.originalState) continue;
 
     const fromState = item.originalState;
-    const result = await setExtensionState(item, target);
+    const result = await setExtensionState(item, target, {
+      cwd: ctx.cwd,
+      projectTrusted: isProjectTrusted(ctx),
+    });
 
     if (result.ok) {
       changed++;
       item.state = target;
       item.originalState = target;
+      // The override is gone and any later toggle renames the file again.
+      delete item.settingsDisabled;
       staged.delete(item.id);
       logExtensionToggle(pi, item.id, fromState, target, true);
     } else {
@@ -75,7 +82,7 @@ async function applyToggleChangesFromManager(
   options?: { promptReload?: boolean }
 ): Promise<{ changed: number; reloaded: boolean; hasErrors: boolean }> {
   const toggleItems = getToggleItemsForApply(items);
-  const apply = await applyStagedChanges(toggleItems, staged, pi);
+  const apply = await applyStagedChanges(toggleItems, staged, ctx, pi);
 
   if (apply.errors.length > 0) {
     ctx.ui.notify(
