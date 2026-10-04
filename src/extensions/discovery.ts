@@ -438,8 +438,9 @@ export async function setExtensionState(
     }
 
     if (!cleanup) return { ok: true };
-    // Undo the rename when enabling cannot take effect, so the file and the
-    // staged UI change stay consistent and a retry works.
+    // Undo the rename when enabling cannot take effect or the settings write
+    // fails, so the file, the settings and the staged UI change stay
+    // consistent and a retry works.
     const rollback = async (error: string) => {
       if (!undoRename) return { ok: false as const, error };
       try {
@@ -457,7 +458,11 @@ export async function setExtensionState(
     if ((await cleanup.enabledAfterApply()) === false) {
       return rollback(settingsBlockError);
     }
-    await cleanup.apply();
+    try {
+      await cleanup.apply();
+    } catch (error) {
+      return rollback(error instanceof Error ? error.message : String(error));
+    }
     return { ok: true };
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : String(error) };
