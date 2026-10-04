@@ -152,6 +152,34 @@ void test("removePackage removes the selected package source", async () => {
   }
 });
 
+void test("update and remove accept a bare npm name the way install does", async () => {
+  const removals: { source: string; scope: "global" | "project" }[] = [];
+  const updates: (string | undefined)[] = [];
+  const restoreCatalog = mockPackageCatalog({
+    packages: [{ source: "npm:pi-extmgr@1.2.0", name: "pi-extmgr", scope: "global" }],
+    updates: [
+      { source: "npm:pi-extmgr@1.2.0", displayName: "pi-extmgr", type: "npm", scope: "global" },
+    ],
+    updateImpl: (source) => {
+      updates.push(source);
+    },
+    removeImpl: (source, scope) => {
+      removals.push({ source, scope });
+    },
+  });
+
+  try {
+    const { pi, ctx } = createMockHarness();
+    await updatePackage("pi-extmgr", ctx, pi);
+    assert.deepEqual(updates, ["npm:pi-extmgr"]);
+
+    await removePackage("pi-extmgr", ctx, pi);
+    assert.deepEqual(removals, [{ source: "npm:pi-extmgr@1.2.0", scope: "global" }]);
+  } finally {
+    restoreCatalog();
+  }
+});
+
 void test("removePackage does not attempt removal when the package is not installed", async () => {
   const removals: { source: string; scope: "global" | "project" }[] = [];
   const restoreCatalog = mockPackageCatalog({
