@@ -91,7 +91,8 @@ function expandToken(token: string): Comparator[] | undefined {
   return version ? [{ operator, version }] : undefined;
 }
 
-function satisfiesRange(
+/** Whether a version satisfies a simple npm range; undefined when the range is not understood. */
+export function satisfiesRange(
   actualValue: string | undefined,
   range: string | undefined
 ): boolean | undefined {

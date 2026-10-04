@@ -123,7 +123,7 @@ export function isExactNpmVersion(version: string | undefined): boolean {
   return Boolean(version && EXACT_VERSION_PATTERN.test(version));
 }
 
-function isImmutableGitRef(ref: string | undefined): boolean {
+export function isImmutableGitRef(ref: string | undefined): boolean {
   return Boolean(ref && IMMUTABLE_GIT_REF_PATTERN.test(ref));
 }
 
