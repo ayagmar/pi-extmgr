@@ -2,6 +2,8 @@
 //   1. Every extension entry in the package.json "pi" manifest imports and default-exports a factory.
 //   2. The real pi CLI (devDependency) loads the package directory in RPC mode, which runs the
 //      factories and session_start without any model call. A factory that throws makes pi exit 1.
+//      An event handler that throws (session_start included) is not fatal: pi reports it as an
+//      `extension_error` JSON line on stdout and still exits 0, so those lines fail the test too.
 import { spawn } from "node:child_process";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -34,6 +36,13 @@ try {
   if (code !== 0 || stderr.includes("Failed to load extension")) {
     console.error(stderr);
     throw new Error(`pi ${piPkg.version} failed to load the package (exit ${code})`);
+  }
+  const extensionErrors = parseExtensionErrors(stdout);
+  if (extensionErrors.length > 0) {
+    for (const { extensionPath, event, error } of extensionErrors) {
+      console.error(`${extensionPath}: ${event} handler threw: ${error}`);
+    }
+    throw new Error(`pi ${piPkg.version} reported ${extensionErrors.length} extension error(s)`);
   }
   const commands = parseCommands(stdout);
   console.log(
@@ -81,18 +90,27 @@ function runRpc(cliPath, dir) {
   });
 }
 
-function parseCommands(output) {
+function parseMessages(output) {
+  const messages = [];
   for (const line of output.split("\n")) {
     try {
-      const message = JSON.parse(line);
-      if (message.id === "commands" && message.success !== false) {
-        return (message.data?.commands ?? [])
-          .filter((command) => command.source === "extension")
-          .map((command) => `/${command.name}`);
-      }
+      messages.push(JSON.parse(line));
     } catch {
       // not JSON
     }
   }
-  return [];
+  return messages;
+}
+
+function parseCommands(output) {
+  const response = parseMessages(output).find(
+    (message) => message?.id === "commands" && message.success !== false
+  );
+  return (response?.data?.commands ?? [])
+    .filter((command) => command.source === "extension")
+    .map((command) => `/${command.name}`);
+}
+
+function parseExtensionErrors(output) {
+  return parseMessages(output).filter((message) => message?.type === "extension_error");
 }
