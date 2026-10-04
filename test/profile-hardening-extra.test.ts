@@ -8,7 +8,10 @@ import { type PackageCatalog, setPackageCatalogFactory } from "../src/packages/c
 import { planProfileApplication } from "../src/profiles/apply.js";
 import { applyProfileWithOutcome } from "../src/profiles/execute.js";
 import { evaluateProfileReview } from "../src/profiles/review.js";
-import { calculateProfileDiagnostics } from "../src/profiles/runtime-state.js";
+import {
+  calculateProfileDiagnostics,
+  verifyInstalledTargets,
+} from "../src/profiles/runtime-state.js";
 import { normalizeProfile, parseExternalProfile } from "../src/profiles/schema.js";
 import { loadProfileSource } from "../src/profiles/source.js";
 import {
@@ -1050,6 +1053,95 @@ void test("profile review blocks project-scoped packages in an untrusted project
       assert.equal(outcome.applied, false);
       assert.deepEqual(installs, []);
       assert.ok(notifications.some((entry) => entry.message.includes("trusted project")));
+    } finally {
+      restoreCatalog();
+    }
+  });
+});
+
+void test("installed-result verification accepts floating npm ranges, dist-tags and git branches", async () => {
+  await withProfileEnvironment(async (root) => {
+    const npmRoot = join(root, "installed-npm");
+    const gitRoot = join(root, "installed-git");
+    await mkdir(npmRoot, { recursive: true });
+    await mkdir(gitRoot, { recursive: true });
+    await writeFile(
+      join(npmRoot, "package.json"),
+      JSON.stringify({ name: "demo", version: "1.3.0" }),
+      "utf8"
+    );
+    await writeFile(join(gitRoot, "package.json"), JSON.stringify({ name: "repo" }), "utf8");
+    const commit = "0123456789abcdef0123456789abcdef01234567";
+    const verify = async (npmSource: string, gitSource: string) => {
+      const restoreCatalog = mockPackageCatalog({
+        packages: [
+          { source: npmSource, name: "demo", scope: "global", resolvedPath: npmRoot },
+          { source: gitSource, name: "repo", scope: "global", resolvedPath: gitRoot },
+        ],
+      });
+      try {
+        const { ctx, pi } = createMockHarness({
+          cwd: root,
+          hasUI: false,
+          execImpl: () => ({ code: 0, stdout: `${commit}\n`, stderr: "", killed: false }),
+        });
+        return await verifyInstalledTargets(
+          normalizeProfile({
+            name: "floating",
+            packages: [
+              { source: npmSource, scope: "global" },
+              { source: gitSource, scope: "global" },
+            ],
+          }),
+          ctx,
+          pi
+        );
+      } finally {
+        restoreCatalog();
+      }
+    };
+
+    assert.deepEqual(await verify("npm:demo@^1.2.0", "git:https://example.test/repo.git@main"), []);
+    assert.deepEqual(
+      await verify("npm:demo@latest", "git:https://example.test/repo.git@v1.0.0"),
+      []
+    );
+    assert.deepEqual(
+      await verify("npm:demo@1.3.0", `git:https://example.test/repo.git@${commit}`),
+      []
+    );
+    assert.deepEqual(await verify("npm:demo@^2.0.0", "git:https://example.test/repo.git@main"), [
+      "npm:demo@^2.0.0 (global)",
+    ]);
+    assert.deepEqual(
+      await verify("npm:demo@1.2.0", `git:https://example.test/repo.git@${"f".repeat(40)}`),
+      ["npm:demo@1.2.0 (global)", `git:https://example.test/repo.git@${"f".repeat(40)} (global)`]
+    );
+  });
+});
+
+void test("applying a profile with an npm range installs and passes verification", async () => {
+  await withProfileEnvironment(async (root) => {
+    const mutations: string[] = [];
+    const restoreCatalog = mockPackageCatalog({
+      packages: [],
+      installImpl: (source, scope) => {
+        mutations.push(`install:${source}:${scope}`);
+      },
+    });
+    try {
+      const { ctx, pi } = createMockHarness({ cwd: root, hasUI: false });
+      const outcome = await applyProfileWithOutcome(
+        normalizeProfile({ name: "current", packages: [] }),
+        normalizeProfile({
+          name: "ranged",
+          packages: [{ source: "npm:demo@^1.2.0", scope: "global" }],
+        }),
+        ctx,
+        pi
+      );
+      assert.deepEqual(mutations, ["install:npm:demo@^1.2.0:global"]);
+      assert.equal(outcome.applied, true);
     } finally {
       restoreCatalog();
     }

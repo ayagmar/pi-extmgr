@@ -12,7 +12,7 @@ import {
   SettingsManager,
   VERSION,
 } from "@earendil-works/pi-coding-agent";
-import { inspectInstalledPackageCompatibility } from "../doctor/compatibility.js";
+import { inspectInstalledPackageCompatibility, satisfiesRange } from "../doctor/compatibility.js";
 import { getInstalledPackagesAllScopes } from "../packages/discovery.js";
 import { type InstalledPackage } from "../types/index.js";
 import { isProjectTrusted } from "../utils/mode.js";
@@ -32,6 +32,7 @@ import {
   getEffectivePackageSource,
   getProfilePackageIdentity,
   isExactNpmVersion,
+  isImmutableGitRef,
   normalizeProfile,
   type ProfilePackage,
 } from "./schema.js";
@@ -223,12 +224,21 @@ function installedRuntimeMatchesProfileTarget(
   const expectedKind = getPackageSourceKind(expectedSource);
   if (expectedKind === "npm") {
     const expectedVersion = parsePackageNameAndVersion(expectedSource).version;
-    return !expectedVersion || runtime.version === expectedVersion;
+    if (!expectedVersion) return true;
+    if (isExactNpmVersion(expectedVersion)) return runtime.version === expectedVersion;
+    // A range must be satisfied, as pi checks it. A dist-tag, a range this
+    // parser does not understand, or an unknown installed version cannot be
+    // checked here, so the identity match stands.
+    return satisfiesRange(runtime.version, expectedVersion) !== false;
   }
   if (expectedKind === "git") {
     const expectedRef = splitGitRepoAndRef(stripGitSourcePrefix(expectedSource)).ref;
     if (!expectedRef) return true;
-    if (runtime.gitCommit) return runtime.gitCommit === expectedRef;
+    // Only a commit can be compared with the checked-out commit; a branch or
+    // tag must be the ref pi was configured with.
+    if (runtime.gitCommit && isImmutableGitRef(expectedRef)) {
+      return runtime.gitCommit.toLowerCase() === expectedRef.toLowerCase();
+    }
     const configuredRef = splitGitRepoAndRef(stripGitSourcePrefix(candidate.source)).ref;
     return configuredRef === expectedRef;
   }
