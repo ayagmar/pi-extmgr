@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import test from "node:test";
 import { type ExtensionAPI, type ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import { listExtensionTrash } from "../src/extensions/trash.js";
@@ -1010,6 +1010,31 @@ void test("installFromUrl aborts stalled downloads instead of hanging forever", 
   } finally {
     globalThis.fetch = originalFetch;
     globalThis.setTimeout = originalSetTimeout;
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
+
+void test("a failed URL install reports why it failed, not just that it failed", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "pi-extmgr-url-exists-"));
+  const destination = join(cwd, ".pi", "extensions", "demo.ts");
+  try {
+    await mkdir(dirname(destination), { recursive: true });
+    await writeFile(destination, "// existing\n", "utf8");
+    const { pi, ctx, notifications } = createMockHarness({
+      cwd,
+      hasUI: true,
+      confirmImpl: (title) => title !== "Replace extension",
+    });
+
+    await installFromUrl("https://example.com/demo.ts", "demo.ts", ctx, pi, { scope: "project" });
+
+    const error = notifications.find((notification) => notification.level === "error");
+    assert.equal(
+      error?.message,
+      "Installation failed: Replacement cancelled; existing extension was preserved."
+    );
+    assert.equal(await readFile(destination, "utf8"), "// existing\n");
+  } finally {
     await rm(cwd, { recursive: true, force: true });
   }
 });

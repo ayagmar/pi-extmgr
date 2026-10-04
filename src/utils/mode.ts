@@ -79,7 +79,9 @@ export async function runCustomUI<T>(
 }
 
 /**
- * Execute operation with automatic error handling
+ * Run an operation and report a failure instead of throwing. `errorMessage`
+ * prefixes the cause; it never replaces it, since the cause is often the
+ * only actionable part ("Destination already exists: …").
  */
 export async function tryOperation<T>(
   ctx: ExtensionCommandContext,
@@ -89,7 +91,11 @@ export async function tryOperation<T>(
   try {
     return await operation();
   } catch (err) {
-    const msg = errorMessage || (err instanceof Error ? err.message : String(err));
+    const cause = err instanceof Error ? err.message : String(err);
+    const msg =
+      !errorMessage || !cause || cause.startsWith(errorMessage)
+        ? cause || errorMessage || "Operation failed"
+        : `${errorMessage}: ${cause}`;
     notify(ctx, msg, "error");
     return undefined;
   }
