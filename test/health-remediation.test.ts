@@ -30,7 +30,7 @@ function stubRuntime(pi: unknown, owners: OwnerSpec[]): void {
         source: owner.source,
         scope: owner.scope ?? "user",
         origin: owner.origin ?? "package",
-        path: owner.path ?? "/nowhere",
+        path: owner.path ?? `/nowhere/${owner.source}`,
       },
     }));
   (pi as { getAllTools: () => unknown[] }).getAllTools = () => [];

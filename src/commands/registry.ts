@@ -45,7 +45,7 @@ async function showDoctor(ctx: ExtensionCommandContext, pi: ExtensionAPI): Promi
     }
   }
   if (conflicts.length === 0) {
-    lines.push("No command or tool conflicts detected.");
+    lines.push("No command conflicts detected.");
   } else {
     lines.push(`Conflicts detected: ${conflicts.length}`);
     for (const conflict of conflicts) {
