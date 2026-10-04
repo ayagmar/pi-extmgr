@@ -9,7 +9,11 @@ import {
 import { Key, matchesKey, truncateToWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import { handleTrashSubcommand } from "../commands/trash.js";
 import { inspectInstalledPackageCompatibility } from "../doctor/compatibility.js";
-import { findRuntimeConflicts, type RuntimeConflict } from "../doctor/conflicts.js";
+import {
+  describeConflictOwner,
+  findRuntimeConflicts,
+  type RuntimeConflict,
+} from "../doctor/conflicts.js";
 import { getRuntimeOwners, type RuntimeOwner } from "../doctor/runtime.js";
 import { discoverExtensions, setExtensionState } from "../extensions/discovery.js";
 import { listExtensionTrash, type TrashRecord } from "../extensions/trash.js";
@@ -121,7 +125,7 @@ export interface SafeConflictFix {
 
 /**
  * Deterministic, reversible fixes only: disable enabled local extensions that
- * shadow a package-provided command or tool. Never removes packages.
+ * shadow a package-provided command. Never removes packages.
  */
 export function planSafeConflictFixes(
   conflicts: RuntimeConflict[],
@@ -191,7 +195,7 @@ function renderHealthLines(
   for (const conflict of snapshot.conflicts.slice(0, 5)) {
     lines.push(
       truncateToWidth(
-        `  • ${conflict.kind} ${conflict.name} · ${conflict.owners.map((owner) => owner.source).join(", ")}`,
+        `  • ${conflict.kind} ${conflict.name} · ${conflict.owners.map(describeConflictOwner).join(", ")}`,
         safeWidth,
         ""
       )

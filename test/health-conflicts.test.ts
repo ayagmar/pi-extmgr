@@ -145,3 +145,27 @@ void test("safe conflict fixes only disable enabled local extensions shadowing p
     1
   );
 });
+
+void test("auto vs auto conflicts are detected but never auto-fixed", async () => {
+  const { findRuntimeConflicts } = await import("../src/doctor/conflicts.js");
+  const conflicts = findRuntimeConflicts([
+    {
+      kind: "command",
+      name: "demo",
+      source: "auto",
+      scope: "project",
+      origin: "top-level",
+      path: "/repo/.pi/extensions/demo.ts",
+    },
+    {
+      kind: "command",
+      name: "demo",
+      source: "auto",
+      scope: "project",
+      origin: "top-level",
+      path: "/repo/.pi/extensions/other.ts",
+    },
+  ]);
+  assert.equal(conflicts.length, 1);
+  assert.equal(planSafeConflictFixes(conflicts, [localEntry]).length, 0);
+});
