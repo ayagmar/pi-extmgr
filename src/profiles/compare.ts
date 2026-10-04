@@ -1,6 +1,5 @@
 import { readFile } from "node:fs/promises";
 import { getProjectConfigPath } from "../utils/pi-paths.js";
-import { planProfileApplication } from "./apply.js";
 import { type DiagnosticStatus, type ExtmgrProfile, getEffectivePackageSource } from "./schema.js";
 
 export interface ProfilePolicy {
@@ -25,13 +24,6 @@ export interface ProfilePackageDiagnostic {
   compatibility: DiagnosticStatus;
   integrity: DiagnosticStatus;
   notes: string[];
-}
-
-export function compareProfiles(
-  left: ExtmgrProfile,
-  right: ExtmgrProfile
-): ReturnType<typeof planProfileApplication> {
-  return planProfileApplication(left, right);
 }
 
 export function validateProfilePolicy(

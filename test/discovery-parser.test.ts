@@ -4,9 +4,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
-import { getInstalledPackages, isSourceInstalled } from "../src/packages/discovery.js";
+import { getInstalledPackages } from "../src/packages/discovery.js";
 import { isPackageSource, normalizePackageSource, parseNpmSource } from "../src/utils/format.js";
 import { getPackageSourceKind, normalizePackageIdentity } from "../src/utils/package-source.js";
+import { getProjectConfigDir } from "../src/utils/pi-paths.js";
 import { createMockHarness } from "./helpers/mocks.js";
 import { mockPackageCatalog } from "./helpers/package-catalog.js";
 
@@ -54,131 +55,40 @@ void test("getInstalledPackages reads structured package records and keeps proje
   }
 });
 
-void test("isSourceInstalled matches exact package sources without substring false positives", async () => {
-  const restoreCatalog = mockPackageCatalog({
-    packages: [
-      {
-        source: "npm:demo-package-two@1.0.0",
-        name: "demo-package-two",
-        version: "1.0.0",
-        scope: "global",
-      },
-    ],
-  });
+void test("package identities match exact sources and resolve local paths per scope", () => {
+  // npm identities ignore versions but never match by substring.
+  assert.equal(
+    normalizePackageIdentity("npm:demo-package-two@1.0.0"),
+    normalizePackageIdentity("npm:demo-package-two")
+  );
+  assert.notEqual(
+    normalizePackageIdentity("npm:demo-package"),
+    normalizePackageIdentity("npm:demo-package-two@1.0.0")
+  );
 
-  try {
-    const { ctx } = createMockHarness();
-    assert.equal(await isSourceInstalled("npm:demo-package", ctx), false);
-    assert.equal(await isSourceInstalled("npm:demo-package-two@1.0.0", ctx), true);
-  } finally {
-    restoreCatalog();
-  }
-});
+  // POSIX local paths stay case-sensitive.
+  assert.notEqual(
+    normalizePackageIdentity("/opt/extensions/Foo/index.ts"),
+    normalizePackageIdentity("/opt/extensions/foo/index.ts")
+  );
 
-void test("isSourceInstalled supports scope-aware checks", async () => {
-  const restoreCatalog = mockPackageCatalog({
-    packages: [
-      { source: "npm:demo-package@1.0.0", name: "demo-package", version: "1.0.0", scope: "global" },
-      {
-        source: "npm:demo-package@1.0.0",
-        name: "demo-package",
-        version: "1.0.0",
-        scope: "project",
-      },
-    ],
-  });
-
-  try {
-    const { ctx } = createMockHarness();
-    assert.equal(await isSourceInstalled("npm:demo-package@1.0.0", ctx, { scope: "global" }), true);
-    assert.equal(
-      await isSourceInstalled("npm:demo-package@1.0.0", ctx, { scope: "project" }),
-      true
-    );
-  } finally {
-    restoreCatalog();
-  }
-});
-
-void test("isSourceInstalled keeps case-sensitive local paths distinct", async () => {
-  const restoreCatalog = mockPackageCatalog({
-    packages: [
-      {
-        source: "/opt/extensions/Foo/index.ts",
-        name: "index.ts",
-        scope: "global",
-      },
-    ],
-  });
-
-  try {
-    const { ctx } = createMockHarness();
-    assert.equal(await isSourceInstalled("/opt/extensions/Foo/index.ts", ctx), true);
-    assert.equal(await isSourceInstalled("/opt/extensions/foo/index.ts", ctx), false);
-  } finally {
-    restoreCatalog();
-  }
-});
-
-void test("isSourceInstalled resolves project-relative local paths against cwd", async () => {
-  const cwd = "/workspace/project";
-  const restoreCatalog = mockPackageCatalog({
-    packages: [
-      {
-        source: "../vendor/demo",
-        name: "demo",
-        scope: "project",
-        resolvedPath: "/workspace/project/vendor/demo",
-      },
-    ],
-  });
-
-  try {
-    const { ctx } = createMockHarness({ cwd });
-    assert.equal(await isSourceInstalled("./vendor/demo", ctx), true);
-    assert.equal(await isSourceInstalled("/workspace/project/vendor/demo", ctx), true);
-  } finally {
-    restoreCatalog();
-  }
-});
-
-void test("isSourceInstalled resolves project-relative local paths without resolvedPath metadata", async () => {
-  const cwd = "/workspace/project";
-  const restoreCatalog = mockPackageCatalog({
-    packages: [
-      {
-        source: "../vendor/demo",
-        name: "demo",
-        scope: "project",
-      },
-    ],
-  });
-
-  try {
-    const { ctx } = createMockHarness({ cwd });
-    assert.equal(await isSourceInstalled("/workspace/project/vendor/demo", ctx), true);
-  } finally {
-    restoreCatalog();
-  }
-});
-
-void test("isSourceInstalled resolves global-relative local paths against agent dir", async () => {
-  const restoreCatalog = mockPackageCatalog({
-    packages: [
-      {
-        source: "./vendor/demo",
-        name: "demo",
-        scope: "global",
-      },
-    ],
-  });
-
-  try {
-    const { ctx } = createMockHarness({ cwd: "/workspace/project" });
-    assert.equal(await isSourceInstalled(`${getAgentDir()}/vendor/demo`, ctx), true);
-  } finally {
-    restoreCatalog();
-  }
+  // Relative sources resolve against their settings scope (.pi or the agent dir).
+  const projectRoot = getProjectConfigDir("/workspace/project");
+  assert.equal(
+    normalizePackageIdentity("../vendor/demo", { cwd: projectRoot }),
+    normalizePackageIdentity("/workspace/project/vendor/demo")
+  );
+  assert.equal(
+    normalizePackageIdentity("./vendor/demo", { cwd: getAgentDir() }),
+    normalizePackageIdentity(`${getAgentDir()}/vendor/demo`)
+  );
+  assert.equal(
+    normalizePackageIdentity("../vendor/demo", {
+      cwd: projectRoot,
+      resolvedPath: "/workspace/project/vendor/demo",
+    }),
+    normalizePackageIdentity("./vendor/demo", { cwd: "/workspace/project" })
+  );
 });
 
 void test("normalizePackageSource preserves git and local path sources", () => {

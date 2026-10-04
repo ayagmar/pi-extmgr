@@ -559,20 +559,3 @@ export async function discoverPackageExtensions(
   entries.sort((a, b) => a.displayName.localeCompare(b.displayName));
   return entries;
 }
-
-export async function setPackageExtensionState(
-  packageSource: string,
-  extensionPath: string,
-  scope: Scope,
-  target: State,
-  cwd: string,
-  projectTrusted = false
-): Promise<{ ok: true } | { ok: false; error: string }> {
-  return applyPackageExtensionStateChanges(
-    packageSource,
-    scope,
-    [{ extensionPath, target }],
-    cwd,
-    projectTrusted
-  );
-}

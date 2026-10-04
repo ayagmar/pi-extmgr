@@ -4,11 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { getPackageCatalog, suppressPackageManagerOutput } from "../src/packages/catalog.js";
-import {
-  comparePackageScopes,
-  getPackageScopeLabel,
-  movePackageBetweenScopes,
-} from "../src/packages/scopes.js";
+import { comparePackageScopes, movePackageBetweenScopes } from "../src/packages/scopes.js";
 
 void test("TUI output shim drains captured streams and preserves child errors", async () => {
   const events: string[] = [];
@@ -165,11 +161,6 @@ void test("package mutations refuse malformed settings without reporting success
     else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
     await rm(root, { recursive: true, force: true });
   }
-});
-
-void test("getPackageScopeLabel explains persisted package scope", () => {
-  assert.match(getPackageScopeLabel("project"), /\.pi\/settings\.json/);
-  assert.match(getPackageScopeLabel("global"), /\.pi\/agent\/settings\.json/);
 });
 
 void test("package catalog lists project packages first with pi's installed paths", async () => {

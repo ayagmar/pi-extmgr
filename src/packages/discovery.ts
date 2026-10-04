@@ -7,7 +7,6 @@ import {
   type ExtensionAPI,
   type ExtensionCommandContext,
   type ExtensionContext,
-  getAgentDir,
 } from "@earendil-works/pi-coding-agent";
 import { CACHE_LIMITS, PAGE_SIZE, TIMEOUTS } from "../constants.js";
 import { type InstalledPackage, type NpmPackage, type SearchCache } from "../types/index.js";
@@ -26,8 +25,7 @@ import { readSummary } from "../utils/fs.js";
 import { isProjectTrusted } from "../utils/mode.js";
 import { fetchWithTimeout } from "../utils/network.js";
 import { execNpm } from "../utils/npm-exec.js";
-import { getPackageSourceKind, normalizePackageIdentity } from "../utils/package-source.js";
-import { getProjectConfigDir } from "../utils/pi-paths.js";
+import { getPackageSourceKind } from "../utils/package-source.js";
 import { getPackageCatalog } from "./catalog.js";
 
 const NPM_SEARCH_API = "https://registry.npmjs.org/-/v1/search";
@@ -382,39 +380,6 @@ export async function getInstalledPackages(
   await addPackageMetadata(packages, ctx, pi, onProgress, signal);
   throwIfAborted(signal);
   return packages;
-}
-
-function getInstalledPackageIdentity(pkg: InstalledPackage, options?: { cwd?: string }): string {
-  const baseCwd =
-    pkg.scope === "project"
-      ? options?.cwd
-        ? getProjectConfigDir(options.cwd)
-        : undefined
-      : getAgentDir();
-
-  return normalizePackageIdentity(pkg.source, {
-    ...(pkg.resolvedPath ? { resolvedPath: pkg.resolvedPath } : {}),
-    ...(baseCwd ? { cwd: baseCwd } : {}),
-  });
-}
-
-export async function isSourceInstalled(
-  source: string,
-  ctx: ExtensionCommandContext | ExtensionContext,
-  options?: { scope?: "global" | "project" }
-): Promise<boolean> {
-  const installed = await getPackageCatalog(ctx.cwd, isProjectTrusted(ctx)).listInstalledPackages({
-    dedupe: false,
-  });
-  return installed.some((pkg) => {
-    if (options?.scope && pkg.scope !== options.scope) return false;
-    const baseCwds =
-      pkg.scope === "project" ? [ctx.cwd, getProjectConfigDir(ctx.cwd)] : [getAgentDir(), ctx.cwd];
-    const actual = getInstalledPackageIdentity(pkg, { cwd: ctx.cwd });
-    return baseCwds.some(
-      (baseCwd) => normalizePackageIdentity(source, { cwd: baseCwd }) === actual
-    );
-  });
 }
 
 export async function getInstalledPackagesAllScopes(

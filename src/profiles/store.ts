@@ -111,11 +111,6 @@ async function enqueueWrite<T>(path: string, operation: () => Promise<T>): Promi
   return result;
 }
 
-export async function writeProfileStore(path: string, store: ProfileStoreFile): Promise<void> {
-  const normalized = parseProfileStore(store, path);
-  await enqueueWrite(path, () => writeAtomically(path, normalized, "profiles"));
-}
-
 export async function saveNamedProfile(
   path: string,
   profile: ExtmgrProfile,
