@@ -1,5 +1,9 @@
-import { basename } from "node:path";
-import { type ExtensionAPI, type ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
+import { basename, isAbsolute, join, relative } from "node:path";
+import {
+  type ExtensionAPI,
+  type ExtensionCommandContext,
+  getAgentDir,
+} from "@earendil-works/pi-coding-agent";
 import { showListReport, showReport } from "../ui/report.js";
 import { parseLookbackDuration } from "../utils/duration.js";
 import {
@@ -178,6 +182,24 @@ async function showHistoryHelp(ctx: ExtensionCommandContext): Promise<void> {
   await showReport(ctx, { title: "History usage", size: "wide", lines });
 }
 
+/**
+ * The session dir pi resolved from `--session-dir`, PI_CODING_AGENT_SESSION_DIR
+ * or settings `sessionDir`, or undefined for pi's default per-project folders
+ * under `<agentDir>/sessions` (which listAll() scans as a whole).
+ */
+export function resolveCustomSessionDir(ctx: ExtensionCommandContext): string | undefined {
+  const sessionManager = ctx.sessionManager as Partial<ExtensionCommandContext["sessionManager"]>;
+  const currentDir =
+    typeof sessionManager.getSessionDir === "function" ? sessionManager.getSessionDir() : undefined;
+  if (!currentDir) return undefined;
+
+  const pathFromDefaultRoot = relative(join(getAgentDir(), "sessions"), currentDir);
+  const insideDefaultRoot =
+    pathFromDefaultRoot === "" ||
+    (!pathFromDefaultRoot.startsWith("..") && !isAbsolute(pathFromDefaultRoot));
+  return insideDefaultRoot ? undefined : currentDir;
+}
+
 function formatSessionSuffix(sessionFile: string): string {
   return basename(sessionFile) || sessionFile;
 }
@@ -207,7 +229,7 @@ export async function handleHistorySubcommand(
   }
 
   if (parsed.global) {
-    const changes = await queryGlobalHistory(parsed.filters);
+    const changes = await queryGlobalHistory(parsed.filters, resolveCustomSessionDir(ctx));
     if (changes.length === 0) {
       notify(ctx, "No matching extension changes found across persisted sessions.", "info");
       return;
