@@ -520,6 +520,96 @@ void test("updatePackage reloads after a real update", async () => {
   );
 });
 
+void test("updatePackage runs pi's update even when no update is reported", async () => {
+  // checkForAvailableUpdates() skips pinned git refs and missing installs,
+  // which pi's update() still reconciles (checks out the new ref, reinstalls).
+  const updateCalls: (string | undefined)[] = [];
+  const output: string[] = [];
+  const originalLog = console.log;
+  console.log = (...args: unknown[]) => {
+    output.push(args.map(String).join(" "));
+  };
+  const restoreCatalog = mockPackageCatalog({
+    updates: [],
+    updateImpl: (source) => {
+      updateCalls.push(source);
+      return true;
+    },
+  });
+
+  try {
+    const { pi, ctx } = createMockHarness();
+    await updatePackage("git:github.com/x/y@v2", ctx, pi);
+  } finally {
+    restoreCatalog();
+    console.log = originalLog;
+  }
+
+  assert.deepEqual(updateCalls, ["git:github.com/x/y@v2"]);
+  assert.ok(output.some((line) => line.includes("Updated git:github.com/x/y@v2.")));
+  assert.ok(output.some((line) => line.includes("Reload pi to apply changes. (Package updated.)")));
+});
+
+void test("updatePackage calls pi's update and reports up to date when nothing changed", async () => {
+  const updateCalls: (string | undefined)[] = [];
+  const output: string[] = [];
+  const originalLog = console.log;
+  console.log = (...args: unknown[]) => {
+    output.push(args.map(String).join(" "));
+  };
+  const restoreCatalog = mockPackageCatalog({
+    updates: [],
+    updateImpl: (source) => {
+      updateCalls.push(source);
+      return false;
+    },
+  });
+
+  try {
+    const { pi, ctx } = createMockHarness();
+    await updatePackage("npm:pi-extmgr", ctx, pi);
+  } finally {
+    restoreCatalog();
+    console.log = originalLog;
+  }
+
+  assert.deepEqual(updateCalls, ["npm:pi-extmgr"]);
+  assert.ok(output.some((line) => line.includes("already up to date (or pinned)")));
+  assert.equal(
+    output.some((line) => line.includes("Reload pi")),
+    false
+  );
+});
+
+void test("updatePackages runs pi's update for every package even when none is reported", async () => {
+  const updateCalls: (string | undefined)[] = [];
+  const output: string[] = [];
+  const originalLog = console.log;
+  console.log = (...args: unknown[]) => {
+    output.push(args.map(String).join(" "));
+  };
+  const restoreCatalog = mockPackageCatalog({
+    updates: [],
+    updateImpl: (source) => {
+      updateCalls.push(source);
+      return true;
+    },
+  });
+
+  try {
+    const { pi, ctx } = createMockHarness();
+    await updatePackages(ctx, pi);
+  } finally {
+    restoreCatalog();
+    console.log = originalLog;
+  }
+
+  assert.deepEqual(updateCalls, [undefined]);
+  assert.ok(
+    output.some((line) => line.includes("Reload pi to apply changes. (Packages updated.)"))
+  );
+});
+
 void test("successful package updates invalidate entrypoint discovery cache", async () => {
   const cwd = await mkdtemp(join(tmpdir(), "pi-extmgr-update-cache-"));
   const packageRoot = join(cwd, "pkg");
@@ -583,9 +673,9 @@ void test("scoped update rows explicitly confirm the all-scope Pi behavior", asy
   }
 });
 
-void test("updatePackage handles update checks that fail", async () => {
+void test("updatePackage handles pi update failures", async () => {
   const restoreCatalog = mockPackageCatalog({
-    checkForAvailableUpdatesImpl: () => {
+    updateImpl: () => {
       throw new Error("registry unavailable");
     },
   });
@@ -671,9 +761,9 @@ void test("updatePackages treats no available updates as a no-op", async () => {
   assert.equal(latestHistory?.packageName, "all packages");
 });
 
-void test("updatePackages handles update checks that fail", async () => {
+void test("updatePackages handles pi update failures", async () => {
   const restoreCatalog = mockPackageCatalog({
-    checkForAvailableUpdatesImpl: () => {
+    updateImpl: () => {
       throw new Error("registry unavailable");
     },
   });

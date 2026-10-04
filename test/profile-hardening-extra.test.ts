@@ -295,7 +295,7 @@ void test("post-install confirmed incompatibility rolls back before obsolete rem
             removed.push(source);
             packages = packages.filter((pkg) => pkg.source !== source);
           },
-          update: async () => undefined,
+          update: async () => false,
         }) satisfies PackageCatalog
     );
     try {
@@ -824,7 +824,7 @@ void test("rollback refuses to claim success when an unexpected package remains"
       remove: async (source, scope) => {
         packages = packages.filter((pkg) => !(pkg.source === source && pkg.scope === scope));
       },
-      update: async () => undefined,
+      update: async () => false,
     };
     setPackageCatalogFactory(() => catalog);
     try {
@@ -864,7 +864,7 @@ void test("final-state verification detects post-persist drift and rolls back", 
       remove: async () => {
         installed = false;
       },
-      update: async () => undefined,
+      update: async () => false,
     };
     setPackageCatalogFactory(() => catalog);
     try {

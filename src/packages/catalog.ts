@@ -1,3 +1,5 @@
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 import {
   DefaultPackageManager,
   getAgentDir,
@@ -27,7 +29,11 @@ export interface PackageCatalog {
   checkForAvailableUpdates(): Promise<AvailablePackageUpdate[]>;
   install(source: string, scope: Scope, onProgress?: (event: ProgressEvent) => void): Promise<void>;
   remove(source: string, scope: Scope, onProgress?: (event: ProgressEvent) => void): Promise<void>;
-  update(source?: string, onProgress?: (event: ProgressEvent) => void): Promise<void>;
+  /**
+   * Run pi's update for one source (or every package). Resolves true when an
+   * installed package changed or was (re)installed, false when nothing did.
+   */
+  update(source?: string, onProgress?: (event: ProgressEvent) => void): Promise<boolean>;
 }
 
 export interface PackageCatalogOptions {
@@ -159,6 +165,60 @@ export function suppressPackageManagerOutput(packageManager: unknown): void {
   };
 }
 
+async function readTrimmed(path: string): Promise<string | undefined> {
+  try {
+    return (await readFile(path, "utf8")).trim();
+  } catch {
+    return undefined;
+  }
+}
+
+/** The commit a git checkout is on, read from .git without spawning git. */
+async function readGitHead(repoDir: string): Promise<string | undefined> {
+  const gitDir = join(repoDir, ".git");
+  const head = await readTrimmed(join(gitDir, "HEAD"));
+  if (!head?.startsWith("ref: ")) return head;
+
+  const ref = head.slice("ref: ".length);
+  const loose = await readTrimmed(join(gitDir, ref));
+  if (loose) return loose;
+  const packed = await readTrimmed(join(gitDir, "packed-refs"));
+  const line = packed?.split("\n").find((entry) => entry.endsWith(` ${ref}`));
+  return line?.split(" ")[0] ?? head;
+}
+
+/**
+ * What is installed for each configured package: its path, package.json
+ * version and git commit. pi's update() does not say whether it changed
+ * anything, so comparing this before and after tells a real update (or a
+ * reinstall of a missing package) from a no-op.
+ */
+async function fingerprintInstalledPackages(
+  packageManager: DefaultPackageManager
+): Promise<string> {
+  const entries = await Promise.all(
+    packageManager.listConfiguredPackages().map(async ({ source, scope }) => {
+      const installedPath = packageManager.getInstalledPath(source, scope);
+      if (!installedPath) return [scope, source, "missing"];
+      const manifest = await readTrimmed(join(installedPath, "package.json"));
+      let version: unknown;
+      try {
+        version = manifest ? (JSON.parse(manifest) as { version?: unknown }).version : undefined;
+      } catch {
+        version = manifest;
+      }
+      return [
+        scope,
+        source,
+        installedPath,
+        version ?? null,
+        (await readGitHead(installedPath)) ?? null,
+      ];
+    })
+  );
+  return JSON.stringify(entries);
+}
+
 function createDefaultPackageCatalog(
   cwd: string,
   projectTrusted = false,
@@ -228,7 +288,9 @@ function createDefaultPackageCatalog(
       setProgressCallback(packageManager, onProgress);
 
       try {
+        const before = await fingerprintInstalledPackages(packageManager);
         await packageManager.update(source);
+        return before !== (await fingerprintInstalledPackages(packageManager));
       } finally {
         setProgressCallback(packageManager, undefined);
       }

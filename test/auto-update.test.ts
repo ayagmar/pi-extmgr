@@ -270,7 +270,7 @@ void test("startAutoUpdateTimer waits until persisted nextCheck when not yet due
       return Promise.resolve(undefined);
     },
     update() {
-      return Promise.resolve(undefined);
+      return Promise.resolve(false);
     },
   }));
 
@@ -331,7 +331,7 @@ void test("startAutoUpdateTimer checks immediately when persisted nextCheck is d
       return Promise.resolve(undefined);
     },
     update() {
-      return Promise.resolve(undefined);
+      return Promise.resolve(false);
     },
   }));
 
@@ -457,7 +457,7 @@ void test("a scheduled check still running at session shutdown leaves the retire
         }),
       install: () => Promise.resolve(undefined),
       remove: () => Promise.resolve(undefined),
-      update: () => Promise.resolve(undefined),
+      update: () => Promise.resolve(false),
     }));
   });
 

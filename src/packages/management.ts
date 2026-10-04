@@ -107,23 +107,9 @@ async function updatePackageInternal(
       }
     }
 
-    const updates = await getPackageCatalog(
-      ctx.cwd,
-      isProjectTrusted(ctx)
-    ).checkForAvailableUpdates();
-    const hasUpdate = updates.some(
-      (update) => normalizePackageIdentity(update.source) === updateIdentity
-    );
-
-    if (!hasUpdate) {
-      notify(ctx, `${source} is already up to date (or pinned).`, "info");
-      logPackageUpdate(pi, source, source, undefined, true);
-      clearUpdatesAvailable(pi, ctx, [updateIdentity]);
-      void updateExtmgrStatus(ctx, pi);
-      return { reloaded: false, updated: false };
-    }
-
-    await runTaskWithLoader(
+    // Like `pi update <source>`: no availability pre-check, which would skip
+    // pinned git refs that changed and packages whose install is missing.
+    const changed = await runTaskWithLoader(
       ctx,
       {
         title: "Update Package",
@@ -132,15 +118,21 @@ async function updatePackageInternal(
         fallbackWithoutLoader: true,
         overlay: true,
       },
-      async ({ setMessage }) => {
-        await getPackageCatalog(ctx.cwd, isProjectTrusted(ctx), {
+      ({ setMessage }) =>
+        getPackageCatalog(ctx.cwd, isProjectTrusted(ctx), {
           suppressOutput: ctx.mode === "tui",
         }).update(source, (event) => {
           setMessage(getProgressMessage(event, `Updating ${source}...`));
-        });
-        return undefined;
-      }
+        })
     );
+
+    if (changed === false) {
+      notify(ctx, `${source} is already up to date (or pinned).`, "info");
+      logPackageUpdate(pi, source, source, undefined, true);
+      clearUpdatesAvailable(pi, ctx, [updateIdentity]);
+      void updateExtmgrStatus(ctx, pi);
+      return { reloaded: false, updated: false };
+    }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     const errorMsg = `Update failed: ${message}`;
@@ -180,19 +172,8 @@ async function updatePackagesInternal(
   showProgress(ctx, "Updating", "all packages");
 
   try {
-    const updates = await getPackageCatalog(
-      ctx.cwd,
-      isProjectTrusted(ctx)
-    ).checkForAvailableUpdates();
-    if (updates.length === 0) {
-      notify(ctx, "All packages are already up to date.", "info");
-      logPackageUpdate(pi, BULK_UPDATE_LABEL, BULK_UPDATE_LABEL, undefined, true);
-      clearUpdatesAvailable(pi, ctx);
-      void updateExtmgrStatus(ctx, pi);
-      return { reloaded: false };
-    }
-
-    await runTaskWithLoader(
+    // Like `pi update`: no availability pre-check (see updatePackageInternal).
+    const changed = await runTaskWithLoader(
       ctx,
       {
         title: "Update Packages",
@@ -201,15 +182,21 @@ async function updatePackagesInternal(
         fallbackWithoutLoader: true,
         overlay: true,
       },
-      async ({ setMessage }) => {
-        await getPackageCatalog(ctx.cwd, isProjectTrusted(ctx), {
+      ({ setMessage }) =>
+        getPackageCatalog(ctx.cwd, isProjectTrusted(ctx), {
           suppressOutput: ctx.mode === "tui",
         }).update(undefined, (event) => {
           setMessage(getProgressMessage(event, "Updating all packages..."));
-        });
-        return undefined;
-      }
+        })
     );
+
+    if (changed === false) {
+      notify(ctx, "All packages are already up to date.", "info");
+      logPackageUpdate(pi, BULK_UPDATE_LABEL, BULK_UPDATE_LABEL, undefined, true);
+      clearUpdatesAvailable(pi, ctx);
+      void updateExtmgrStatus(ctx, pi);
+      return { reloaded: false };
+    }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     const errorMsg = `Update failed: ${message}`;
