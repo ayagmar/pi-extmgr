@@ -1,8 +1,14 @@
 import assert from "node:assert/strict";
+import { spawn } from "node:child_process";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import {
+  DefaultPackageManager,
+  getAgentDir,
+  SettingsManager,
+} from "@earendil-works/pi-coding-agent";
 import { getPackageCatalog, suppressPackageManagerOutput } from "../src/packages/catalog.js";
 import { comparePackageScopes, movePackageBetweenScopes } from "../src/packages/scopes.js";
 
@@ -16,11 +22,16 @@ void test("TUI output shim drains captured streams and preserves child errors", 
       return child;
     },
   };
+  const runners = {
+    runCommand: () => Promise.resolve(),
+    runCommandCapture: () => Promise.resolve(""),
+  };
   const manager = {
     spawnCommand: () => {
       throw new Error("inherited output should not be used");
     },
     spawnCaptureCommand: () => child,
+    ...runners,
   };
 
   suppressPackageManagerOutput(manager);
@@ -29,20 +40,76 @@ void test("TUI output shim drains captured streams and preserves child errors", 
   assert.deepEqual(events, ["stdout", "stderr", "child failed"]);
 
   assert.throws(
-    () => suppressPackageManagerOutput({ spawnCaptureCommand: () => child }),
+    () => suppressPackageManagerOutput({ spawnCaptureCommand: () => child, ...runners }),
     /spawnCommand is unavailable/
   );
   assert.throws(
-    () => suppressPackageManagerOutput({ spawnCommand: () => child }),
+    () => suppressPackageManagerOutput({ spawnCommand: () => child, ...runners }),
     /spawnCaptureCommand is unavailable/
+  );
+  assert.throws(
+    () =>
+      suppressPackageManagerOutput({
+        spawnCommand: () => child,
+        spawnCaptureCommand: () => child,
+        runCommandCapture: runners.runCommandCapture,
+      }),
+    /runCommand is unavailable/
+  );
+  assert.throws(
+    () =>
+      suppressPackageManagerOutput({
+        spawnCommand: () => child,
+        spawnCaptureCommand: () => child,
+        runCommand: runners.runCommand,
+      }),
+    /runCommandCapture is unavailable/
   );
 
   const invalidChildManager = {
     spawnCommand: () => child,
     spawnCaptureCommand: () => undefined,
+    ...runners,
   };
   suppressPackageManagerOutput(invalidChildManager);
   assert.throws(() => invalidChildManager.spawnCommand(), /invalid child process/);
+});
+
+void test("TUI output shim keeps the npm error text when pi's install fails", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "pi-extmgr-suppressed-install-"));
+  try {
+    const agentDir = getAgentDir();
+    const settingsManager = SettingsManager.create(cwd, agentDir, { projectTrusted: false });
+    const manager = new DefaultPackageManager({ cwd, agentDir, settingsManager });
+    // Every command pi spawns prints an npm-style reason to stderr and fails.
+    (manager as unknown as { spawnCaptureCommand: () => unknown }).spawnCaptureCommand = () =>
+      spawn(
+        process.execPath,
+        ["-e", "process.stderr.write('npm ERR! 404 Not Found - typo-pkg'); process.exit(1)"],
+        { stdio: ["ignore", "pipe", "pipe"] }
+      );
+    suppressPackageManagerOutput(manager);
+
+    await assert.rejects(manager.install("npm:typo-pkg"), /failed with code 1: npm ERR! 404/);
+  } finally {
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
+
+void test("TUI output shim keeps only the end of very long command errors", async () => {
+  const manager = {
+    spawnCommand: () => ({}),
+    spawnCaptureCommand: () => ({}),
+    runCommand: () => Promise.resolve(),
+    runCommandCapture: () =>
+      Promise.reject(new Error(`npm install failed with code 1: ${"x".repeat(10_000)}TAIL`)),
+  };
+  suppressPackageManagerOutput(manager);
+  await assert.rejects(manager.runCommand(), (error: Error) => {
+    assert.ok(error.message.length <= 4001);
+    assert.ok(error.message.endsWith("TAIL"));
+    return true;
+  });
 });
 
 void test("comparePackageScopes identifies project overrides and scope-only packages", () => {
