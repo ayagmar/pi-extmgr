@@ -48,37 +48,37 @@ function normalizePackageRootCandidate(candidate: string): string {
   return resolved;
 }
 
-/**
- * Where pi loads the package from. Catalog records already carry pi's
- * installed path; for records without one, ask pi's package manager, which
- * knows the managed npm/git roots, the legacy global npm root and how
- * local sources resolve against their settings scope.
- */
-function toPackageRoot(
-  pkg: InstalledPackage,
-  cwd: string,
-  projectTrusted: boolean
-): string | undefined {
-  if (pkg.resolvedPath) {
-    return normalizePackageRootCandidate(pkg.resolvedPath);
-  }
+type InstalledPathLookup = (pkg: InstalledPackage) => string | undefined;
 
-  try {
-    const agentDir = getAgentDir();
-    const packageManager = new DefaultPackageManager({
-      cwd,
-      agentDir,
-      settingsManager: createSettingsManager(cwd, projectTrusted),
-    });
-    const installedPath = packageManager.getInstalledPath(
-      pkg.source,
-      pkg.scope === "project" ? "project" : "user"
-    );
-    return installedPath ? normalizePackageRootCandidate(installedPath) : undefined;
-  } catch {
-    // Untrusted project storage or an unusable npm command: nothing pi would load.
-    return undefined;
-  }
+/**
+ * Where pi loads a package from, for records that carry no installed path.
+ * pi's package manager knows the managed npm/git roots, the legacy global
+ * npm root and how local sources resolve against their settings scope. One
+ * manager is shared per lookup so its global-root probe runs at most once.
+ */
+function createInstalledPathLookup(cwd: string, projectTrusted: boolean): InstalledPathLookup {
+  let packageManager: DefaultPackageManager | undefined;
+  return (pkg) => {
+    try {
+      packageManager ??= new DefaultPackageManager({
+        cwd,
+        agentDir: getAgentDir(),
+        settingsManager: createSettingsManager(cwd, projectTrusted),
+      });
+      return packageManager.getInstalledPath(
+        pkg.source,
+        pkg.scope === "project" ? "project" : "user"
+      );
+    } catch {
+      // Untrusted project storage or an unusable npm command: nothing pi would load.
+      return undefined;
+    }
+  };
+}
+
+function toPackageRoot(pkg: InstalledPackage, lookup: InstalledPathLookup): string | undefined {
+  const installedPath = pkg.resolvedPath ?? lookup(pkg);
+  return installedPath ? normalizePackageRootCandidate(installedPath) : undefined;
 }
 
 function createSettingsManager(cwd: string, projectTrusted: boolean): SettingsManager {
@@ -495,6 +495,7 @@ export async function discoverPackageExtensions(
   ]);
 
   const canonicalResources = await resolveConfiguredPackageExtensions(cwd, projectTrusted);
+  const lookupInstalledPath = createInstalledPathLookup(cwd, projectTrusted);
 
   for (const pkg of packages) {
     const resolvedResources = resourcesForPackage(canonicalResources, pkg.source, pkg.scope);
@@ -526,7 +527,7 @@ export async function discoverPackageExtensions(
     // Characterization callers may provide detached package records, and standalone
     // installs permit a root index fallback that Pi package conventions do not expose.
     // Keep this bounded scanner for those cases only; never descend into dependencies.
-    const packageRoot = toPackageRoot(pkg, cwd, projectTrusted);
+    const packageRoot = toPackageRoot(pkg, lookupInstalledPath);
     if (!packageRoot) continue;
 
     const packageFilters =
