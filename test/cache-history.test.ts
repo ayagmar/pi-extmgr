@@ -9,6 +9,7 @@ import {
   SessionManager,
 } from "@earendil-works/pi-coding-agent";
 import { clearMetadataCacheCommand } from "../src/commands/cache.js";
+import { handleHistorySubcommand, resolveCustomSessionDir } from "../src/commands/history.js";
 import { getSearchCache, setSearchCache } from "../src/packages/discovery.js";
 import {
   formatChangeEntry,
@@ -171,4 +172,74 @@ void test("history records local extension deletion and auto-update config chang
   assert.ok(secondChange);
   assert.match(formatChangeEntry(firstChange), /Deleted/);
   assert.match(formatChangeEntry(secondChange), /Scheduled update checks set to weekly/);
+});
+
+async function withAgentDir<T>(run: (agentDir: string) => Promise<T>): Promise<T> {
+  const agentDir = await mkdtemp(join(tmpdir(), "pi-extmgr-history-agent-"));
+  const previous = process.env.PI_CODING_AGENT_DIR;
+  process.env.PI_CODING_AGENT_DIR = agentDir;
+  try {
+    return await run(agentDir);
+  } finally {
+    if (previous === undefined) delete process.env.PI_CODING_AGENT_DIR;
+    else process.env.PI_CODING_AGENT_DIR = previous;
+    await rm(agentDir, { recursive: true, force: true });
+  }
+}
+
+function withSessionDir(ctx: ExtensionCommandContext, sessionDir: string): void {
+  (ctx.sessionManager as unknown as { getSessionDir: () => string }).getSessionDir = () =>
+    sessionDir;
+}
+
+void test("history --global reads sessions from pi's custom session dir", async () => {
+  await withAgentDir(async () => {
+    const customDir = await mkdtemp(join(tmpdir(), "pi-extmgr-custom-sessions-"));
+    try {
+      const session = SessionManager.create(join(customDir, "project"), customDir);
+      session.appendMessage({ role: "user", content: "history", timestamp: Date.now() });
+      session.appendCustomEntry("extmgr-change", {
+        action: "cache_clear",
+        timestamp: 42,
+        success: true,
+      });
+      session.appendMessage({
+        role: "assistant",
+        content: [],
+        api: "test",
+        provider: "test",
+        model: "test",
+        usage: {
+          input: 0,
+          output: 0,
+          cacheRead: 0,
+          cacheWrite: 0,
+          totalTokens: 0,
+          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+        },
+        stopReason: "stop",
+        timestamp: Date.now(),
+      });
+      const { pi, ctx, notifications } = createMockHarness({ hasUI: true, mode: "rpc" });
+      withSessionDir(ctx, customDir);
+      assert.equal(resolveCustomSessionDir(ctx), customDir);
+
+      await handleHistorySubcommand(ctx, pi, ["--global"], true);
+
+      assert.ok(
+        notifications.some((note) => note.message.includes("Extension Change History (global")),
+        JSON.stringify(notifications)
+      );
+    } finally {
+      await rm(customDir, { recursive: true, force: true });
+    }
+  });
+});
+
+void test("history --global scans every project when pi uses its default session dir", async () => {
+  await withAgentDir(async (agentDir) => {
+    const { ctx } = createMockHarness();
+    withSessionDir(ctx, join(agentDir, "sessions", "--repo--"));
+    assert.equal(resolveCustomSessionDir(ctx), undefined);
+  });
 });
