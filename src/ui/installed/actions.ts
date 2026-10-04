@@ -285,7 +285,7 @@ export async function handleUnifiedAction(
   }
 
   if (result.type === "bulk") {
-    return handleBulkAction(result.itemIds, result.action, byId, ctx);
+    return handleBulkAction(result.itemIds, result.action, byId, ctx, pi);
   }
 
   if (result.type === "remote") {
