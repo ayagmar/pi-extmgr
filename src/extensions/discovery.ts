@@ -386,6 +386,7 @@ export async function setExtensionState(
     }
 
     const verb = target === "enabled" ? "enable" : "disable";
+    const settingsBlockError = `Cannot enable ${entry.activePath}: a pattern in the "extensions" setting disables it. Edit the setting or use pi config.`;
     // Enabling an entry that only a settings override disabled needs no rename.
     const needsRename = !(target === "enabled" && entry.settingsDisabled);
 
@@ -412,13 +413,11 @@ export async function setExtensionState(
         };
       }
       if (!cleanup || cleanup.removed === 0) {
-        return {
-          ok: false,
-          error: `Cannot enable ${entry.activePath}: a pattern in the "extensions" setting disables it. Edit the setting or use pi config.`,
-        };
+        return { ok: false, error: settingsBlockError };
       }
     }
 
+    let undoRename: (() => Promise<void>) | undefined;
     if (needsRename) {
       const source = target === "enabled" ? entry.disabledPath : entry.activePath;
       const destination = target === "enabled" ? entry.activePath : entry.disabledPath;
@@ -434,10 +433,28 @@ export async function setExtensionState(
         }
 
         await rename(source, destination);
+        undoRename = () => rename(destination, source);
       }
     }
 
-    await cleanup?.apply();
+    if (!cleanup) return { ok: true };
+    // Undo the rename when enabling cannot take effect, so the file and the
+    // staged UI change stay consistent and a retry works.
+    const rollback = async (error: string) => {
+      if (!undoRename) return { ok: false as const, error };
+      try {
+        await undoRename();
+        return { ok: false as const, error };
+      } catch (undoError) {
+        const reason = undoError instanceof Error ? undoError.message : String(undoError);
+        return { ok: false as const, error: `${error} (the rename could not be undone: ${reason})` };
+      }
+    };
+    // pi applies `!glob` entries too, which no exact-entry cleanup removes.
+    if ((await cleanup.enabledAfterApply()) === false) {
+      return rollback(settingsBlockError);
+    }
+    await cleanup.apply();
     return { ok: true };
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : String(error) };

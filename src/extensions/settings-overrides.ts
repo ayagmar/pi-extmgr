@@ -21,12 +21,13 @@ import { CONFIG_DIR_NAME } from "../utils/pi-paths.js";
  */
 export async function resolveTopLevelExtensionStates(
   cwd: string,
-  projectTrusted: boolean
+  projectTrusted: boolean,
+  settingsManager?: SettingsManager
 ): Promise<Map<string, boolean>> {
   const states = new Map<string, boolean>();
   try {
     const agentDir = getAgentDir();
-    const settingsManager = SettingsManager.create(cwd, agentDir, { projectTrusted });
+    settingsManager ??= SettingsManager.create(cwd, agentDir, { projectTrusted });
     const packageManager = new DefaultPackageManager({ cwd, agentDir, settingsManager });
     const { extensions } = await packageManager.resolve(async () => "skip");
     for (const resource of extensions) {
@@ -42,6 +43,18 @@ export async function resolveTopLevelExtensionStates(
 
 /** Entries that stop a file from loading; `+` entries are never removed. */
 const BLOCKING_PREFIX = /^[-!]/;
+
+type SettingsStorage = Parameters<typeof SettingsManager.fromStorage>[0];
+
+/** Read-only storage serving fixed settings, to ask pi about planned settings. */
+function snapshotStorage(global: unknown, project: unknown): SettingsStorage {
+  const contents = { global: JSON.stringify(global), project: JSON.stringify(project) };
+  return {
+    withLock(scope, fn) {
+      fn(contents[scope]);
+    },
+  };
+}
 
 function toPosixPath(path: string): string {
   return path.split(sep).join("/");
@@ -73,6 +86,12 @@ export interface ExtensionOverrideCleanup {
   readError?: string;
   /** Number of override entries that apply() removes. */
   removed: number;
+  /**
+   * Whether pi loads the file once apply() ran, asked from pi's own resolver
+   * with the planned settings. The file must be at its active path; undefined
+   * when pi does not report it.
+   */
+  enabledAfterApply(): Promise<boolean | undefined>;
   apply(): Promise<void>;
 }
 
@@ -94,6 +113,7 @@ export function planExtensionOverrideCleanup(
     return {
       readError: readErrors.map(({ scope, error }) => `${scope}: ${error.message}`).join("; "),
       removed: 0,
+      enabledAfterApply: () => Promise.resolve(undefined),
       apply: () => Promise.resolve(),
     };
   }
@@ -121,6 +141,17 @@ export function planExtensionOverrideCleanup(
 
   return {
     removed,
+    async enabledAfterApply() {
+      const global = settings.getGlobalSettings();
+      const project = settings.getProjectSettings();
+      if (globalEntries) global.extensions = globalEntries;
+      if (projectEntries) project.extensions = projectEntries;
+      const planned = SettingsManager.fromStorage(snapshotStorage(global, project), {
+        projectTrusted,
+      });
+      const states = await resolveTopLevelExtensionStates(cwd, projectTrusted, planned);
+      return states.get(absolutePath);
+    },
     async apply() {
       if (removed === 0) return;
       if (globalEntries) settings.setExtensionPaths(globalEntries);

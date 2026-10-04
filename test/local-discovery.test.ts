@@ -340,3 +340,48 @@ void test("disable then enable keeps a `+path` that lets the file through a `!gl
     assert.equal(after?.settingsDisabled, undefined);
   });
 });
+
+void test("enabling a renamed extension that a `!glob` still blocks fails and keeps it disabled", async () => {
+  await withAgentDir(async (agentDir, cwd) => {
+    const fooPath = join(agentDir, "extensions", "foo.ts");
+    await writeFile(`${fooPath}.disabled`, "// foo\n", "utf8");
+    await writeFile(
+      join(agentDir, "settings.json"),
+      JSON.stringify({ extensions: ["!extensions/*.ts"] }),
+      "utf8"
+    );
+
+    const foo = (await discoverExtensions(cwd, { projectTrusted: false })).find(
+      (entry) => entry.activePath === fooPath
+    );
+    assert.equal(foo?.state, "disabled");
+    assert.equal(foo?.settingsDisabled, undefined);
+    assert.ok(foo);
+    const result = await setExtensionState(foo, "enabled", { cwd, projectTrusted: false });
+    assert.equal(result.ok, false);
+    assert.match(result.ok ? "" : result.error, /pattern in the "extensions" setting/);
+    assert.equal(existsSync(fooPath), false);
+    assert.equal(existsSync(`${fooPath}.disabled`), true);
+    assert.deepEqual((await readGlobalSettings(agentDir)).extensions, ["!extensions/*.ts"]);
+  });
+});
+
+void test("enabling an extension blocked by both `-path` and a `!glob` fails without editing settings", async () => {
+  await withAgentDir(async (agentDir, cwd) => {
+    const fooPath = join(agentDir, "extensions", "foo.ts");
+    await writeFile(fooPath, "// foo\n", "utf8");
+    const extensions = ["-extensions/foo.ts", "!extensions/*.ts"];
+    await writeFile(join(agentDir, "settings.json"), JSON.stringify({ extensions }), "utf8");
+
+    const foo = (await discoverExtensions(cwd, { projectTrusted: false })).find(
+      (entry) => entry.activePath === fooPath
+    );
+    assert.equal(foo?.settingsDisabled, true);
+    assert.ok(foo);
+    const result = await setExtensionState(foo, "enabled", { cwd, projectTrusted: false });
+    assert.equal(result.ok, false);
+    assert.match(result.ok ? "" : result.error, /pattern in the "extensions" setting/);
+    assert.equal(existsSync(fooPath), true);
+    assert.deepEqual((await readGlobalSettings(agentDir)).extensions, extensions);
+  });
+});
