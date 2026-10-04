@@ -134,6 +134,25 @@ async function hasStandaloneEntrypoint(packageRoot: string): Promise<boolean> {
   return false;
 }
 
+/**
+ * Packages pi supplies to every extension at load time, so a standalone
+ * install needs no bundled copy (pi-coding-agent src/core/extensions/loader.ts
+ * getAliases() and virtual-modules.ts). docs/packages.md asks for them in
+ * peerDependencies, but older packages list them in dependencies.
+ */
+const HOST_PROVIDED_PACKAGES = new Set([
+  "@earendil-works/pi-coding-agent",
+  "@earendil-works/pi-agent-core",
+  "@earendil-works/pi-tui",
+  "@earendil-works/pi-ai",
+  "@mariozechner/pi-coding-agent",
+  "@mariozechner/pi-agent-core",
+  "@mariozechner/pi-tui",
+  "@mariozechner/pi-ai",
+  "typebox",
+  "@sinclair/typebox",
+]);
+
 async function getStandaloneDependencyError(packageRoot: string): Promise<string | undefined> {
   const manifest = await readPackageManifest(packageRoot);
   const dependencies = manifest?.dependencies;
@@ -143,6 +162,7 @@ async function getStandaloneDependencyError(packageRoot: string): Promise<string
 
   const missingDependencies: string[] = [];
   for (const dependencyName of Object.keys(dependencies)) {
+    if (HOST_PROVIDED_PACKAGES.has(dependencyName)) continue;
     const dependencyPath = join(packageRoot, "node_modules", dependencyName);
     if (!(await fileExists(dependencyPath))) {
       missingDependencies.push(dependencyName);
