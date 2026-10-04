@@ -96,6 +96,18 @@ interface PackageManagerChild {
 interface PackageManagerRuntime {
   spawnCommand?: (...args: unknown[]) => PackageManagerChild;
   spawnCaptureCommand?: (...args: unknown[]) => PackageManagerChild;
+  runCommand?: (...args: unknown[]) => Promise<void>;
+  runCommandCapture?: (...args: unknown[]) => Promise<string>;
+}
+
+/** npm and git can print pages of output; keep the end, where the reason is. */
+const MAX_COMMAND_ERROR_CHARS = 4000;
+
+function trimCommandError(error: unknown): unknown {
+  if (!(error instanceof Error) || error.message.length <= MAX_COMMAND_ERROR_CHARS) return error;
+  const trimmed = new Error(`…${error.message.slice(-MAX_COMMAND_ERROR_CHARS)}`);
+  if (error.stack) trimmed.stack = error.stack;
+  return trimmed;
 }
 
 /**
@@ -103,8 +115,13 @@ interface PackageManagerRuntime {
  *
  * Pi does not expose a public output-mode option yet, so this deliberately
  * small compatibility boundary is kept isolated and fails loudly if the
- * private runtime shape changes. Captured streams are resumed immediately;
- * the caller still owns the child's exit/error listeners and semantics.
+ * private runtime shape changes.
+ *
+ * pi's runCommand inherits the child's output and rejects with only the exit
+ * code, so it is routed through runCommandCapture, which collects stdout and
+ * stderr and puts them in the error: a failed install still says why. Any
+ * other direct spawnCommand caller gets a captured child whose streams are
+ * resumed immediately; it still owns the exit/error listeners and semantics.
  */
 export function suppressPackageManagerOutput(packageManager: unknown): void {
   const internal = packageManager as PackageManagerRuntime;
@@ -116,6 +133,19 @@ export function suppressPackageManagerOutput(packageManager: unknown): void {
       "Pi package manager cannot suppress output: spawnCaptureCommand is unavailable"
     );
   }
+  if (typeof internal.runCommand !== "function") {
+    throw new Error("Pi package manager cannot suppress output: runCommand is unavailable");
+  }
+  if (typeof internal.runCommandCapture !== "function") {
+    throw new Error("Pi package manager cannot suppress output: runCommandCapture is unavailable");
+  }
+
+  const runCapture = internal.runCommandCapture.bind(packageManager);
+  internal.runCommand = (...args) =>
+    runCapture(...args).then(
+      () => undefined,
+      (error: unknown) => Promise.reject(trimCommandError(error))
+    );
 
   const capture = internal.spawnCaptureCommand.bind(packageManager);
   internal.spawnCommand = (...args) => {
