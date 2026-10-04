@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -128,6 +129,32 @@ void test("discoverExtensions lists symlinked extension files and directories li
     assert.equal(byName.get(".pi/extensions/disabled.ts")?.state, "disabled");
     assert.equal(byName.get(".pi/extensions/linked-dir/index.ts")?.state, "enabled");
     assert.equal(byName.has(".pi/extensions/broken.ts"), false);
+  } finally {
+    await rm(cwd, { recursive: true, force: true });
+    await rm(outside, { recursive: true, force: true });
+  }
+});
+
+void test("toggling an extension in a symlinked directory leaves the link target untouched", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "pi-extmgr-local-symlink-toggle-"));
+  const outside = await mkdtemp(join(tmpdir(), "pi-extmgr-local-symlink-checkout-"));
+  try {
+    const extensionsDir = join(cwd, ".pi", "extensions");
+    await mkdir(extensionsDir, { recursive: true });
+    await mkdir(join(outside, "my-ext"));
+    await writeFile(join(outside, "my-ext", "index.ts"), "// under development\n", "utf8");
+    await symlink(join(outside, "my-ext"), join(extensionsDir, "my-ext"), "dir");
+
+    const entries = await discoverExtensions(cwd, { projectTrusted: true });
+    const linked = entries.find((entry) => entry.displayName === ".pi/extensions/my-ext/index.ts");
+    assert.ok(linked);
+    assert.equal(linked.linkTarget, await realpath(join(outside, "my-ext")));
+
+    const result = await setExtensionState(linked, "disabled");
+    assert.equal(result.ok, false);
+    assert.match(result.ok ? "" : result.error, /symlinked extension directory/);
+    assert.equal(existsSync(join(outside, "my-ext", "index.ts")), true);
+    assert.equal(existsSync(join(outside, "my-ext", "index.ts.disabled")), false);
   } finally {
     await rm(cwd, { recursive: true, force: true });
     await rm(outside, { recursive: true, force: true });

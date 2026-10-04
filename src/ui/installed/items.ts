@@ -85,6 +85,7 @@ export function buildUnifiedItems(
       activePath: entry.activePath,
       disabledPath: entry.disabledPath,
       originalState: entry.state,
+      ...(entry.linkTarget ? { linkTarget: entry.linkTarget } : {}),
     });
   }
 
