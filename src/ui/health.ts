@@ -17,6 +17,7 @@ import { getInstalledPackagesAllScopes } from "../packages/discovery.js";
 import { removePackageWithOutcome } from "../packages/management.js";
 import { movePackageBetweenScopes } from "../packages/scopes.js";
 import { type InstalledPackage } from "../types/index.js";
+import { activeKeyHint } from "../utils/key-hints.js";
 import { isProjectTrusted, requireCustomUI, runCustomUI } from "../utils/mode.js";
 import { notify } from "../utils/notify.js";
 import { normalizePackageIdentity } from "../utils/package-source.js";
@@ -145,7 +146,12 @@ export function planSafeConflictFixes(
   return fixes;
 }
 
-function renderHealthLines(snapshot: HealthSnapshot, width: number, theme: Theme): string[] {
+function renderHealthLines(
+  snapshot: HealthSnapshot,
+  width: number,
+  theme: Theme,
+  cancelHint: string
+): string[] {
   const safeWidth = Math.max(1, width);
   const lines: string[] = [];
   const incompatible = snapshot.compatibility.filter(
@@ -257,7 +263,7 @@ function renderHealthLines(snapshot: HealthSnapshot, width: number, theme: Theme
     truncateToWidth(
       theme.fg(
         "dim",
-        "c conflict actions · f fix safe issues · r refresh · l reload · t trash actions · Esc back"
+        `c conflict actions · f fix safe issues · r refresh · l reload · t trash actions · ${cancelHint}`
       ),
       safeWidth,
       ""
@@ -284,7 +290,12 @@ async function showHealthPanel(
         render(width: number) {
           return [
             ...border.render(width),
-            ...renderHealthLines(snapshot, width, theme),
+            ...renderHealthLines(
+              snapshot,
+              width,
+              theme,
+              activeKeyHint(keybindings, "tui.select.cancel", "back")
+            ),
             ...border.render(width),
           ];
         },

@@ -2,7 +2,9 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { initTheme } from "@earendil-works/pi-coding-agent";
 import { visibleWidth } from "@earendil-works/pi-tui";
+import { runTaskWithLoader } from "../src/ui/async-task.js";
 import { showListReport, showReport } from "../src/ui/report.js";
+import { formatKey } from "../src/utils/key-hints.js";
 import { captureCustomComponent } from "./helpers/custom-component.js";
 import { createMockHarness } from "./helpers/mocks.js";
 
@@ -37,7 +39,7 @@ void test("report content is shown in a panel and closes on Escape", async () =>
   assert.ok(lines.some((line) => line.includes("Demo report")));
   assert.ok(lines.some((line) => line.includes("first line")));
   assert.ok(lines.some((line) => line.includes("second line")));
-  assert.ok(lines.some((line) => line.includes("Esc close")));
+  assert.ok(lines.some((line) => line.includes("Esc/Ctrl+c close")));
 });
 
 void test("report panels always fit within the terminal height", async () => {
@@ -66,7 +68,7 @@ void test("report panels always fit within the terminal height", async () => {
       `panel of ${rendered.length} rows overflows a ${height}-row terminal`
     );
     assert.ok(
-      rendered[rendered.length - 1]?.includes("Esc close"),
+      rendered[rendered.length - 1]?.includes("Esc/Ctrl+c close"),
       "expected the close hint to stay visible"
     );
   }
@@ -211,4 +213,51 @@ void test("empty list reports produce a short notification instead of a panel", 
 
   assert.equal(customCallCount(), 0);
   assert.ok(notifications.some((entry) => entry.message.toLowerCase().includes("no trash")));
+});
+
+void test("report and loader hints show the user's cancel binding", async () => {
+  const { ctx } = createMockHarness({ hasUI: true });
+  let reportLines: string[] = [];
+  (ctx.ui as { custom: (factory: unknown, options?: unknown) => Promise<unknown> }).custom = (
+    factory
+  ) =>
+    captureCustomComponent(
+      factory,
+      ctx.ui.theme,
+      (_component, lines) => {
+        reportLines = lines;
+        return undefined;
+      },
+      { keybindings: { "tui.select.cancel": "ctrl+shift+q" } }
+    );
+
+  await showReport(ctx, { title: "Rebound", lines: ["body"] });
+  assert.ok(reportLines.some((line) => line.includes("Ctrl+Shift+q close")));
+  assert.equal(
+    reportLines.some((line) => line.includes("Esc close")),
+    false
+  );
+
+  let loaderLines: string[] = [];
+  (ctx.ui as { custom: (factory: unknown, options?: unknown) => Promise<unknown> }).custom = (
+    factory
+  ) =>
+    captureCustomComponent(
+      factory,
+      ctx.ui.theme,
+      (_component, lines, completion) => {
+        loaderLines = lines;
+        return completion;
+      },
+      { keybindings: { "tui.select.cancel": "ctrl+g" } }
+    );
+  await runTaskWithLoader(ctx, { title: "Loading", message: "Working..." }, async () => "done");
+  assert.ok(loaderLines.some((line) => line.includes("Ctrl+g cancel")));
+});
+
+void test("formatKey labels every modifier and uses Option on macOS", () => {
+  assert.equal(formatKey("ctrl+shift+x", "linux"), "Ctrl+Shift+x");
+  assert.equal(formatKey("alt+enter", "linux"), "Alt+Enter");
+  assert.equal(formatKey("alt+enter", "darwin"), "Option+Enter");
+  assert.equal(formatKey("pageDown", "linux"), "PgDn");
 });

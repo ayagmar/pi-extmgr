@@ -2,6 +2,7 @@ import {
   DynamicBorder,
   type ExtensionCommandContext,
   type ExtensionContext,
+  type KeybindingsManager,
   type Theme,
 } from "@earendil-works/pi-coding-agent";
 import {
@@ -12,6 +13,7 @@ import {
   Text,
   type TUI,
 } from "@earendil-works/pi-tui";
+import { activeKeyHint } from "../utils/key-hints.js";
 import { hasCustomUI } from "../utils/mode.js";
 
 type AnyContext = ExtensionCommandContext | ExtensionContext;
@@ -81,6 +83,7 @@ interface LoaderConfig {
 function createLoaderComponent(
   tui: TUI,
   theme: Theme,
+  keybindings: KeybindingsManager,
   title: string,
   message: string,
   cancellable: boolean,
@@ -113,7 +116,9 @@ function createLoaderComponent(
   if (cancellable) {
     (loader as CancellableLoader).onAbort = onCancel;
     container.addChild(new Spacer(1));
-    container.addChild(new Text(theme.fg("dim", "Esc cancel"), 1, 0));
+    container.addChild(
+      new Text(theme.fg("dim", activeKeyHint(keybindings, "tui.select.cancel", "cancel")), 1, 0)
+    );
   }
 
   container.addChild(new Spacer(1));
@@ -149,7 +154,7 @@ export async function runTaskWithLoader<T>(
   const result = await ctx.ui.custom<
     TaskSuccess<T> | typeof TASK_ABORTED | typeof TASK_FAILED | undefined
   >(
-    (tui, theme, _keybindings, done) => {
+    (tui, theme, keybindings, done) => {
       let finished = false;
       const finish = (
         value: TaskSuccess<T> | typeof TASK_ABORTED | typeof TASK_FAILED | undefined
@@ -164,6 +169,7 @@ export async function runTaskWithLoader<T>(
       const { container, loader, signal } = createLoaderComponent(
         tui,
         theme,
+        keybindings,
         config.title,
         config.message,
         config.cancellable ?? true,

@@ -429,7 +429,7 @@ void test("/extensions keeps staged changes after viewing item details", async (
 
     (ctx.ui as { custom: (factory: unknown) => Promise<unknown> }).custom = async (factory) =>
       captureCustomComponent(factory, ctx.ui.theme, (component, lines, completion) => {
-        if (lines.some((line) => line.includes("Esc close"))) {
+        if (lines.some((line) => line.includes("Esc/Ctrl+c close"))) {
           detailLines = lines;
           component.handleInput?.("\u001b");
           return completion;
@@ -709,8 +709,8 @@ void test("manager hints use the active public selection bindings", async () => 
     } as never
   );
 
-  assert.match(hints, /Ctrl\+enter actions/);
-  assert.match(hints, /Alt\+left back/);
+  assert.match(hints, /Ctrl\+Enter actions/);
+  assert.match(hints, /(Alt|Option)\+left back/);
   assert.match(hints, /B act on 2/);
 });
 

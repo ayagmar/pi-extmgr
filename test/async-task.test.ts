@@ -54,7 +54,7 @@ void test("floating loaders are centered relative to the terminal", async () => 
           const component = factory(
             { requestRender: () => undefined },
             { fg: (_name: string, text: string) => text, bold: (text: string) => text },
-            {},
+            { getKeys: () => ["escape"] },
             complete
           );
           const value = await completion;
@@ -98,7 +98,7 @@ void test("runTaskWithLoader does not rerun the task when custom UI returned und
           factory(
             { requestRender: () => undefined },
             { fg: (_name: string, text: string) => text, bold: (text: string) => text },
-            {},
+            { getKeys: () => ["escape"] },
             () => undefined
           );
           return undefined;
@@ -188,7 +188,7 @@ void test("cancelled loaders block late status rendering", async () => {
           const component = factory(
             { requestRender: () => (renders += 1) },
             { fg: (_name: string, text: string) => text, bold: (text: string) => text },
-            {},
+            { getKeys: () => ["escape"] },
             complete
           );
           component.handleInput?.("\u001b");

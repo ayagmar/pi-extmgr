@@ -21,6 +21,7 @@ import {
   truncateToWidth,
   wrapTextWithAnsi,
 } from "@earendil-works/pi-tui";
+import { activeKeyHint } from "../utils/key-hints.js";
 import { hasCustomUI } from "../utils/mode.js";
 import { type NotifyLevel, notify } from "../utils/notify.js";
 
@@ -142,7 +143,11 @@ export class ReportPanel {
       out.push(truncateToWidth(`  ${line}`, safeWidth, ""));
     }
     for (let i = visible.length; i < viewportRows; i++) out.push("");
-    out.push(rule, truncateToWidth(this.theme.fg("dim", ` ${scrollHint}Esc close`), safeWidth, ""));
+    const closeHint = activeKeyHint(this.keybindings, "tui.select.cancel", "close");
+    out.push(
+      rule,
+      truncateToWidth(this.theme.fg("dim", ` ${scrollHint}${closeHint}`), safeWidth, "")
+    );
     return out;
   }
 }
