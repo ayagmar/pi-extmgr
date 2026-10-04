@@ -1,6 +1,6 @@
 import { type ExtensionAPI, type ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import { clearSearchCache } from "../packages/discovery.js";
-import { clearRemotePackageInfoCache } from "../ui/remote.js";
+import { clearRemotePackageInfoCache } from "../ui/discover/metadata.js";
 import { clearCache } from "../utils/cache.js";
 import { logCacheClear } from "../utils/history.js";
 import { notify } from "../utils/notify.js";

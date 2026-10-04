@@ -67,7 +67,7 @@ function requireInteractiveCommand(ctx: ExtensionCommandContext, feature: string
   notify(ctx, `${feature} requires interactive mode.`, "warning");
 }
 
-function showNonInteractiveHelp(ctx: ExtensionCommandContext): void {
+export function showNonInteractiveHelp(ctx: ExtensionCommandContext): void {
   const lines = [
     "Extensions Manager (non-interactive mode)",
     "Remote package browsing requires interactive mode.",
@@ -324,5 +324,3 @@ export function showUnknownCommandMessage(
 
   notify(ctx, `Unknown command: ${rawSubcommand ?? "(empty)"}. Try: ${known}`, "warning");
 }
-
-export { showNonInteractiveHelp };

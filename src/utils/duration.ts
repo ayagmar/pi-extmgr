@@ -72,7 +72,7 @@ function findDurationUnit(
   return allowedUnits.find((unit) => DURATION_UNITS[unit].aliases.includes(rawUnit));
 }
 
-export function parseDurationValue(
+function parseDurationValue(
   input: string,
   options: ParseDurationOptions
 ): ParsedDuration | undefined {

@@ -397,7 +397,7 @@ export async function readPackageManifest(
   }
 }
 
-export async function resolveManifestExtensionEntrypoints(
+async function resolveManifestExtensionEntrypoints(
   packageRoot: string,
   manifest?: PackageManifest
 ): Promise<string[] | undefined> {

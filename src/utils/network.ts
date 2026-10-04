@@ -2,11 +2,11 @@ import { open, rm } from "node:fs/promises";
 import { createAbortError as abortError } from "./abort.js";
 
 export const MAX_COMPRESSED_DOWNLOAD_BYTES = 50 * 1024 * 1024;
-export const MAX_METADATA_RESPONSE_BYTES = 5 * 1024 * 1024;
+const MAX_METADATA_RESPONSE_BYTES = 5 * 1024 * 1024;
 export const MAX_DIRECT_EXTENSION_BYTES = 512 * 1024;
 export const MAX_PROFILE_BYTES = 1024 * 1024;
 
-export function assertSafeHttpsUrl(value: string | URL, label = "URL"): URL {
+function assertSafeHttpsUrl(value: string | URL, label = "URL"): URL {
   let url: URL;
   try {
     url = value instanceof URL ? new URL(value.href) : new URL(value);
@@ -18,7 +18,7 @@ export function assertSafeHttpsUrl(value: string | URL, label = "URL"): URL {
   return url;
 }
 
-export function validateFinalHttpsUrl(response: Response, requested: URL): URL {
+function validateFinalHttpsUrl(response: Response, requested: URL): URL {
   const finalUrl = response.url
     ? assertSafeHttpsUrl(response.url, "Final redirected URL")
     : requested;
@@ -162,7 +162,7 @@ export async function fetchBoundedBytes(
   }
 }
 
-export async function readBoundedResponse(
+async function readBoundedResponse(
   response: Response,
   maxBytes: number,
   signal?: AbortSignal,

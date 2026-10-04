@@ -3,7 +3,7 @@ import { open } from "node:fs/promises";
 import { resolve } from "node:path";
 import { fetchBoundedBytes, MAX_PROFILE_BYTES } from "../utils/network.js";
 
-export const PROFILE_FETCH_TIMEOUT_MS = 30_000;
+const PROFILE_FETCH_TIMEOUT_MS = 30_000;
 
 export interface LoadedProfileSource {
   value: unknown;
@@ -29,7 +29,7 @@ function rejectUnsupportedTransport(source: string): void {
   }
 }
 
-export function normalizeProfileSourceUrl(source: string): {
+function normalizeProfileSourceUrl(source: string): {
   url: URL;
   warnings: string[];
   immutable: boolean;

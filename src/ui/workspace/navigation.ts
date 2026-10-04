@@ -9,7 +9,7 @@ import { type WorkspaceScreen } from "../../types/index.js";
  */
 export type WorkspaceExit = WorkspaceScreen | "reloaded" | undefined;
 
-export const WORKSPACE_SCREENS: ReadonlyArray<{
+const WORKSPACE_SCREENS: ReadonlyArray<{
   id: WorkspaceScreen;
   label: string;
 }> = [

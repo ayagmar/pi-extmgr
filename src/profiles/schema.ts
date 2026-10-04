@@ -7,7 +7,7 @@ import {
 } from "../utils/package-source.js";
 import { getProjectConfigDir } from "../utils/pi-paths.js";
 
-export const PROFILE_SCHEMA_VERSION = 1 as const;
+const PROFILE_SCHEMA_VERSION = 1 as const;
 
 export type ProfileScope = "global" | "project";
 export type ProfileResolution = "locked" | "floating";
@@ -123,11 +123,11 @@ export function isExactNpmVersion(version: string | undefined): boolean {
   return Boolean(version && EXACT_VERSION_PATTERN.test(version));
 }
 
-export function isImmutableGitRef(ref: string | undefined): boolean {
+function isImmutableGitRef(ref: string | undefined): boolean {
   return Boolean(ref && IMMUTABLE_GIT_REF_PATTERN.test(ref));
 }
 
-export function isValidGitRef(ref: string | undefined): boolean {
+function isValidGitRef(ref: string | undefined): boolean {
   return Boolean(ref && isValidGitRefSyntax(ref));
 }
 

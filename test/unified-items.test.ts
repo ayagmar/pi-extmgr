@@ -9,7 +9,7 @@ import {
   type InstalledPackage,
   type PackageExtensionEntry,
 } from "../src/types/index.js";
-import { buildUnifiedItems } from "../src/ui/unified.js";
+import { buildUnifiedItems } from "../src/ui/installed/items.js";
 
 function createPackage(source: string, name: string): InstalledPackage {
   return {

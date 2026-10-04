@@ -56,10 +56,6 @@ export function getPackageSourceKind(source: string): PackageSourceKind {
   return "unknown";
 }
 
-export function normalizeLocalSourceIdentity(source: string): string {
-  return normalizePathIdentity(source);
-}
-
 export function stripGitSourcePrefix(source: string): string {
   const withoutGitPlus = source.startsWith("git+") ? source.slice(4) : source;
   // `git://` is a URL scheme, not the `git:` source prefix.
@@ -115,7 +111,7 @@ export function normalizePackageIdentity(
   if (kind === "local") {
     const localSource =
       options?.resolvedPath ?? resolveLocalSourceForIdentity(normalized, options?.cwd);
-    return `local:${normalizeLocalSourceIdentity(localSource)}`;
+    return `local:${normalizePathIdentity(localSource)}`;
   }
 
   return `raw:${normalized.replace(/\\/g, "/").toLowerCase()}`;

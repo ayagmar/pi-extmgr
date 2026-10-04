@@ -4,7 +4,7 @@ export function normalizeRelativePath(value: string): string {
   return value.replace(/\\/g, "/").replace(/^\.\//, "");
 }
 
-export function hasGlobMagic(path: string): boolean {
+function hasGlobMagic(path: string): boolean {
   return /[*?{}[\]]/.test(path);
 }
 
@@ -23,7 +23,7 @@ export function isSafeRelativePath(path: string): boolean {
   );
 }
 
-export function safeMatchesGlob(targetPath: string, pattern: string): boolean {
+function safeMatchesGlob(targetPath: string, pattern: string): boolean {
   try {
     return matchesGlob(targetPath, pattern);
   } catch {
@@ -39,16 +39,12 @@ export function matchesFilterPattern(targetPath: string, pattern: string): boole
   return safeMatchesGlob(targetPath, normalizedPattern);
 }
 
-export function selectDirectoryFiles(allFiles: readonly string[], directoryPath: string): string[] {
+function selectDirectoryFiles(allFiles: readonly string[], directoryPath: string): string[] {
   const prefix = `${directoryPath}/`;
   return allFiles.filter((file) => file.startsWith(prefix));
 }
 
-export function applySelection(
-  selected: Set<string>,
-  files: Iterable<string>,
-  exclude: boolean
-): void {
+function applySelection(selected: Set<string>, files: Iterable<string>, exclude: boolean): void {
   for (const file of files) {
     if (exclude) {
       selected.delete(file);

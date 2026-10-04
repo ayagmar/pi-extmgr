@@ -61,7 +61,7 @@ const SIZE_OPTIONS = {
 const PANEL_CHROME_ROWS = 8;
 const MIN_VIEWPORT_ROWS = 4;
 
-export class ReportPanel {
+class ReportPanel {
   focused = false;
   private scrollOffset = 0;
 
