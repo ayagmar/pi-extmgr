@@ -227,10 +227,26 @@ Examples:
 /extensions install ./local-folder/
 ```
 
+## Whole-package enable/disable
+
+Select a package and choose **Disable package** (or use **B** for bulk actions) to
+disable its extensions, skills, prompts, and themes together, without uninstalling it.
+**Enable package** restores the previous filters, including intentional exclusions.
+**Configure package extensions** remains extension-only; enable the package before editing.
+
+Changes apply to the selected scope; a project entry can override a global entry.
+Reload and start a **fresh session** to avoid previously read skill instructions remaining
+in context. Independently loaded copies and already-applied side effects are unaffected.
+
+The prior configuration is saved in `piExtmgrDisabled` on the package settings entry.
+Externally edited or invalid snapshots are rejected rather than overwritten.
+Existing extension-only exclusions (including Superpowers exclusions) are preserved,
+not automatically migrated.
+
 ## Tips
 
 - **Staged local changes**: Toggle local extensions on/off, then press `S` to apply all at once.
-- **Package extension config**: Select a package and press `c` (or Enter/A → Configure) to enable/disable individual package entrypoints.
+- **Package extension config**: Select a package and press `c` (or Enter/A → Configure) to enable/disable individual extension entrypoints only; skills, prompts, and themes are unchanged.
   - After saving package extension config, run /reload to apply changes.
 - **Two install modes**:
   - **Managed** (npm/git): installed by Pi's package manager into `~/.pi/agent/npm` / `~/.pi/agent/git` (project scope: `.pi/npm` / `.pi/git`), updated from extmgr or with `pi update --extensions`, supports Pi package manifest/convention loading

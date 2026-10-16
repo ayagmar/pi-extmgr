@@ -2,8 +2,8 @@
 import { type ExtensionAPI, type ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import { removeLocalExtension } from "../../extensions/discovery.js";
 import { undoExtensionTrash } from "../../extensions/trash.js";
+import { applyPackageStateChange } from "../../packages/activation.js";
 import { getInstalledPackagesAllScopes } from "../../packages/discovery.js";
-import { applyPackageExtensionStateChanges } from "../../packages/extensions.js";
 import { removePackageWithOutcome, updatePackageWithOutcome } from "../../packages/management.js";
 import { comparePackageScopes, movePackageBetweenScopes } from "../../packages/scopes.js";
 import {
@@ -39,8 +39,8 @@ const LOCAL_ACTION_OPTIONS = {
 const PACKAGE_ACTION_OPTIONS = {
   details: "View full details",
   configure: "Configure package extensions",
-  enable: "Enable all package extensions",
-  disable: "Disable all package extensions",
+  enable: "Enable package",
+  disable: "Disable package",
   update: "Update package",
   compare: "Compare scopes",
   "move-global": "Move to global scope",
@@ -330,15 +330,11 @@ export async function handlePackageItemAction(
     }
     case "enable":
     case "disable": {
-      if (!item.extensionPaths?.length) {
-        ctx.ui.notify("No package extension entrypoints were discovered.", "warning");
-        return "resume";
-      }
       const target: State = selection === "enable" ? "enabled" : "disabled";
-      const result = await applyPackageExtensionStateChanges(
+      const result = await applyPackageStateChange(
         item.source,
         item.scope,
-        item.extensionPaths.map((extensionPath) => ({ extensionPath, target })),
+        target,
         ctx.cwd,
         isProjectTrusted(ctx)
       );
@@ -346,11 +342,18 @@ export async function handlePackageItemAction(
         ctx.ui.notify(`Package toggle failed: ${result.error}`, "error");
         return "resume";
       }
+      if (!result.changed) {
+        ctx.ui.notify(
+          result.message ?? "Package configuration is already in the requested state.",
+          "info"
+        );
+        return "resume";
+      }
       ctx.ui.notify(
-        `${target === "enabled" ? "Enabled" : "Disabled"} ${item.displayName}.`,
+        `${target === "enabled" ? "Restored previous configuration for" : "Disabled all resources from"} ${item.displayName} (${item.scope}). Extensions, skills, prompts, and themes are affected. A project entry can override a global entry. Reload and start a fresh session to clear previously loaded skill instructions.`,
         "info"
       );
-      return confirmReload(ctx, "Package extension state changed.");
+      return confirmReload(ctx, "Package resource configuration changed.");
     }
     case "configure": {
       const outcome = await configurePackageExtensions(pkg, ctx, pi);

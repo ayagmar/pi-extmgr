@@ -1,11 +1,9 @@
 /** Coordinated bulk package operations for the Installed workspace. */
 import { type ExtensionAPI, type ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
+import { applyPackageStateChange } from "../../packages/activation.js";
 import { getPackageCatalog } from "../../packages/catalog.js";
 import { clearSearchCache } from "../../packages/discovery.js";
-import {
-  applyPackageExtensionStateChanges,
-  clearPackageEntrypointCache,
-} from "../../packages/extensions.js";
+import { clearPackageEntrypointCache } from "../../packages/extensions.js";
 import { type State, type UnifiedItem } from "../../types/index.js";
 import { parseChoiceByLabel } from "../../utils/command.js";
 import { logPackageRemove, logPackageUpdate } from "../../utils/history.js";
@@ -19,8 +17,8 @@ import { showReport } from "../report.js";
 const BULK_ACTION_OPTIONS = {
   update: "Update selected packages",
   remove: "Remove selected packages",
-  enable: "Enable selected package extensions",
-  disable: "Disable selected package extensions",
+  enable: "Enable selected packages",
+  disable: "Disable selected packages",
   cancel: "Cancel",
 } as const;
 
@@ -86,18 +84,21 @@ async function runBulkOperation(
             logPackageRemove(pi, item.source, item.displayName, true);
             settledIdentities.push(normalizePackageIdentity(item.source, { cwd: ctx.cwd }));
           } else {
-            if (!item.extensionPaths?.length) {
-              throw new Error("no package extension entrypoints were discovered");
-            }
             const target: State = action === "enable" ? "enabled" : "disabled";
-            const changed = await applyPackageExtensionStateChanges(
+            const changed = await applyPackageStateChange(
               item.source,
               item.scope,
-              item.extensionPaths.map((extensionPath) => ({ extensionPath, target })),
+              target,
               ctx.cwd,
               isProjectTrusted(ctx)
             );
             if (!changed.ok) throw new Error(changed.error);
+            if (!changed.changed) {
+              skipped.push(
+                `${item.displayName} (${item.scope}): ${changed.message ?? "already in the requested state"}`
+              );
+              continue;
+            }
           }
           completed.push(item.displayName);
         } catch (error) {
@@ -152,7 +153,11 @@ export async function handleBulkAction(
   const confirmed = await ctx.ui.confirm(
     "Bulk package operation",
     `${BULK_ACTION_OPTIONS[action]} for ${selectedPackages.length} package(s)?${
-      action === "update" ? " Updates apply to every configured scope matching each source." : ""
+      action === "update"
+        ? " Updates apply to every configured scope matching each source."
+        : action === "enable" || action === "disable"
+          ? " Affects extensions, skills, prompts, and themes in each selected scope. Enable restores previous filters. A project entry can override a global entry."
+          : ""
     }`
   );
   if (!confirmed) return "resume";
@@ -177,5 +182,11 @@ export async function handleBulkAction(
   });
   if (results.completed.length === 0) return "resume";
 
+  if (action === "enable" || action === "disable") {
+    ctx.ui.notify(
+      "Reload and start a fresh session to clear previously loaded skill instructions.",
+      "info"
+    );
+  }
   return confirmReload(ctx, "Bulk package changes completed.");
 }

@@ -20,6 +20,7 @@ import {
   resolveRelativePathSelection,
 } from "../utils/relative-path-selection.js";
 import { throwIfSettingsErrors } from "../utils/settings-errors.js";
+import { findConfiguredPackageIndex } from "./activation.js";
 import { resolveConfiguredPackageExtensions, resourcesForPackage } from "./extension-resolution.js";
 
 interface PackageSettingsObject {
@@ -96,18 +97,6 @@ function getScopedPackages(
       ? settings.getProjectSettings().packages
       : settings.getGlobalSettings().packages;
   return packages ? [...packages] : [];
-}
-
-function findPackageSettingsIndex(
-  packages: (string | PackageSettingsObject)[],
-  normalizedSource: string
-): number {
-  return packages.findIndex((pkg) => {
-    if (typeof pkg === "string") {
-      return normalizeConfiguredPackageSource(pkg) === normalizedSource;
-    }
-    return normalizeConfiguredPackageSource(pkg.source) === normalizedSource;
-  });
 }
 
 function toPackageSettingsObject(
@@ -201,10 +190,14 @@ export async function applyPackageExtensionStateChanges(
 
     const settings = createSettingsManager(cwd, projectTrusted);
     throwIfSettingsErrors(settings, "Package extension configuration");
-    const normalizedSource = normalizeConfiguredPackageSource(packageSource);
     const packages = getScopedPackages(settings, scope);
-    const index = findPackageSettingsIndex(packages, normalizedSource);
+    const index = findConfiguredPackageIndex(packages, packageSource, scope, cwd);
     const packageEntry = toPackageSettingsObject(packages[index], packageSource);
+    if (Object.hasOwn(packageEntry, "piExtmgrDisabled")) {
+      throw new Error(
+        "Package is disabled by extmgr or has a conflicting snapshot; enable the package first before configuring extensions."
+      );
+    }
 
     const normalizedChanges = new Map<string, State>();
     for (const change of changes) {
