@@ -54,6 +54,8 @@ export interface InstalledPackage {
   resolvedPath?: string | undefined;
   description?: string | undefined;
   size?: number | undefined; // Package size in bytes
+  /** Every resource is switched off by extmgr's whole-package disable. */
+  disabled?: boolean | undefined;
 }
 
 export interface PackageExtensionEntry {
@@ -95,6 +97,7 @@ export interface PackageUnifiedItem {
   updateAvailable?: boolean | undefined;
   extensionSummary?: PackageExtensionStateSummary | undefined;
   extensionPaths?: string[] | undefined;
+  disabled?: boolean | undefined;
 }
 
 export type UnifiedItem = LocalUnifiedItem | PackageUnifiedItem;

@@ -478,6 +478,9 @@ export class UnifiedManagerBrowser implements Focusable {
       );
       pushDescription(item.description || "No description provided.");
       lines.push("");
+      if (item.disabled) {
+        lines.push(this.theme.fg("warning", "Disabled · extensions, skills, prompts, themes off"));
+      }
       if (extensionState) lines.push(`${this.theme.fg("dim", "Extensions")}  ${extensionState}`);
       if (item.size !== undefined)
         lines.push(`${this.theme.fg("dim", "Size")}        ${formatBytes(item.size)}`);

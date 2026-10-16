@@ -1,6 +1,6 @@
 /** Coordinated bulk package operations for the Installed workspace. */
 import { type ExtensionAPI, type ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
-import { applyPackageStateChange } from "../../packages/activation.js";
+import { togglePackage } from "../../packages/activation.js";
 import { getPackageCatalog } from "../../packages/catalog.js";
 import { clearSearchCache } from "../../packages/discovery.js";
 import { clearPackageEntrypointCache } from "../../packages/extensions.js";
@@ -85,14 +85,14 @@ async function runBulkOperation(
             settledIdentities.push(normalizePackageIdentity(item.source, { cwd: ctx.cwd }));
           } else {
             const target: State = action === "enable" ? "enabled" : "disabled";
-            const changed = await applyPackageStateChange(
-              item.source,
-              item.scope,
-              target,
-              ctx.cwd,
-              isProjectTrusted(ctx)
-            );
-            if (!changed.ok) throw new Error(changed.error);
+            const changed = await togglePackage(item, target, ctx.cwd, isProjectTrusted(ctx));
+            if (!changed.ok) {
+              throw new Error(
+                changed.snapshotConflict
+                  ? `${changed.error} Use the package's own Enable/Disable action to resolve it.`
+                  : changed.error
+              );
+            }
             if (!changed.changed) {
               skipped.push(
                 `${item.displayName} (${item.scope}): ${changed.message ?? "already in the requested state"}`
@@ -156,7 +156,7 @@ export async function handleBulkAction(
       action === "update"
         ? " Updates apply to every configured scope matching each source."
         : action === "enable" || action === "disable"
-          ? " Affects extensions, skills, prompts, and themes in each selected scope. Enable restores previous filters. A project entry can override a global entry."
+          ? " Affects extensions, skills, prompts, and themes in each selected scope; enable restores the previous filters."
           : ""
     }`
   );

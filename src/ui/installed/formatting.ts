@@ -4,6 +4,7 @@ import { relative } from "node:path";
 import { type Theme } from "@earendil-works/pi-coding-agent";
 import {
   type PackageExtensionStateSummary,
+  type PackageUnifiedItem,
   type State,
   type UnifiedItem,
 } from "../../types/index.js";
@@ -12,10 +13,9 @@ import { getPackageSourceKind } from "../../utils/package-source.js";
 import { getStatusIcon } from "../theme.js";
 import { getLocalItemCurrentPath } from "./items.js";
 
-function getPackageExtensionStatusIcon(
-  theme: Theme,
-  summary?: PackageExtensionStateSummary
-): string {
+function getPackageStatusIcon(theme: Theme, item: PackageUnifiedItem): string {
+  if (item.disabled) return getStatusIcon(theme, "disabled");
+  const summary = item.extensionSummary;
   if (!summary || summary.total === 0) return theme.fg("muted", "•");
   if (summary.disabled === 0) return getStatusIcon(theme, "enabled");
   if (summary.enabled === 0) return getStatusIcon(theme, "disabled");
@@ -33,6 +33,11 @@ export function formatPackageExtensionState(
     return `${summary.total} disabled`;
   }
   return `${summary.enabled} enabled · ${summary.disabled} disabled`;
+}
+
+/** A whole-package disable outranks the extension tally. */
+export function formatPackageState(item: PackageUnifiedItem): string | undefined {
+  return item.disabled ? "package disabled" : formatPackageExtensionState(item.extensionSummary);
 }
 
 function formatLocalState(state: State, changed: boolean): string {
@@ -57,13 +62,13 @@ export function formatUnifiedItemLabel(
   }
 
   const sourceKind = getPackageSourceKind(item.source);
-  const status = getPackageExtensionStatusIcon(theme, item.extensionSummary);
+  const status = getPackageStatusIcon(theme, item);
   const name = theme.bold(item.displayName);
   const version = item.version ? theme.fg("dim", `@${item.version}`) : "";
   const details = [
     sourceKind === "unknown" ? "package" : sourceKind,
     item.scope,
-    formatPackageExtensionState(item.extensionSummary),
+    formatPackageState(item),
     item.size !== undefined ? formatBytes(item.size) : undefined,
     item.updateAvailable ? "update available" : undefined,
   ].filter(Boolean);
@@ -91,7 +96,7 @@ export function formatUnifiedItemDescription(
   return [
     item.description || "No description",
     `${sourceKind === "unknown" ? "package" : sourceKind} · ${item.scope}`,
-    formatPackageExtensionState(item.extensionSummary),
+    formatPackageState(item),
     item.updateAvailable ? "update available" : undefined,
     item.size !== undefined ? formatBytes(item.size) : undefined,
     source,

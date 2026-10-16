@@ -2,7 +2,11 @@
 import { type ExtensionAPI, type ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import { removeLocalExtension } from "../../extensions/discovery.js";
 import { undoExtensionTrash } from "../../extensions/trash.js";
-import { applyPackageStateChange } from "../../packages/activation.js";
+import {
+  applyPackageStateChange,
+  discardPackageSnapshot,
+  togglePackage,
+} from "../../packages/activation.js";
 import { getInstalledPackagesAllScopes } from "../../packages/discovery.js";
 import { removePackageWithOutcome, updatePackageWithOutcome } from "../../packages/management.js";
 import { comparePackageScopes, movePackageBetweenScopes } from "../../packages/scopes.js";
@@ -122,6 +126,7 @@ export function buildUnifiedItemDetailLines(
     `Version: ${item.version || "unknown"}`,
     `Source: ${item.source}`,
     `Scope: ${item.scope}`,
+    ...(item.disabled ? ["State: disabled (extensions, skills, prompts, themes)"] : []),
     ...(extensionState ? [`Extensions: ${extensionState}`] : []),
     ...(item.size !== undefined ? [`Size: ${formatBytes(item.size)}`] : []),
     ...(item.description ? [`Description: ${item.description}`] : []),
@@ -331,13 +336,29 @@ export async function handlePackageItemAction(
     case "enable":
     case "disable": {
       const target: State = selection === "enable" ? "enabled" : "disabled";
-      const result = await applyPackageStateChange(
-        item.source,
-        item.scope,
-        target,
-        ctx.cwd,
-        isProjectTrusted(ctx)
-      );
+      const projectTrusted = isProjectTrusted(ctx);
+      let result = await togglePackage(item, target, ctx.cwd, projectTrusted);
+      if (!result.ok && result.snapshotConflict) {
+        const discard = await ctx.ui.confirm(
+          "Package settings changed",
+          `${result.error}\nDiscard the configuration saved when it was disabled and keep the current filters?`
+        );
+        if (!discard) return "resume";
+        result = await discardPackageSnapshot(item.source, item.scope, ctx.cwd, projectTrusted);
+        if (result.ok && target === "enabled") {
+          ctx.ui.notify("Discarded the saved configuration; current filters are kept.", "info");
+          return "resume";
+        }
+        if (result.ok) {
+          result = await applyPackageStateChange(
+            item.source,
+            item.scope,
+            target,
+            ctx.cwd,
+            projectTrusted
+          );
+        }
+      }
       if (!result.ok) {
         ctx.ui.notify(`Package toggle failed: ${result.error}`, "error");
         return "resume";
@@ -350,7 +371,7 @@ export async function handlePackageItemAction(
         return "resume";
       }
       ctx.ui.notify(
-        `${target === "enabled" ? "Restored previous configuration for" : "Disabled all resources from"} ${item.displayName} (${item.scope}). Extensions, skills, prompts, and themes are affected. A project entry can override a global entry. Reload and start a fresh session to clear previously loaded skill instructions.`,
+        `${result.message ?? `${target === "enabled" ? "Enabled" : "Disabled"} ${item.displayName} (${item.scope}).`} Reload, then start a fresh session to drop skill instructions already in context.`,
         "info"
       );
       return confirmReload(ctx, "Package resource configuration changed.");

@@ -7,9 +7,14 @@ import {
   SettingsManager,
 } from "@earendil-works/pi-coding-agent";
 import { type InstalledPackage, type Scope } from "../types/index.js";
-import { normalizePackageIdentity, parsePackageNameAndVersion } from "../utils/package-source.js";
+import {
+  normalizePackageIdentity,
+  packageSourceString,
+  parsePackageNameAndVersion,
+} from "../utils/package-source.js";
 import { getProjectConfigDir } from "../utils/pi-paths.js";
 import { throwIfSettingsErrors } from "../utils/settings-errors.js";
+import { getScopedPackages, isDisabledPackageEntry } from "./package-settings.js";
 
 type PiScope = "user" | "project";
 type ConfiguredPackage = ReturnType<DefaultPackageManager["listConfiguredPackages"]>[number];
@@ -53,11 +58,10 @@ function toScope(scope: PiScope): Scope {
   return scope === "project" ? "project" : "global";
 }
 
-function createPackageRecord({
-  source,
-  scope,
-  installedPath,
-}: ConfiguredPackage): InstalledPackage {
+function createPackageRecord(
+  { source, scope, installedPath }: ConfiguredPackage,
+  disabled: boolean
+): InstalledPackage {
   const { name, version } = parsePackageNameAndVersion(source);
 
   return {
@@ -66,7 +70,18 @@ function createPackageRecord({
     scope: toScope(scope),
     ...(version ? { version } : {}),
     ...(installedPath ? { resolvedPath: installedPath } : {}),
+    ...(disabled ? { disabled: true } : {}),
   };
+}
+
+/** Settings entries carry the disable snapshot; pi's configured list does not. */
+function isConfiguredPackageDisabled(
+  settingsManager: SettingsManager,
+  { source, scope }: ConfiguredPackage
+): boolean {
+  return getScopedPackages(settingsManager, toScope(scope)).some(
+    (entry) => packageSourceString(entry) === source && isDisabledPackageEntry(entry)
+  );
 }
 
 function dedupeInstalledPackages(packages: InstalledPackage[], cwd: string): InstalledPackage[] {
@@ -237,7 +252,7 @@ function createDefaultPackageCatalog(
       const installed = [
         ...configured.filter((pkg) => pkg.scope === "project"),
         ...configured.filter((pkg) => pkg.scope === "user"),
-      ].map(createPackageRecord);
+      ].map((pkg) => createPackageRecord(pkg, isConfiguredPackageDisabled(settingsManager, pkg)));
       return Promise.resolve(
         options?.dedupe === false ? installed : dedupeInstalledPackages(installed, cwd)
       );

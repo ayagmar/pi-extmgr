@@ -13,7 +13,10 @@ import { getCurrentProfile } from "../src/profiles/runtime-state.js";
 import { parseExternalProfile } from "../src/profiles/schema.js";
 import { readProfileStore, saveNamedProfile } from "../src/profiles/store.js";
 import { handleBulkAction } from "../src/ui/installed/bulk.js";
+import { matchesUnifiedFilter } from "../src/ui/installed/filters.js";
+import { formatPackageState } from "../src/ui/installed/formatting.js";
 import { handlePackageItemAction } from "../src/ui/installed/item-actions.js";
+import { buildUnifiedItems } from "../src/ui/installed/items.js";
 import { createMockHarness } from "./helpers/mocks.js";
 
 async function fixture(
@@ -413,3 +416,125 @@ for (const manifest of [false, true]) {
     });
   });
 }
+
+void test("enable re-enables extensions disabled by the earlier extension-only action", async () => {
+  await fixture(async ({ cwd, global }) => {
+    await save(global, [{ source: "npm:legacy", extensions: ["-extensions/a.ts"] }]);
+    const harness = createMockHarness({ cwd, hasUI: true });
+    const item = {
+      type: "package" as const,
+      id: "pkg:npm:legacy",
+      displayName: "legacy",
+      source: "npm:legacy",
+      scope: "global" as const,
+      extensionPaths: ["extensions/a.ts"],
+      extensionSummary: { enabled: 0, disabled: 1, total: 1 },
+    };
+    const guard = async () => "continue" as const;
+    await handlePackageItemAction(item, "enable", harness.ctx, harness.pi, guard);
+    assert.deepEqual(await entries(global), ["npm:legacy"]);
+    assert.ok(harness.notifications.some((n) => /earlier extmgr version/.test(n.message)));
+    assert.equal(harness.confirmPrompts.filter((p) => p === "Reload Required").length, 1);
+
+    // Filters that deliberately load nothing are not a legacy disable.
+    const loadNothing = {
+      source: "npm:legacy",
+      extensions: [],
+      skills: [],
+      prompts: [],
+      themes: [],
+    };
+    await save(global, [loadNothing]);
+    await handlePackageItemAction(item, "enable", harness.ctx, harness.pi, guard);
+    assert.deepEqual(await entries(global), [loadNothing]);
+    assert.ok(harness.notifications.some((n) => /no saved configuration/i.test(n.message)));
+  });
+});
+
+void test("a snapshot conflict can be discarded from the single-package action", async () => {
+  await fixture(async ({ cwd, global }) => {
+    await save(global, [{ source: "npm:demo", prompts: ["-prompts/old.md"] }]);
+    await applyPackageStateChange("npm:demo", "global", "disabled", cwd);
+    const disabled = (await entries(global))[0] as Record<string, unknown>;
+    const edited: Record<string, unknown> = { ...disabled, skills: ["+skills/a"] };
+    await save(global, [edited]);
+    const item = {
+      type: "package" as const,
+      id: "pkg:npm:demo",
+      displayName: "demo",
+      source: "npm:demo",
+      scope: "global" as const,
+    };
+    const guard = async () => "continue" as const;
+
+    const declined = createMockHarness({ cwd, hasUI: true, confirmImpl: () => false });
+    const before = await readFile(global, "utf8");
+    await handlePackageItemAction(item, "enable", declined.ctx, declined.pi, guard);
+    assert.deepEqual(declined.confirmPrompts, ["Package settings changed"]);
+    assert.equal(await readFile(global, "utf8"), before);
+
+    const accepted = createMockHarness({ cwd, hasUI: true, confirmImpl: () => true });
+    await handlePackageItemAction(item, "disable", accepted.ctx, accepted.pi, guard);
+    const redisabled = (await entries(global))[0] as Record<string, unknown>;
+    assert.deepEqual(redisabled.skills, []);
+    assert.deepEqual((redisabled.piExtmgrDisabled as { fields: unknown }).fields, {
+      extensions: [],
+      skills: ["+skills/a"],
+      prompts: [],
+      themes: [],
+      autoload: true,
+    });
+
+    await save(global, [edited]);
+    await handlePackageItemAction(item, "enable", accepted.ctx, accepted.pi, guard);
+    const { piExtmgrDisabled: _snapshot, ...kept } = edited;
+    assert.deepEqual(await entries(global), [kept]);
+    assert.ok(accepted.notifications.some((n) => /current filters are kept/.test(n.message)));
+  });
+});
+
+void test("the Installed list marks whole-package disables", async () => {
+  await fixture(async ({ cwd, global }) => {
+    await save(global, ["npm:demo", "npm:other"]);
+    await applyPackageStateChange("npm:demo", "global", "disabled", cwd);
+    const packages = await getPackageCatalog(cwd).listInstalledPackages();
+    assert.deepEqual(
+      packages.map((pkg) => [pkg.source, pkg.disabled ?? false]),
+      [
+        ["npm:demo", true],
+        ["npm:other", false],
+      ]
+    );
+    const items = buildUnifiedItems([], packages, new Set());
+    const disabled = items.filter((item) =>
+      matchesUnifiedFilter(item, "disabled", new Map(), new Set(), new Set())
+    );
+    assert.deepEqual(
+      disabled.map((item) => item.id),
+      ["pkg:npm:demo"]
+    );
+    const [demo] = disabled;
+    assert.equal(demo?.type === "package" && formatPackageState(demo), "package disabled");
+  });
+});
+
+void test("extension writes match a configured package by identity", async () => {
+  await fixture(async ({ cwd, global }) => {
+    await save(global, ["npm:demo@1.0.0"]);
+    const change = [{ extensionPath: "extensions/a.ts", target: "disabled" as const }];
+    assert.deepEqual(
+      await applyPackageExtensionStateChanges("npm:demo@2.0.0", "global", change, cwd),
+      { ok: true }
+    );
+    assert.deepEqual(await entries(global), [
+      { source: "npm:demo@1.0.0", extensions: ["-extensions/a.ts"] },
+    ]);
+
+    await save(global, ["npm:demo@1.0.0", "npm:demo@2.0.0"]);
+    const before = await readFile(global, "utf8");
+    const result = await applyPackageExtensionStateChanges("npm:demo", "global", change, cwd);
+    assert.equal(result.ok, false);
+    if (!result.ok) assert.match(result.error, /ambiguous/i);
+    assert.equal(await readFile(global, "utf8"), before);
+  });
+});

@@ -20,8 +20,12 @@ import {
   resolveRelativePathSelection,
 } from "../utils/relative-path-selection.js";
 import { throwIfSettingsErrors } from "../utils/settings-errors.js";
-import { findConfiguredPackageIndex } from "./activation.js";
 import { resolveConfiguredPackageExtensions, resourcesForPackage } from "./extension-resolution.js";
+import {
+  findConfiguredPackageIndex,
+  getScopedPackages,
+  isDisabledPackageEntry,
+} from "./package-settings.js";
 
 interface PackageSettingsObject {
   source: string;
@@ -84,19 +88,6 @@ function toPackageRoot(pkg: InstalledPackage, lookup: InstalledPathLookup): stri
 
 function createSettingsManager(cwd: string, projectTrusted: boolean): SettingsManager {
   return SettingsManager.create(cwd, getAgentDir(), { projectTrusted });
-}
-
-function getScopedPackages(
-  settings: SettingsManager,
-  scope: Scope
-): (string | PackageSettingsObject)[] {
-  // getPackages() returns the merged view, where trusted project packages
-  // replace the global list; writing that back would leak them into global.
-  const packages =
-    scope === "project"
-      ? settings.getProjectSettings().packages
-      : settings.getGlobalSettings().packages;
-  return packages ? [...packages] : [];
 }
 
 function toPackageSettingsObject(
@@ -192,12 +183,13 @@ export async function applyPackageExtensionStateChanges(
     throwIfSettingsErrors(settings, "Package extension configuration");
     const packages = getScopedPackages(settings, scope);
     const index = findConfiguredPackageIndex(packages, packageSource, scope, cwd);
-    const packageEntry = toPackageSettingsObject(packages[index], packageSource);
-    if (Object.hasOwn(packageEntry, "piExtmgrDisabled")) {
+    const existing = packages[index];
+    if (existing !== undefined && isDisabledPackageEntry(existing)) {
       throw new Error(
         "Package is disabled by extmgr or has a conflicting snapshot; enable the package first before configuring extensions."
       );
     }
+    const packageEntry = toPackageSettingsObject(existing, packageSource);
 
     const normalizedChanges = new Map<string, State>();
     for (const change of changes) {

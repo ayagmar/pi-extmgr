@@ -234,14 +234,22 @@ disable its extensions, skills, prompts, and themes together, without uninstalli
 **Enable package** restores the previous filters, including intentional exclusions.
 **Configure package extensions** remains extension-only; enable the package before editing.
 
-Changes apply to the selected scope; a project entry can override a global entry.
+Disabled packages show as **package disabled** in the Installed list and under the
+**Disabled** filter.
+
+Changes apply to the selected scope. A project entry replaces a global entry for the same
+package, except a project entry with `autoload: false`, which adds its explicit patterns on
+top of the global one: disabling the global entry does not switch those resources off.
 Reload and start a **fresh session** to avoid previously read skill instructions remaining
 in context. Independently loaded copies and already-applied side effects are unaffected.
 
 The prior configuration is saved in `piExtmgrDisabled` on the package settings entry.
-Externally edited or invalid snapshots are rejected rather than overwritten.
-Existing extension-only exclusions (including Superpowers exclusions) are preserved,
-not automatically migrated.
+Invalid snapshots are rejected rather than overwritten. If the package's filters were edited
+after it was disabled, the single-package Enable/Disable action offers to discard the saved
+configuration and keep the current filters.
+Packages whose extensions were all disabled by an earlier extmgr version have no saved
+configuration; **Enable package** re-enables their extensions as before. Other existing
+extension-only exclusions (including Superpowers exclusions) are preserved, not migrated.
 
 ## Tips
 

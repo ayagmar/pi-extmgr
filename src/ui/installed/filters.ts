@@ -2,7 +2,7 @@
 import { fuzzyMatch } from "@earendil-works/pi-tui";
 import { type State, type UnifiedItem } from "../../types/index.js";
 import { getPackageSourceKind } from "../../utils/package-source.js";
-import { compactDisplayPath, formatPackageExtensionState } from "./formatting.js";
+import { compactDisplayPath, formatPackageState } from "./formatting.js";
 import { getCurrentUnifiedItemState, getLocalItemCurrentPath } from "./items.js";
 import { type UnifiedFilter } from "./state.js";
 
@@ -26,7 +26,7 @@ export function matchesUnifiedFilter(
       if (item.type === "local") {
         return getCurrentUnifiedItemState(item, staged) === "disabled";
       }
-      return (item.extensionSummary?.disabled ?? 0) > 0;
+      return Boolean(item.disabled) || (item.extensionSummary?.disabled ?? 0) > 0;
     case "favorites":
       return favoriteIds.has(item.id);
     case "recent":
@@ -56,14 +56,16 @@ function getUnifiedItemSearchFields(
     secondary: [
       item.version ?? "",
       item.description ?? "",
-      formatPackageExtensionState(item.extensionSummary) ?? "",
-      item.extensionSummary
-        ? item.extensionSummary.disabled > 0
-          ? item.extensionSummary.enabled > 0
-            ? "mixed disabled"
-            : "disabled"
-          : "enabled"
-        : "",
+      formatPackageState(item) ?? "",
+      item.disabled
+        ? "disabled"
+        : item.extensionSummary
+          ? item.extensionSummary.disabled > 0
+            ? item.extensionSummary.enabled > 0
+              ? "mixed disabled"
+              : "disabled"
+            : "enabled"
+          : "",
     ],
   };
 }

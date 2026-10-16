@@ -128,6 +128,7 @@ export function buildUnifiedItems(
       updateAvailable: knownUpdates.has(normalizePackageIdentity(pkg.source)),
       ...(extensionSummary ? { extensionSummary } : {}),
       ...(extensionPaths?.length ? { extensionPaths: [...extensionPaths] } : {}),
+      ...(pkg.disabled ? { disabled: true } : {}),
     });
   }
 
