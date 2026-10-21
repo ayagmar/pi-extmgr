@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.4.2](https://github.com/ayagmar/pi-extmgr/compare/v0.4.1...v0.4.2) (2026-10-21)
+
+### Features
+
+* add footer visibility toggle to the existing manager menu ([#35](https://github.com/ayagmar/pi-extmgr/issues/35)) ([ae81420](https://github.com/ayagmar/pi-extmgr/commit/ae81420b4d97c32d151cf886d22f4211888a8a02))
+
+### Bug Fixes
+
+* close linked-root and exact-selection review gaps ([#36](https://github.com/ayagmar/pi-extmgr/issues/36)) ([c1ae5ce](https://github.com/ayagmar/pi-extmgr/commit/c1ae5ce252f36f0aeb7007fc98e921be14ccf7a6))
+* keep disabled-check status refresh offline ([#34](https://github.com/ayagmar/pi-extmgr/issues/34)) ([d415980](https://github.com/ayagmar/pi-extmgr/commit/d415980d65ba95bff3c388bb6ef5921dc1ee97b4))
+* protect linked extension sources and empty package selections ([#33](https://github.com/ayagmar/pi-extmgr/issues/33)) ([42a7fcf](https://github.com/ayagmar/pi-extmgr/commit/42a7fcffd36fa7fadb3d7ec91225be51b947fe88))
+
 ## [0.4.1](https://github.com/ayagmar/pi-extmgr/compare/v0.4.0...v0.4.1) (2026-10-16)
 
 ### Features
