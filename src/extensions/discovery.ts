@@ -6,7 +6,7 @@
  */
 
 import { type Dirent } from "node:fs";
-import { readdir, realpath, rename, stat } from "node:fs/promises";
+import { lstat, readdir, realpath, rename, stat } from "node:fs/promises";
 import { basename, dirname, join, relative, resolve } from "node:path";
 import { DISABLED_SUFFIX } from "../constants.js";
 import { readPackageManifest } from "../packages/extensions.js";
@@ -517,8 +517,10 @@ export async function removeLocalExtension(
         error: "Cannot remove a file outside the configured extension directories.",
       };
     }
-    const expectedParent = resolve(await realpath(root), relative(root, parentDir));
-    if ((await realpath(parentDir)) !== expectedParent) {
+    if (
+      (await lstat(root)).isSymbolicLink() ||
+      (await realpath(parentDir)) !== resolve(await realpath(root), relative(root, parentDir))
+    ) {
       return {
         ok: false,
         error:

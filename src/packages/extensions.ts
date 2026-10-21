@@ -1,6 +1,6 @@
 import { type Dirent } from "node:fs";
 import { readdir, readFile } from "node:fs/promises";
-import { dirname, join, relative, resolve } from "node:path";
+import { basename, dirname, join, relative, resolve } from "node:path";
 import {
   DefaultPackageManager,
   getAgentDir,
@@ -109,15 +109,18 @@ function toPackageSettingsObject(
   return { source: packageSource };
 }
 
+/** Update exact overrides without widening an explicit empty selection. */
 function updateExtensionMarkers(
   existingTokens: string[] | undefined,
   changes: ReadonlyMap<string, State>
 ): string[] {
   if (existingTokens?.length === 0) {
-    return [...changes]
+    const enabled = [...changes]
       .filter(([, target]) => target === "enabled")
-      .map(([extensionPath]) => extensionPath)
+      .map(([extensionPath]) => `+${extensionPath}`)
       .sort((a, b) => a.localeCompare(b));
+    // Pi's basename exclusions must cover dotfiles too; + markers select exact paths.
+    return enabled.length > 0 ? ["!*", "!.*", ...enabled] : [];
   }
   const nextTokens: string[] = [];
 
@@ -173,6 +176,7 @@ export async function validatePackageExtensionSettings(
   }
 }
 
+/** Persist entrypoint toggles while preserving unrelated package settings. */
 export async function applyPackageExtensionStateChanges(
   packageSource: string,
   scope: Scope,
@@ -202,8 +206,11 @@ export async function applyPackageExtensionStateChanges(
       normalizedChanges.set(normalizeRelativePath(change.extensionPath), change.target);
     }
 
-    const preserveEmptyFilter = packageEntry.extensions?.length === 0;
+    const preserveEmptyFilter =
+      packageEntry.extensions?.length === 0 ||
+      (packageEntry.extensions?.[0] === "!*" && packageEntry.extensions[1] === "!.*");
     packageEntry.extensions = updateExtensionMarkers(packageEntry.extensions, normalizedChanges);
+    if (preserveEmptyFilter && packageEntry.extensions.length === 2) packageEntry.extensions = [];
 
     if (packageEntry.extensions.length === 0 && !preserveEmptyFilter) {
       delete packageEntry.extensions;
@@ -234,6 +241,7 @@ export async function applyPackageExtensionStateChanges(
   }
 }
 
+/** Match Pi's package filters, including its basename pattern fallback. */
 function getPackageFilterState(filters: string[] | undefined, extensionPath: string): State {
   // Omitted key => all enabled (pi default).
   if (filters === undefined) {
@@ -246,6 +254,9 @@ function getPackageFilterState(filters: string[] | undefined, extensionPath: str
   }
 
   const normalizedTarget = normalizeRelativePath(extensionPath);
+  const matches = (pattern: string): boolean =>
+    matchesFilterPattern(normalizedTarget, pattern) ||
+    matchesFilterPattern(basename(normalizedTarget), pattern);
   const includePatterns: string[] = [];
   const excludePatterns: string[] = [];
   let markerOverride: State | undefined;
@@ -278,11 +289,8 @@ function getPackageFilterState(filters: string[] | undefined, extensionPath: str
     }
   }
 
-  let enabled =
-    includePatterns.length === 0 ||
-    includePatterns.some((p) => matchesFilterPattern(normalizedTarget, p));
-
-  if (enabled && excludePatterns.some((p) => matchesFilterPattern(normalizedTarget, p))) {
+  let enabled = includePatterns.length === 0 || includePatterns.some(matches);
+  if (enabled && excludePatterns.some(matches)) {
     enabled = false;
   }
 

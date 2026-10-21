@@ -257,6 +257,7 @@ extension-only exclusions (including Superpowers exclusions) are preserved, not 
 
 - **Staged local changes**: Toggle local extensions on/off, then press `S` to apply all at once.
 - **Package extension config**: Select a package and press `c` (or Enter/A → Configure) to enable/disable individual extension entrypoints only; skills, prompts, and themes are unchanged.
+  - Starting from an empty selection enables only the exact chosen paths, even when filenames repeat or entrypoints are hidden. Disabling the last selected entry restores an empty selection.
   - After saving package extension config, run /reload to apply changes.
 - **Two install modes**:
   - **Managed** (npm/git): installed by Pi's package manager into `~/.pi/agent/npm` / `~/.pi/agent/git` (project scope: `.pi/npm` / `.pi/git`), updated from extmgr or with `pi update --extensions`, supports Pi package manifest/convention loading
@@ -269,7 +270,7 @@ extension-only exclusions (including Superpowers exclusions) are preserved, not 
 - **Reload is built-in**: When extmgr asks to reload, it calls `ctx.reload()` directly. Successful mutations persist a versioned reload-required marker; cancellation and failure do not. The marker survives reopening the manager and clears after a successful reload.
 - **Saved manager state**: Views, favorites, recent items, and bulk selections are stored atomically in `~/.pi/agent/.extmgr-cache/views-<project>.json`. Named profiles are stored in `profiles.json`; project policies load from `.pi/extmgr-policy.json`.
 - **Trash lifecycle**: Local removals move to `~/.pi/agent/.extmgr-trash/` with persistent records. Undo refuses to overwrite a replacement file, and expired or missing records are cleaned up.
-  - Removal is restricted to configured extension directories. Entries inside symlinked development directories cannot be removed through the manager; remove the directory link manually to leave the checkout untouched.
+  - Removal is restricted to configured extension directories. Entries inside symlinked development directories (including a symlinked extensions root) cannot be removed through the manager; remove the directory link manually to leave the checkout untouched.
 - **Metadata safety**: Missing compatibility, provenance, checksum, or target-version metadata is reported as `unknown`, never `safe`. Target-version previews, exact target badges, and update-policy/maintenance-window enforcement are intentionally deferred because Pi does not expose structured target metadata.
 
 ## Releasing

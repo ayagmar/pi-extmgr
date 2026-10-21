@@ -80,6 +80,48 @@ for (const entrypoint of ["src/index.ts", "src/custom.ts"]) {
   });
 }
 
+for (const scope of ["project", "global"] as const) {
+  void test(`removal refuses a symlinked ${scope} extensions root`, async () => {
+    const root = await mkdtemp(join(tmpdir(), "pi-extmgr-linked-root-"));
+    const cwd = join(root, "project");
+    const agent = join(root, "agent");
+    const checkout = join(root, "checkout");
+    const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
+    process.env.PI_CODING_AGENT_DIR = agent;
+    const link = scope === "project" ? join(cwd, ".pi", "extensions") : join(agent, "extensions");
+    try {
+      await mkdir(join(cwd, ".pi"), { recursive: true });
+      await mkdir(agent);
+      await mkdir(join(checkout, "dev"), { recursive: true });
+      await writeFile(join(checkout, "dev", "index.ts"), "// development entry\n");
+      await writeFile(join(checkout, "dev", "source.txt"), "keep this source\n");
+      await symlink(checkout, link, "dir");
+      const activePath = join(link, "dev", "index.ts");
+      const entries = await discoverExtensions(cwd, { projectTrusted: true });
+      assert.ok(entries.some((entry) => entry.activePath === activePath));
+      const result = await removeLocalExtension(
+        { activePath, disabledPath: `${activePath}.disabled` },
+        cwd
+      );
+      assert.equal(result.ok, false);
+      assert.match(result.ok ? "" : result.error, /symlinked extension directory/);
+      assert.equal(
+        await readFile(join(checkout, "dev", "index.ts"), "utf8"),
+        "// development entry\n"
+      );
+      assert.equal(
+        await readFile(join(checkout, "dev", "source.txt"), "utf8"),
+        "keep this source\n"
+      );
+      assert.equal((await lstat(link)).isSymbolicLink(), true);
+    } finally {
+      if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+      else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+}
+
 void test("removeLocalExtension refuses paths outside configured extension roots", async () => {
   const cwd = await mkdtemp(join(tmpdir(), "pi-extmgr-outside-removal-"));
   const activePath = join(cwd, "source.ts");

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { basename, join } from "node:path";
+import { dirname, join, relative } from "node:path";
 import test from "node:test";
 import {
   DefaultPackageManager,
@@ -20,35 +20,85 @@ for (const { target, enabled } of [
     try {
       await mkdir(source);
       await mkdir(join(cwd, ".pi"));
+      const entrypoints = [
+        "a.ts",
+        "extensions/a.ts",
+        "b.ts",
+        ".hidden.ts",
+        "extensions/.hidden.ts",
+        ".private/nested.ts",
+      ];
       await writeFile(
         join(source, "package.json"),
-        JSON.stringify({ pi: { extensions: ["a.ts", "b.ts"] } })
+        JSON.stringify({ pi: { extensions: entrypoints } })
       );
-      await writeFile(join(source, "a.ts"), "export default () => {};\n");
-      await writeFile(join(source, "b.ts"), "export default () => {};\n");
+      for (const file of entrypoints) {
+        await mkdir(dirname(join(source, file)), { recursive: true });
+        await writeFile(join(source, file), "export default () => {};\n");
+      }
       await writeFile(
         join(cwd, ".pi", "settings.json"),
         JSON.stringify({ packages: [{ source, extensions: [] }] })
       );
 
-      const result = await applyPackageExtensionStateChanges(
-        source,
-        "project",
-        [{ extensionPath: "a.ts", target }],
-        cwd,
-        true
-      );
-      assert.deepEqual(result, { ok: true });
-      const settingsManager = SettingsManager.create(cwd, getAgentDir(), { projectTrusted: true });
-      const manager = new DefaultPackageManager({ cwd, agentDir: getAgentDir(), settingsManager });
-      const resources = await manager.resolve(async () => "skip");
-      assert.deepEqual(
-        resources.extensions
+      const readEnabled = async () => {
+        const settingsManager = SettingsManager.create(cwd, getAgentDir(), {
+          projectTrusted: true,
+        });
+        const manager = new DefaultPackageManager({
+          cwd,
+          agentDir: getAgentDir(),
+          settingsManager,
+        });
+        const resources = await manager.resolve(async () => "skip");
+        return resources.extensions
           .filter((entry) => entry.enabled)
-          .map((entry) => basename(entry.path))
-          .sort(),
-        enabled
+          .map((entry) => relative(source, entry.path).replaceAll("\\", "/"))
+          .sort();
+      };
+      assert.deepEqual(
+        await applyPackageExtensionStateChanges(
+          source,
+          "project",
+          [{ extensionPath: "a.ts", target }],
+          cwd,
+          true
+        ),
+        { ok: true }
       );
+      assert.deepEqual(await readEnabled(), enabled);
+      if (target === "enabled") {
+        for (const [path, state, want] of [
+          ["extensions/a.ts", "enabled", ["a.ts", "extensions/a.ts"]],
+          [".hidden.ts", "enabled", [".hidden.ts", "a.ts", "extensions/a.ts"]],
+          [
+            ".private/nested.ts",
+            "enabled",
+            [".hidden.ts", ".private/nested.ts", "a.ts", "extensions/a.ts"],
+          ],
+          ["a.ts", "disabled", [".hidden.ts", ".private/nested.ts", "extensions/a.ts"]],
+          ["extensions/a.ts", "disabled", [".hidden.ts", ".private/nested.ts"]],
+          [".hidden.ts", "disabled", [".private/nested.ts"]],
+          [".private/nested.ts", "disabled", []],
+          ["b.ts", "enabled", ["b.ts"]],
+        ] as const) {
+          assert.deepEqual(
+            await applyPackageExtensionStateChanges(
+              source,
+              "project",
+              [{ extensionPath: path, target: state }],
+              cwd,
+              true
+            ),
+            { ok: true }
+          );
+          assert.deepEqual(await readEnabled(), want, `${state} ${path}`);
+          if (want.length === 0) {
+            const saved = SettingsManager.create(cwd, getAgentDir(), { projectTrusted: true });
+            assert.deepEqual(saved.getProjectSettings().packages, [{ source, extensions: [] }]);
+          }
+        }
+      }
     } finally {
       await rm(cwd, { recursive: true, force: true });
     }
