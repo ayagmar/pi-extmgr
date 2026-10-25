@@ -7,6 +7,6 @@
     "watch": "tailwindcss -i ./src/input.css -o ./assets/tailwind.css --watch"
   },
   "devDependencies": {
-    "tailwindcss": "^3.4.0"
+    "tailwindcss": "^4.3.3"
   }
 }
